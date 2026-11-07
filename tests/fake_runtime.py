@@ -31,12 +31,18 @@ if '--help' in sys.argv:
 directory=pathlib.Path(os.environ['CUEWIRE_MOCK_DIR'])
 if tool=='pw-dump':
     parent=os.getppid()
-    print(json.dumps([
+    rows=[
       {"node.name":"alsa_input.test_usb"},
-      {"node.name":"bluez_output.test_headset"},
-      {"node.name":f"cuewire.mix.{parent}"},
-      {"node.name":f"cuewire.microphone.{parent}"}
-    ]))
+      {"node.name":"bluez_output.test_headset"}
+    ]
+    trace=directory/'pw-loopback.jsonl'
+    if trace.exists() and any('cuewire.bridge.' in ' '.join(x['argv'])
+                             for x in [json.loads(line) for line in trace.read_text().splitlines() if line.strip()]):
+        rows.extend([
+          {"node.name":f"cuewire.mix.{parent}"},
+          {"node.name":f"cuewire.microphone.{parent}"}
+        ])
+    print(json.dumps(rows))
     sys.exit(0)
 with (directory / (tool+'.jsonl')).open('a') as f:
     f.write(json.dumps({'pid':os.getpid(),'argv':sys.argv[1:]})+'\\n')

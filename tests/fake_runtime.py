@@ -36,7 +36,13 @@ if tool=='pw-dump':
       {"node.name":"bluez_output.test_headset"}
     ]
     trace=directory/'pw-loopback.jsonl'
-    if trace.exists() and any('cuewire.bridge.' in ' '.join(x['argv'])
+    def is_running(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+    if trace.exists() and any('cuewire.bridge.' in ' '.join(x['argv']) and is_running(x['pid'])
                              for x in [json.loads(line) for line in trace.read_text().splitlines() if line.strip()]):
         rows.extend([
           {"node.name":f"cuewire.mix.{parent}"},

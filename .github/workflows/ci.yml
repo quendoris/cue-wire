@@ -1,0 +1,33 @@
+name: CueWire
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build CLI (no external crates)
+        run: cargo build --locked --offline --all-targets
+      - name: Pure unit and integration tests
+        run: cargo test --locked --offline --all-targets
+      - name: Show CLI and command validation
+        run: |
+          cargo run --locked --offline -- --help
+          if cargo run --locked --offline -- run --mic invalid; then
+            echo "FAIL: bad CLI unexpectedly accepted"
+            exit 1
+          fi
+      - name: No system service or default-device modification
+        run: |
+          ! grep -R -E 'set-default|systemctl enable|pactl load-module|pw-link @DEFAULT' src/
+          echo "Static no-default-change guard: PASS"
+

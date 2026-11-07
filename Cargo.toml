@@ -1,0 +1,19 @@
+[package]
+name = "cuewire"
+version = "0.1.0"
+edition = "2021"
+description = "Foreground-only PipeWire virtual microphone and cue player"
+license = "MIT"
+
+[lib]
+name = "cuewire"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cuewire"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

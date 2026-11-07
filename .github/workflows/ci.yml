@@ -19,6 +19,8 @@ jobs:
         run: cargo build --locked --offline --all-targets
       - name: Pure unit and integration tests
         run: cargo test --locked --offline --all-targets
+      - name: Fake PipeWire end-to-end process and cleanup smoke
+        run: python3 tests/fake_runtime.py target/debug/cuewire
       - name: Show CLI and command validation
         run: |
           cargo run --locked --offline -- --help

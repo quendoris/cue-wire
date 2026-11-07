@@ -105,7 +105,14 @@ def main():
         proc=launch()
         seen=[]
         try:
-            assert retry(started), "CueWire failed to expose active control socket"
+            if not retry(started):
+                proc.terminate() if proc.poll() is None else None
+                try:
+                    output, err = proc.communicate(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    output, err = proc.communicate()
+                raise AssertionError(f"CueWire not ready: code={proc.returncode}, stdout={output!r}, stderr={err!r}, mock_log={list(logdir.iterdir())}")
             assert command("play","1").returncode==0
             assert retry(lambda:len(records(logdir/"pw-play.jsonl"))==2)
             first=records(logdir/"pw-play.jsonl")

@@ -224,10 +224,11 @@ else:
                 assert proc.returncode==0,(out,err)
                 calls=[json.loads(t) for t in hyprlog.read_text().splitlines()]
                 evals=[c for c in calls if c[0]=="eval"]
-                assert len(evals)==2,calls
-                assert "table.insert" in evals[0][1]
-                assert 'device = { inclusive = true, list = { "usb-numpad" } }' in evals[0][1]
-                assert ":remove()" in evals[1][1]
+                assert len(evals)==3,calls
+                assert evals[0][1]=="do end",evals
+                assert "table.insert" in evals[1][1]
+                assert 'device = { inclusive = true, list = { "usb-numpad" } }' in evals[1][1]
+                assert ":remove()" in evals[2][1]
                 assert any(c[:2]==["-j","binds"] for c in calls)
                 assert any(json.loads(line)["event"]=="single"
                            for line in (root/"log.jsonl").read_text().splitlines())

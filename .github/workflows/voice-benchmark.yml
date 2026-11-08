@@ -40,7 +40,8 @@ jobs:
         run: |
           python -m py_compile tools/voice_bench.py \
             tools/voice_bench_metrics.py \
-            tools/voice_bench_clearvoice.py tools/voice_bench_listen.py tests/test_voice_bench.py
+            tools/voice_bench_clearvoice.py tools/voice_bench_listen.py \
+            tools/voice_bench_rnnoise_lib.py tests/test_voice_bench.py
           bash -n tools/voice_bench_publish.sh tools/voice_bench_install.sh tools/voice_bench_env.sh
           bash tools/voice_bench_install.sh --help
           bash tools/voice_bench_install.sh --check

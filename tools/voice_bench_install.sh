@@ -7,6 +7,7 @@ usage() {
   cat <<'TXT'
 CueWire — optional offline voice models.
   bash tools/voice_bench_install.sh --check
+  bash tools/voice_bench_install.sh --resume rnnoise
   bash tools/voice_bench_install.sh --install rnnoise
   bash tools/voice_bench_install.sh --install clearvoice
   bash tools/voice_bench_install.sh --install resemble
@@ -31,6 +32,38 @@ if [[ "$#" == 1 && "$1" == --check ]]; then
     if [[ -x "$file" ]]; then printf 'OK      %s\n' "$file"
     else printf 'ABSENT  %s\n' "$file"; fi
   done
+  exit 0
+fi
+if [[ "$#" == 2 && "$1" == --resume && "$2" == rnnoise ]]; then
+  if [[ ! -d "$root/rnnoise/.git" ]]; then
+    echo 'RNNoise source checkout is missing. Use --install rnnoise first.' >&2
+    exit 1
+  fi
+  for program in wget sha256sum autoreconf make; do
+    command -v "$program" >/dev/null 2>&1 || {
+      echo "Missing tool: $program" >&2
+      exit 1
+    }
+  done
+  (
+    cd "$root/rnnoise"
+    hash=$(cat model_version)
+    [[ "$hash" =~ ^[a-f0-9]{64}$ ]] || { echo 'Invalid model_version hash' >&2; exit 1; }
+    archive="rnnoise_data-$hash.tar.gz"
+    echo "Renewing or resuming $archive (upstream file is ~56 MB)."
+    if [[ ! -f "$archive" ]] || ! printf '%s  %s\n' "$hash" "$archive" | sha256sum -c --status; then
+      wget --continue --timeout=25 --tries=3 \
+        "https://media.xiph.org/rnnoise/models/$archive"
+    fi
+    printf '%s  %s\n' "$hash" "$archive" | sha256sum -c
+    ./download_model.sh
+    autoreconf -isf
+    ./configure
+    make -j2
+    test -x examples/rnnoise_demo
+    sha256sum examples/rnnoise_demo
+  )
+  echo 'RNNoise build completed with an upstream-verified model SHA-256.'
   exit 0
 fi
 if [[ "$#" != 2 || "$1" != --install ]]; then usage; exit 2; fi

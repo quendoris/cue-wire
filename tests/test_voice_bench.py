@@ -145,6 +145,40 @@ sys.exit(17)
         assert not (failrun/"results"/"deepfilter.wav").exists()
         scored=json.loads((failrun/"scores.json").read_text())
         assert [x["name"] for x in scored["results"]]==["identity"]
+        # RNNoise C library adapter: verify ABI, raw 16-bit sample scale,
+        # 480-sample frames and exact output duration WITHOUT downloading
+        # any actual RNNoise model. This is a fake library, NOT a quality test.
+        stub_c=path/"mock_rnnoise.c"
+        stub_so=path/"mock_librnnoise.so"
+        stub_c.write_text("""
+#include <stdlib.h>
+struct TestState { int pad; };
+int rnnoise_get_frame_size(void) { return 480; }
+void *rnnoise_create(void *model) { (void)model; return malloc(sizeof(struct TestState)); }
+void rnnoise_destroy(void *state) { free(state); }
+float rnnoise_process_frame(void *state, float *out, const float *in) {
+  (void)state;
+  for (int i=0;i<480;i++) out[i] = in[i];
+  return 0.5f;
+}
+""")
+        compile_stub=subprocess.run(["cc","-shared","-fPIC","-o",str(stub_so),
+                                    str(stub_c)],capture_output=True,text=True,timeout=20)
+        assert compile_stub.returncode==0, compile_stub.stdout+compile_stub.stderr
+        c_env=os.environ.copy()
+        c_env["CUEWIRE_BENCH_RNNOISE_LIBRARY"]=str(stub_so)
+        libtest=subprocess.run([
+            sys.executable,str(TOOLS/"voice_bench.py"),
+            "--clean",str(clean),"--noisy",str(bad),
+            "--out",str(path/"rnnoise-shared-lib"),
+            "--models","identity,rnnoise_lib","--chains","rnnoise_lib+identity"],
+            capture_output=True,text=True,env=c_env,timeout=60)
+        assert libtest.returncode==0,libtest.stdout+libtest.stderr
+        libdir=path/"rnnoise-shared-lib"
+        lm=json.loads((libdir/"manifest.json").read_text())
+        assert all(j["status"]=="ok" for j in lm["jobs"].values()),lm["jobs"]
+        assert (libdir/"results"/"rnnoise_lib.wav").read_bytes()==(
+            libdir/"results"/"identity.wav").read_bytes()
         # Model cards only, not inference: adapter must expose 3 supported names.
         adapter_help = subprocess.run(
             [sys.executable, str(TOOLS/"voice_bench_clearvoice.py"), "--help"],

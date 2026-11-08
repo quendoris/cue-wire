@@ -35,7 +35,7 @@ if not {"--rate=48000","--channels=1","--format=s16","--channel-map=mono"}.issub
     sys.exit(9)
 with wave.open(args[-1],"wb") as w:
     w.setnchannels(1);w.setsampwidth(2);w.setframerate(48000)
-    w.writeframes(b"\0\0"*(48000*2))
+    w.writeframes(b"\0\0"*int(os.environ.get("TEST_CAPTURE_FRAMES","96000")))
 with open(os.environ["TEST_CAPTURE_PID"],"w") as fp:
     fp.write(str(os.getpid()))
 def done(_signal,_frame):
@@ -88,7 +88,9 @@ def main():
                 if proc.poll() is None:
                     proc.kill();proc.communicate(timeout=4)
             log=json.loads((out/"manifest.json").read_text())
-            assert log["schema"]=="cuewire-M4-raw-capture-v1"
+            assert log["schema"]=="cuewire-M4-raw-capture-v2"
+            assert log["status"]=="recorded_unprocessed_raw"
+            assert log["diagnostics"]["recorder_returncode"]==0
             assert log["mic_node_name"]==mic
             assert log["stop_reason"]=="user_ctrl_c",log
             assert log["measurements"]["frames"]==96000,log
@@ -112,8 +114,40 @@ def main():
             assert invalid.returncode!=0
             assert "Refuse monitor" in invalid.stderr
             assert not (out.parent/"another-M4-mock").exists()
-            print("PASS M4 RAW: exact physical mic, Ctrl+C finalizes WAV, "
-                  "SHA manifest, zero clipping, no overwrite or monitor recording")
+            # Regression: silence or a disconnected mic must preserve its
+            # incomplete WAV and stderr, produce an explicit failure manifest,
+            # and exit before the operator reads the entire long script.
+            shortdir=out.parent/("M4-short-mock-"+str(os.getpid()))
+            env_short=dict(env)
+            env_short["TEST_CAPTURE_FRAMES"]="0"
+            try:
+                short_cmd=[sys.executable,str(CAPTURE),"record","--mic",mic,
+                           "--out",str(shortdir),"--max-seconds","10",
+                           "--startup-check-sec","3"]
+                begin=time.monotonic()
+                short=subprocess.run(short_cmd,env=env_short,capture_output=True,
+                                     text=True,timeout=8)
+                assert short.returncode==3,(short.stdout,short.stderr)
+                assert time.monotonic()-begin<7
+                assert "no_audio_bytes_after_startup" in short.stderr
+                report=json.loads((shortdir/"manifest.json").read_text())
+                assert report["schema"]=="cuewire-M4-raw-capture-v2"
+                assert report["status"]=="rejected_incomplete_capture"
+                assert report["measurements"]["frames"]==0
+                assert report["wav_sha256"]
+                assert report["diagnostics"]["recorded_file_bytes"]>0
+                assert (shortdir/"raw.wav").exists()
+                assert (shortdir/"pw-record.stderr.log").exists()
+                # Repeating the failed path still MUST refuse overwrite.
+                repeated=subprocess.run(short_cmd,env=env_short,capture_output=True,
+                                        text=True,timeout=4)
+                assert repeated.returncode!=0
+                assert "Refusing to overwrite" in repeated.stderr
+            finally:
+                if shortdir.exists():
+                    shutil.rmtree(shortdir)
+            print("PASS M4 RAW: Ctrl+C WAV, SHA, zero clipping, immutable takes, "
+                  "empty-input early failure with diagnostics and no source switch")
         finally:
             if out.exists():
                 shutil.rmtree(out)

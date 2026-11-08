@@ -210,6 +210,28 @@ def watch_paired_streams(record, play, mic_file: Path, out: Path,
 
 
 
+def validate_completed_microphone(mic_file: Path, expected_seconds: int,
+                                  recorder_log_path: Path) -> dict:
+    """Only a finalized recording can prove capture success."""
+    if not mic_file.is_file():
+        raise RuntimeError("Recorder produced no WAV; " +
+                           recorder_log_path.name + ": " +
+                           log_excerpt(recorder_log_path))
+    finalized = verify_wav(mic_file)
+    if finalized["duration_s"] < expected_seconds - 1:
+        raise RuntimeError(
+            "Finalized microphone WAV is too short: " +
+            str(finalized["duration_s"]) + "s (requested " +
+            str(expected_seconds) + "s); capture rejected. " +
+            recorder_log_path.name + ": " + log_excerpt(recorder_log_path))
+    if finalized["rms_dbfs"] is None or finalized["rms_dbfs"] < -85:
+        raise RuntimeError(
+            "Finalized microphone WAV is effectively silent (RMS " +
+            str(finalized["rms_dbfs"]) + " dBFS); no valid acoustic calibration")
+    return {"wav": mic_file.name, "sha256": sha256(mic_file),
+            "measurements": finalized}
+
+
 def experiment(args) -> None:
     if not sys.platform.startswith("linux"):
         raise RuntimeError("Linux only (parent-death signal required)")
@@ -285,23 +307,8 @@ def experiment(args) -> None:
         time.sleep(0.5)
         terminate_group(record)
         report["recorder_returncode_after_stop"] = record.returncode
-        if not mic_file.is_file():
-            raise RuntimeError("Recorder produced no WAV; " + recorder_log + ": " +
-                               log_excerpt(out / recorder_log))
-        finalized = verify_wav(mic_file)
-        report["microphone"] = {"wav": mic_file.name,
-                                "sha256": sha256(mic_file),
-                                "measurements": finalized}
-        if finalized["duration_s"] < args.seconds - 1:
-            raise RuntimeError(
-                "Finalized microphone WAV is too short: " +
-                str(finalized["duration_s"]) + "s (requested " +
-                str(args.seconds) + "s); capture rejected. " +
-                recorder_log + ": " + log_excerpt(out / recorder_log))
-        if finalized["rms_dbfs"] < -85:
-            raise RuntimeError(
-                "Finalized microphone WAV is effectively silent (RMS " +
-                str(finalized["rms_dbfs"]) + " dBFS); no valid acoustic calibration")
+        report["microphone"] = validate_completed_microphone(
+            mic_file, args.seconds, out / recorder_log)
         if sha256(ref) != report["reference"]["sha256"]:
             raise RuntimeError("Digital reference changed")
         report["status"] = "captured_for_offline_aec"

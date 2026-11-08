@@ -24,6 +24,7 @@ import voice_m5_model_probe as model_probe
 import voice_m5_noise_probe as noise_probe
 import voice_m5_aba as aba
 import voice_m5_aba_spectrum as aba_spectrum
+import voice_m5_refcoherence as refcoherence
 
 RATE = aec.RATE
 
@@ -430,6 +431,30 @@ class M5Tests(unittest.TestCase):
             0 <= row["fraction_of_off_total_power"] <= 1
             for row in observed["bands"]))
         self.assertEqual(len(observed["top_quarter_second_transients"]), 8)
+
+    def test_reference_coherence_lag_and_negative_control_synthetic(self):
+        """Band-lag identifies real delayed reference despite independent 50Hz hum."""
+        rng = np.random.default_rng(401)
+        x = rng.normal(0, .03, 8 * RATE)
+        mic = rng.normal(0, .0008, 14 * RATE)
+        # Time-invariant coupling: source starts after 2s software lead-in,
+        # additional 85ms acoustic/digital latency.
+        lag_samples = round((2.0 + .085) * RATE)
+        mic[lag_samples:lag_samples + len(x)] += .13 * x
+        t = np.arange(len(mic)) / RATE
+        mic += .002 * np.sin(2 * np.pi * 50 * t)
+        lag, info = refcoherence.band_lag(x, mic, 2.0)
+        self.assertLess(abs(lag - lag_samples), 5)
+        self.assertGreater(info["peak_highmid_normalized_correlation"], .25)
+        ons = refcoherence.coherence_by_bands(
+            x[3*RATE:7*RATE], mic[lag + 3*RATE:lag + 7*RATE])
+        offs = refcoherence.coherence_by_bands(
+            x[3*RATE:7*RATE], mic[:4*RATE])
+        on = next(c for c in ons if c["band_hz"] == [1500, 4000])
+        off = next(c for c in offs if c["band_hz"] == [1500, 4000])
+        self.assertGreater(on["mic_power_weighted_coherence"], .75)
+        self.assertLess(off["mic_power_weighted_coherence"], .3)
+        self.assertEqual(len(ons), len(refcoherence.BANDS))
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

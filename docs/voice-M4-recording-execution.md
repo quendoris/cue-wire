@@ -218,3 +218,54 @@ WAV is not by itself proof of microphone signal quality.
 Next: derive a fresh R1 using frozen DeepFilterNet -> DPDFNet2 Soft
 (12dB limit). Never run denoising over R0 in place. AEC remains
 outside this phase in the separate M5 plan.
+
+
+## M4 listening level calibration (R0 original is immutable)
+
+The operator confirmed that the ALSA-captured R0 plays successfully
+but sounds too quiet. A quiet audio file and a quiet output sink are
+separate causes. First inspect manifest.json peak_dbfs / rms_dbfs
+and the read-only current output volume:
+
+    wpctl get-volume @DEFAULT_AUDIO_SINK@
+
+Do not raise the physical microphone gain or system playback volume
+before reading those measurements. The original M4-R0-ALSA-007/raw.wav
+and its SHA-256 remain unchanged.
+
+A new offline, standard-library-only helper creates a fixed-gain
+LISTENING DERIVATIVE, capped by -3 dBFS sample peaks and by +24 dB
+maximum gain (default). There is no compression, limiter, denoising,
+AEC, speaker playback, system audio configuration change or upload.
+
+    cd /data/cue-wire
+    git pull --ff-only
+    python3 tools/voice_listen_gain.py \
+      --in .audit/voice-captures/M4-R0-ALSA-007/raw.wav \
+      --out .audit/voice-captures/M4-R0-ALSA-007/listen-gain-v1.wav \
+      --target-rms-dbfs -23 \
+      --peak-ceiling-dbfs -3 \
+      --max-gain-db 24
+
+Listen only when capture is finished:
+
+    pw-play .audit/voice-captures/M4-R0-ALSA-007/listen-gain-v1.wav
+
+The helper prints before/after whole-file RMS and sample peaks, chosen
+gain and whether the peak ceiling constrains the desired boost;
+it writes listen-gain-v1.json with source/output SHA-256 checksums.
+The output path must be a new WAV under private .audit/; never
+overwrite R0 or any earlier listening derivative.
+
+Whole-file RMS includes intentional silence and is NOT a LUFS
+or speech-only measure. Strong plosives/peaks can limit the fixed
+gain while most words remain quiet; this indicates a need for a
+separately evaluated expander/compressor/automation later, not an
+excuse to clip the reference. A gain-only version also amplifies
+background noise. The listening copy is NOT a replacement for M1
+(DeepFilterNet -> DPDFNet2 Soft), nor a studio-quality output.
+
+Once listening is comfortable, inspect M4 movements for level
+consistency. Make R1 from the untouched R0 and compare at matched
+playback levels. Do not reuse the blind-audition 4.724 multiplier
+without reference-specific peak headroom checks.

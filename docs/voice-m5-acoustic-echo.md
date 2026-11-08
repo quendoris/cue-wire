@@ -70,6 +70,68 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-005: avoid false rejection from in-progress WAV buffering
+
+M5-004 selected the correct physical PipeWire microphone and launched
+music through the intended speaker. It stopped at one second with
+`Microphone has not written PCM after 1 second`. The `pw-record.log`
+tail did not report a process error: it showed only command arguments.
+
+That observation does **not** distinguish a genuinely inactive input
+from delayed/ buffered WAV writes. The one-second file-size gate was
+premature and has been removed. The new protocol:
+
+1. Launch microphone recorder and speaker back-to-back (same as M5-004).
+2. While both processes run, watch for actual recorder **process exit**;
+   any early exit aborts and stops playback. File size is advisory only.
+3. Prompt for the local speech sample after five seconds of playback
+   even if the live WAV has not visibly grown yet.
+4. Stop the recorder gracefully at the end, allow WAV header finalization,
+   then verify **48-kHz mono PCM16**, at least requested duration minus
+   one second, non-negligible actual RMS (above -85 dBFS), and SHA256.
+5. If the resulting file is absent, too short, effectively silent or
+   corrupted, reject the entire experiment. No AEC model is trained.
+
+This is **not** proof that the USB device is healthy: the final WAV
+measurement decides. M5-001..M5-004 remain failed archives.
+
+Before repeating, inspect whether M5-004 even produced a file:
+
+~~~bash
+cd /data/cue-wire
+ls -lh .audit/voice-aec/M5-004/microphone-raw.wav
+tail -n 20 .audit/voice-aec/M5-004/pw-record.log
+~~~
+
+Either command may legitimately report a missing file.
+
+### Full retry with the verified physical mic (new M5-005)
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover -s tests -p 'test_voice_m5_aec.py' -v
+
+python3 tools/voice_m5_capture.py \
+  --music '/data/oae-research/ACDC_-_Thunderstruck_(Official_Video).wav' \
+  --speaker 'alsa_output.pci-0000_00_1f.3.analog-stereo' \
+  --capture-backend pipewire \
+  --source 'alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback' \
+  --seconds 20 --calibration-seconds 5 --volume 0.30 \
+  --out .audit/voice-aec/M5-005
+~~~
+
+After a successful recording:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aec.py \
+  --capture .audit/voice-aec/M5-005 \
+  --out .audit/voice-aec/M5-analysis-005
+~~~
+
+This produces a *candidate* only after the held-out acoustic calibration
+passes; the user's near-end voice still requires listening review.
+
 ## M5-004: direct ALSA read error and explicit PipeWire backend
 
 The first real M5 attempts did **not** produce a valid paired recording:

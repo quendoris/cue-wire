@@ -112,7 +112,21 @@ def score(ref, candidate):
             max(float(np.dot(target, target)), 1e-18) /
             max(float(np.dot(residue, residue)), 1e-18)
         )
+    tail=min(n,round(0.30*RATE))
+    tail_ref=a[-tail:]
+    tail_out=b[-tail:]
+    aa=float(np.dot(tail_ref,tail_ref))
+    bb=float(np.dot(tail_out,tail_out))
+    if aa>1e-14 and bb>1e-14:
+        tail_corr=abs(float(np.dot(tail_ref,tail_out))) / math.sqrt(aa*bb)
+        tail_corr=round(tail_corr,6)
+    else:
+        tail_corr=None
     return {
+        "duration_difference_ms":round(1000.0*(len(candidate)-len(ref))/RATE,3),
+        "last_300ms_rms_dbfs":round(db(rms(tail_out)),4),
+        "last_300ms_clean_rms_dbfs":round(db(rms(tail_ref)),4),
+        "last_300ms_aligned_correlation_abs":tail_corr,
         "lag_samples": lag, "aligned_correlation_abs": round(corr, 6),
         "reference_coverage": round(fraction, 6),
         "si_sdr_db": round(si_sdr, 4) if si_sdr is not None else None,
@@ -163,7 +177,9 @@ def collect(root):
     (root / "scores.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     fields = ["name", "si_sdr_db", "delta_si_sdr_db", "aligned_correlation_abs",
               "reference_coverage", "lag_samples", "rms_dbfs", "sample_peak_dbfs",
-              "clipped_samples", "duration_s", "eligible_for_reference_ranking"]
+              "clipped_samples", "duration_s", "duration_difference_ms",
+              "last_300ms_aligned_correlation_abs", "last_300ms_rms_dbfs",
+              "last_300ms_clean_rms_dbfs", "eligible_for_reference_ranking"]
     with (root / "scores.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()

@@ -195,6 +195,59 @@ float rnnoise_process_frame(void *state, float *out, const float *in) {
         assert all(j["status"]=="ok" for j in lm["jobs"].values()),lm["jobs"]
         assert (libdir/"results"/"rnnoise_lib.wav").read_bytes()==(
             libdir/"results"/"identity.wav").read_bytes()
+        # An external STFT-like model can trim its final 30 ms.
+        # Reflection context must allow a lossless recovery of exactly
+        # the original input interval, never repeat, zero-pad or fabricate
+        # the missing edge. This mock cuts 1440 frames at the END.
+        trim_model=path/"mock-trim-last-30ms"
+        trim_model.write_text("""#!/usr/bin/env python3
+import sys,wave
+from pathlib import Path
+args=sys.argv[1:]
+source=args[-1]
+directory=Path(args[args.index("-o")+1])
+directory.mkdir(parents=True,exist_ok=True)
+with wave.open(source,"rb") as reader:
+    n=reader.getnframes()
+    assert n>5000
+    frames=reader.readframes(n)
+with wave.open(str(directory/"trimmed.wav"),"wb") as writer:
+    writer.setnchannels(1);writer.setsampwidth(2);writer.setframerate(48000)
+    writer.writeframes(frames[:-1440*2])
+""")
+        trim_model.chmod(0o755)
+        trim_env=os.environ.copy()
+        trim_env["CUEWIRE_BENCH_DEEPFILTER"]=str(trim_model)
+        pad_run=path/"pad-test"
+        padded=subprocess.run([
+            sys.executable,str(TOOLS/"voice_bench.py"),
+            "--clean",str(clean),"--noisy",str(bad),"--out",str(pad_run),
+            "--models","identity,deepfilter",
+            "--chains","deepfilter+deepfilter",
+            "--context-pad-ms","250"],
+            capture_output=True,text=True,timeout=90,env=trim_env)
+        assert padded.returncode==0,padded.stdout+padded.stderr
+        padded_manifest=json.loads((pad_run/"manifest.json").read_text())
+        assert padded_manifest["context_pad_ms"]==250
+        for name in ("deepfilter","deepfilter__deepfilter"):
+            info=padded_manifest["jobs"][name]
+            assert info["status"]=="ok",info
+            assert info["output_frames"]==len(signal),info
+            assert len(info["stage_details"]) == (2 if "__" in name else 1)
+            assert all(stage["cropped_frames"]==len(signal)
+                       for stage in info["stage_details"])
+            with wave.open(str(pad_run/"results"/(name+".wav")),"rb") as f:
+                assert f.getnframes()==len(signal)
+        # With NO context, the same model clips 30ms at the end.
+        unpad_run=path/"no-pad-test"
+        unpadded=subprocess.run([
+            sys.executable,str(TOOLS/"voice_bench.py"),
+            "--clean",str(clean),"--noisy",str(bad),"--out",str(unpad_run),
+            "--models","deepfilter","--chains",""],
+            capture_output=True,text=True,timeout=70,env=trim_env)
+        assert unpadded.returncode==0,unpadded.stdout+unpadded.stderr
+        nop=json.loads((unpad_run/"manifest.json").read_text())
+        assert nop["jobs"]["deepfilter"]["output_frames"]==len(signal)-1440
         # Model cards only, not inference: adapter must expose 3 supported names.
         adapter_help = subprocess.run(
             [sys.executable, str(TOOLS/"voice_bench_clearvoice.py"), "--help"],

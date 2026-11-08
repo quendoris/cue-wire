@@ -247,3 +247,52 @@ Do not assign any audio commands until the real key event log
 demonstrates reliable press AND release events, correct physical
 key mapping and simultaneous key handling. Then define a distinct
 action mapping with versioned profiles and audit logs.
+
+## H2 field audit — first real NumPad trace, FAIL for gesture reliability
+
+The operator ran the hyprlang backend and privately supplied H2-002.jsonl.
+The raw user log is NOT committed to the public repository. A separate
+read-only diagnostic was added:
+
+    python3 tools/cuewire_keypad_audit.py .audit/keypad/H2-002.jsonl
+
+Reproducible aggregate observations (2026-11-08):
+
+- 181 valid JSONL records over 24.562 seconds; all 16 physical keypad
+  identifiers occurred in actual raw down events.
+- 54 raw down, 37 raw up; 11 down events were repeats while an earlier
+  down was still considered active. Of 43 unique presses, 37 had
+  matching release events. Six remained in a pressed state at Ctrl+C.
+- The final six unresolved keys were DOT, K0, K3, K6, SLASH and STAR.
+- Six accepted single gestures, **zero double**, **zero hold**;
+  35 chord_start and 35 chord_end events.
+- **28 of 35** chord_start events included at least one key that
+  was already held for over 2 seconds in the received event stream.
+  These chords are flagged as ambiguous, NOT proven physically false.
+- K3 received down at 9153 ms and no corresponding raw up before
+  terminal shutdown at 24562 ms. Had it actually been released
+  earlier, this would explain the subsequent enormous artificial chords.
+- Several matching pairs of short presses for the same button occurred
+  73–114 ms apart (e.g. K7/K8/K9); the gesture layer did not classify
+  them as double taps because it believed an earlier key remained held.
+
+**Current acceptance: FAIL.** Physical key identification and datagram
+transport work, but reliable release/cross-key chord correctness are
+NOT established. Never attach audio, scripts, Super+C or other real
+actions to these untrusted gesture events.
+
+Investigate two competing explanations: (a) the user really held the
+keys through these intervals, or (b) the compositor/bindr/one-shot
+bridge missed release events. The log alone cannot decide which.
+The backend receives only dispatched bind events, not kernel events.
+
+Next controlled experiment: with a fresh log, test K1 single press
+and release 5 times, K1 double 3 times, one K1 1-second hold, then
+K1+K2 chord with explicit release of BOTH buttons. Do not press other
+keys during the test. Independently cross-check release delivery
+on the selected physical keyboard if a mismatch remains.
+
+External Hyprland release-bind regressions have also been reported
+(not proof that this same issue affected the current session):
+https://github.com/hyprwm/Hyprland/discussions/16275
+https://github.com/hyprwm/Hyprland/discussions/16878

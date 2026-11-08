@@ -31,6 +31,7 @@ jobs:
         run: |
           cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-voice-preview --seconds 3
           python3 tests/audit_voice_preview.py /tmp/cuewire-voice-preview
+          python3 tests/voice_quality.py /tmp/cuewire-voice-preview
           cp /tmp/cuewire-voice-preview/voice_after.wav /tmp/cuewire-voice-first.wav
           cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-voice-preview --seconds 3
           cmp /tmp/cuewire-voice-first.wav /tmp/cuewire-voice-preview/voice_after.wav

@@ -54,7 +54,7 @@ Parameters are per-file and do not create ongoing profiles.
 - Adaptive high-pass: a conservative 75/105 Hz heuristic; override with
   --highpass-hz 80. Not a fixed resonance remover.
 - Noise PSD: estimate from the quietest nonzero STFT frames selected by
-  --profile-fraction (default 0.18). Spectral reduction --strength 1.7,
+  --profile-fraction (default 0.18). Spectral power subtraction --strength 1.7,
   floor 0.12, smoothed across bins and frames.
 - Silence expander: only enabled if an estimated contrast exists; default
   quiet-section attenuation 14 dB and a threshold 7 dB above noise floor.
@@ -93,7 +93,7 @@ material can seem subjectively better).
 - Metrics are RMS dBFS and sample peak, NOT EBU R128/ITU-R BS.1770 LUFS,
   true-peak level, perceptual intelligibility, MOS or guaranteed separation.
   Loudness- and content-matched A/B tests with human voices are still required.
-- Musical instruments overlap speech in time and frequency. Wiener-style
+- Musical instruments overlap speech in time and frequency. Spectral
   noise suppression CANNOT reliably separate a vocal from dense rock
   guitars; once phonemes are clipped, masked or lost they may be unrecoverable
   without a speech/music source-separation ML stage, and even then not

@@ -14,7 +14,7 @@ const BINS: usize = FFT / 2 + 1;
 pub struct VoiceConfig {
     /// None = select 75 or 105 Hz from the input's low-frequency spectrum.
     pub highpass_hz: Option<f32>,
-    /// Noise PSD multiplier in Wiener-style filtering.
+    /// Noise PSD multiplier in power-spectrum subtraction.
     pub noise_strength: f32,
     /// Gain floor prevents full subtraction / musical-noise holes.
     pub spectral_floor: f32,
@@ -194,7 +194,8 @@ fn stft_denoise(
         for k in 0..BINS {
             let power = complex[k].power();
             // Smooth spectral subtraction / Wiener-like power mask.
-            let ratio = power / (power + f64::from(strength) * noise_psd[k] + 1e-20);
+            let residual = (power - f64::from(strength) * noise_psd[k]).max(0.0);
+            let ratio = residual / (power + 1e-20);
             target_gains[k] = ratio.sqrt().max(f64::from(floor));
         }
         // Neighbour averaging avoids narrow, chattering frequency holes.

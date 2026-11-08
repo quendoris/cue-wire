@@ -90,6 +90,58 @@ def correlation_windows(x: np.ndarray, y: np.ndarray, peak_lag: int) -> list[dic
     return records
 
 
+def band_lag_windows(x: np.ndarray, y: np.ndarray,
+                     lag: int) -> list[dict]:
+    """Compare ambiguous correlations after zero-phase *offline* band filtering.
+
+    This is a diagnostics-only experiment. Filter both x and y identically
+    to avoid introducing a relative phase delay. All measurements use only
+    the original speaker-only calibration windows. Do not use a selected
+    band-dependent lag to generate a voice-subtraction candidate.
+    """
+    diagnostic_bands = ((70, 180), (180, 500), (500, 1500),
+                        (1500, 4000), (4000, 8000))
+    results = []
+    for low, high in diagnostic_bands:
+        sos = signal.butter(4, [low, high], btype="bandpass",
+                            fs=RATE, output="sos")
+        reference = signal.sosfiltfilt(sos, x)
+        microphone = signal.sosfiltfilt(sos, y)
+        a = round(0.3 * RATE)
+        b = round(4.3 * RATE)
+        ref_rms = rms(reference[a:b])
+        mic_rms = rms(microphone[a+lag:b+lag])
+        item = {
+            "band_hz": [low, high],
+            "reference_band_rms_dbfs": round(db(ref_rms), 5),
+            "microphone_band_rms_dbfs": round(db(mic_rms), 5),
+            "filter": "fourth_order_butterworth_zero_phase_sosfiltfilt",
+            "interpretation": "exploratory only, not an AEC timing estimate"
+        }
+        # Low-level band-only correlation peaks can be dominated by
+        # numerical noise or unexcited frequencies.
+        if ref_rms < 10**(-75/20) or mic_rms < 10**(-90/20):
+            item["status"] = "insufficient_band_energy"
+        else:
+            try:
+                local = correlation_windows(reference, microphone, lag)
+            except ValueError as exc:
+                item["status"] = "unreliable_window"
+                item["reason"] = str(exc)
+            else:
+                item["status"] = "measured_not_validated"
+                item["local_windows"] = [{
+                    "reference_interval_s": entry["reference_interval_s"],
+                    "best_lag_ms": entry["estimated_local_lag_ms"],
+                    "best_peak_score": entry["normalized_correlation"],
+                    "global_lag_score": entry["correlation_at_global_lag"],
+                    "best_to_second_peak_ratio":
+                        entry["best_to_second_separated_peak_ratio"],
+                } for entry in local]
+        results.append(item)
+    return results
+
+
 def spectrum_summary(x: np.ndarray, y: np.ndarray, lag: int) -> dict:
     """Magnitude-squared coherence over only first 4.35 s, already lag-aligned."""
     a = round(SPAN_SEC[0] * RATE)
@@ -159,12 +211,13 @@ def analyze(capture_dir: Path, target_dir: Path) -> dict:
     lag, corr = lag_estimate(x, y, capture["speaker_only_calibration_s"])
     local = correlation_windows(x, y, lag)
     coherence = spectrum_summary(x, y, lag)
+    band_lag = band_lag_windows(x, y, lag)
     if (source_hashes["reference"] != digest(reference_path) or
             source_hashes["microphone"] != digest(mic_path) or
             source_hashes["capture_manifest"] != digest(manifest_path)):
         raise RuntimeError("Source changed during analysis")
     output = {
-        "schema": "cuewire-M5-spectral-diagnostics-v2",
+        "schema": "cuewire-M5-spectral-diagnostics-v3",
         "status": "diagnostic_only_not_aec_accepted",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "sources": source_hashes,
@@ -172,11 +225,13 @@ def analyze(capture_dir: Path, target_dir: Path) -> dict:
         "global_peak_correlation": round(corr, 6),
         "local_lag_windows": local,
         "spectrum": coherence,
+        "frequency_selected_lag_diagnostics": band_lag,
         "caveats": [
             "Magnitude-squared coherence is not ERLE and does not measure voice preservation.",
             "Coherence can be biased in short records, and low energy bands are unreliable.",
             "Local lag estimates on musical audio may jump from periodicity, reflections or noise.",
             "Alternative peaks are exploratory and are not independent model-validation evidence.",
+            "Band-limited lag estimates may also pick harmonics and do not measure AEC quality.",
             "Only the speaker-only calibration segment is used, never the user's voice.",
             "No WAVs created, no model threshold lowered, no source files changed."
         ]
@@ -201,6 +256,14 @@ def analyze(capture_dir: Path, target_dir: Path) -> dict:
         print("Band", entry["band_hz"], "coherence median",
               entry["median_magnitude_squared_coherence"],
               "reference-weighted", entry["reference_energy_weighted_coherence"])
+    for band in band_lag:
+        if band["status"] == "measured_not_validated":
+            print("Band-lag", band["band_hz"], "ms",
+                  [w["best_lag_ms"] for w in band["local_windows"]],
+                  "global_scores",
+                  [w["global_lag_score"] for w in band["local_windows"]])
+        else:
+            print("Band-lag", band["band_hz"], band["status"])
     print("Report:", out / "spectral.json")
     return output
 

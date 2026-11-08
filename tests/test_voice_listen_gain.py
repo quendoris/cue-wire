@@ -76,6 +76,17 @@ def main():
         assert rp["output_measurements"]["peak_dbfs"]<=-2.999
         assert rp["output_measurements"]["clipped_samples"]==0
 
+        # PCM16 quantization regression: when ceiling is at -1 dBFS,
+        # floating point gain exactly on the threshold could round up
+        # by 1 LSB and produce the user's previous RuntimeError.
+        one_db=root/"spiky-ceiling-minus1.wav"
+        rminus1=run("--in",spiky,"--out",one_db,
+                    "--peak-ceiling-dbfs",-1)
+        assert rminus1.returncode==0,(rminus1.stdout,rminus1.stderr)
+        minus1=json.loads(one_db.with_suffix(".json").read_text())
+        assert minus1["output_measurements"]["peak_dbfs"]<=-1
+        assert minus1["output_measurements"]["clipped_samples"]==0
+
         # Digital silence must not be amplified into an audition.
         zero=root/"silent.wav"
         write_wav(zero,[0]*4800)

@@ -175,7 +175,7 @@ def listen_dgram(engine,server,owner,open_log):
             engine.input(key,phase,int((time.monotonic()-started)*1000))
 
 
-def begin_session(logfile,long_ms,double_ms,game=False,device=None,transparent=False):
+def begin_session(logfile,long_ms,double_ms,game=False,device=None,transparent=False,chord_ms=core.CHORD_MS):
     if device:
         raise RuntimeError(
             "--device is NOT supported with hyprlang legacy binds. "
@@ -219,7 +219,7 @@ def begin_session(logfile,long_ms,double_ms,game=False,device=None,transparent=F
                                 separators=(",",":"))
                 print(line,flush=True)
                 if fp:fp.write(line+"\n");fp.flush()
-            engine=core.Gestures(emit,long_ms,double_ms)
+            engine=core.Gestures(emit,long_ms,double_ms,chord_ms)
             old_handler=__import__("signal").signal(
                 __import__("signal").SIGTERM,
                 lambda _s,_f: (_ for _ in ()).throw(KeyboardInterrupt()))
@@ -269,6 +269,7 @@ def main():
     p.add_argument("--log-jsonl",type=Path)
     p.add_argument("--long-ms",type=int,default=core.LONG_MS)
     p.add_argument("--double-ms",type=int,default=core.DOUBLE_MS)
+    p.add_argument("--chord-ms",type=int,default=core.CHORD_MS)
     p.add_argument("--game",action="store_true")
     p.add_argument("--transparent",action="store_true",
                    help="EXPERIMENTAL transparent press+release binds to probe key shadowing")
@@ -278,7 +279,8 @@ def main():
         restore()
     else:
         begin_session(args.log_jsonl,args.long_ms,args.double_ms,
-                      game=args.game,device=args.device,transparent=args.transparent)
+                      game=args.game,device=args.device,transparent=args.transparent,
+                      chord_ms=args.chord_ms)
 
 
 if __name__=="__main__":

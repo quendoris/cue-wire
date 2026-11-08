@@ -70,6 +70,57 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-005 actual-hardware outcome: zero microphone frames
+
+The user confirmed that the speaker music completed all ~20 seconds,
+the five-second speech prompt appeared, and the PipeWire mic recorder
+survived through playback. However, the finalized microphone WAV
+contained **0.0 seconds** of audio. This was a correctly rejected
+capture; no valid real-world AEC measurement or candidate was made.
+Successful AEC ERLE scores earlier in the terminal were synthetic only.
+
+**Do not retry complete music-plus-voice takes until a mic-only
+recording proves that the explicit physical source produces samples.**
+Do not loosen the final zero-length WAV check. Investigate the source
+link and USB audio path independently:
+
+~~~bash
+cd /data/cue-wire
+pw-record --list-targets
+pw-record --verbose \
+  --target='alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback' \
+  --rate=48000 --channels=1 --channel-map=mono --format=s16 \
+  .audit/voice-aec/mic-isolated-001.wav
+~~~
+
+In this foreground diagnostic, speak for 5 seconds and press Ctrl+C.
+In a second terminal during capture, run:
+
+~~~bash
+pactl list short sources
+pw-link -l
+~~~
+
+Determine whether the actual mic node changes from SUSPENDED to RUNNING
+and whether the capture stream is linked to its output port. Check the
+new file **after** recording has stopped and the WAV has finalized:
+
+~~~bash
+python3 - <<'PY'
+from pathlib import Path
+import wave
+p = Path('.audit/voice-aec/mic-isolated-001.wav')
+print('bytes:', p.stat().st_size)
+with wave.open(str(p), 'rb') as w:
+    print('rate:', w.getframerate(), 'channels:', w.getnchannels(),
+          'frames:', w.getnframes(), 'seconds:', w.getnframes()/w.getframerate())
+PY
+~~~
+
+If this mic-only WAV also has zero frames, diagnose USB/ALSA/PipeWire
+ports before any more M5 paired takes. A zero-length WAV cannot be
+fixed by AEC, denoising, timing or loosening acceptance conditions.
+
 ## M5-005: avoid false rejection from in-progress WAV buffering
 
 M5-004 selected the correct physical PipeWire microphone and launched

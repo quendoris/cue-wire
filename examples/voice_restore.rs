@@ -101,10 +101,13 @@ fn parse() -> Result<(Option<PathBuf>,PathBuf,VoiceConfig,u32),String> {
     let mut args=env::args().skip(1);
     while let Some(flag)=args.next() {
         if flag=="--help" {
-            println!("cargo run --example voice_restore -- [--input dirty.wav] [--out DIR] [--seconds 2..20] [--strength 0..6] [--highpass-hz 45..250] [--target-dbfs -50..-12] [--max-boost-db 0..18] [--bed-dbfs -100..-60 | --bed-off] [--seed U32] [--profile-fraction 0.05..0.4] [--expander-db 0..36] [--no-highpass] [--no-denoise] [--no-expander] [--no-leveler]");
+            println!("cargo run --example voice_restore -- [--input dirty.wav] [--out DIR] [--seconds 2..20] [--strength 0..6] [--highpass-hz 45..250] [--target-dbfs -50..-12] [--max-boost-db 0..18] [--bed-dbfs -100..-60 | --bed-off] [--seed U32] [--profile-fraction 0.05..0.4] [--expander-db 0..36] [--spectral-floor 0.02..1.0] [--highpass-on] [--expander-on] [--leveler-on] [--no-highpass] [--no-denoise] [--no-expander] [--no-leveler]");
             println!("Without --input, an original VOICE-LIKE synthesizer fixture is generated, not intelligible speech.");
             return Err(String::new());
         }
+        if flag=="--highpass-on" { cfg.enable_highpass=true; continue; }
+        if flag=="--expander-on" { cfg.enable_expander=true; continue; }
+        if flag=="--leveler-on" { cfg.enable_leveler=true; continue; }
         if flag=="--no-highpass" { cfg.enable_highpass=false; continue; }
         if flag=="--no-denoise" { cfg.enable_denoise=false; continue; }
         if flag=="--no-expander" { cfg.enable_expander=false; continue; }
@@ -119,6 +122,7 @@ fn parse() -> Result<(Option<PathBuf>,PathBuf,VoiceConfig,u32),String> {
             "--out" => out=PathBuf::from(value),
             "--seconds" => seconds=value.parse().map_err(|_|"bad seconds")?,
             "--strength" => cfg.noise_strength=value.parse().map_err(|_|"bad strength")?,
+            "--spectral-floor" => cfg.spectral_floor=value.parse().map_err(|_|"bad spectral floor")?,
             "--highpass-hz" => cfg.highpass_hz=Some(value.parse().map_err(|_|"bad highpass")?),
             "--target-dbfs" => cfg.target_dbfs=value.parse().map_err(|_|"bad target")?,
             "--max-boost-db" => cfg.max_boost_db=value.parse().map_err(|_|"bad boost")?,
@@ -173,6 +177,8 @@ fn run()->Result<(),String> {
             "  \"sample_rate\": 48000,\n",
             "  \"frames\": {},\n",
             "  \"strength\": {},\n",
+            "  \"spectral_floor\": {},\n",
+            "  \"expander_threshold_above_floor_db\": {},\n",
             "  \"enable_highpass\": {},\n",
             "  \"enable_denoise\": {},\n",
             "  \"enable_expander\": {},\n",
@@ -202,7 +208,7 @@ fn run()->Result<(),String> {
         ),
         if demo {"synthetic-voice-like-noise"} else {"external-wav"},
         input_sha,output_sha,reference_sha,!demo,input.len(),
-        cfg.noise_strength,cfg.enable_highpass,cfg.enable_denoise,cfg.enable_expander,cfg.enable_leveler,cfg.profile_fraction,report.highpass_hz,cfg.highpass_hz.is_none(),
+        cfg.noise_strength,cfg.spectral_floor,cfg.expander_threshold_above_floor_db,cfg.enable_highpass,cfg.enable_denoise,cfg.enable_expander,cfg.enable_leveler,cfg.profile_fraction,report.highpass_hz,cfg.highpass_hz.is_none(),
         cfg.target_dbfs,cfg.expander_attenuation_db,cfg.max_boost_db,
         cfg.noise_bed_dbfs.map(|v|v.to_string()).unwrap_or_else(||"null".into()),
         cfg.noise_seed,cfg.ceiling_dbfs,report.analyzed_frames,report.noise_profile_frames,
@@ -215,7 +221,7 @@ fn run()->Result<(),String> {
     println!("WAV generated in {}",out.display());
     println!("input {:.2} dBFS RMS -> output {:.2} dBFS RMS, sample peak {:.2} dBFS",
         report.input_rms_dbfs,report.output_rms_dbfs,report.output_peak_dbfs);
-    println!("auto highpass {:.0} Hz, noise frames {}/{}, quiet-floor estimate {:.2} dBFS -> {:.2} dBFS",
+    println!("highpass {:.0} Hz, noise frames {}/{}, quiet-floor estimate {:.2} dBFS -> {:.2} dBFS",
         report.highpass_hz,report.noise_profile_frames,report.analyzed_frames,
         report.input_quiet_rms_dbfs,report.post_filter_quiet_rms_dbfs);
     println!("gate {}, peak-safety gain {:.2} dB; report.json includes SHA-256",

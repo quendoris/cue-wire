@@ -142,3 +142,33 @@ also show that leveling imposes a measurable waveform-distortion tradeoff.
 The default acceptance gate checks that the deterministic test both
 reduces quiet noise and improves its SDR, whereas detailed strength/stage
 sweeps run only during manual GitHub Actions workflow_dispatch.
+
+## Voice-preserving defaults (revised after A/B feedback)
+
+The earlier default chain was tuned against a deliberately synthetic fixture.
+On a 3-second user-provided A/B sample it audibly created a metallic
+sound; subjective listening is the acceptance gate for real human speech.
+
+The default is now a GENTLE denoiser: strength 1.0, gain floor 0.42
+(max per-bin attenuation about 7.5 dB), five-bin frequency smoothing,
+slow reduction / fast release of the spectral mask. HPF, expander and RMS
+leveler are OFF by default because they can remove low fundamentals,
+quiet consonants or introduce audible gain pumping. Noise bed is
+-90 dBFS (near quantization noise); --bed-off removes it entirely.
+All settings can be restored manually:
+
+    cargo run --locked --offline --example voice_restore -- \
+      --input recording.wav --out voice-gentle --bed-off
+
+    cargo run --locked --offline --example voice_restore -- \
+      --input recording.wav --out voice-more-reduction \
+      --strength 1.5 --spectral-floor 0.35 --bed-off
+
+    cargo run --locked --offline --example voice_restore -- \
+      --input recording.wav --out voice-with-leveler \
+      --leveler-on --target-dbfs -28 --max-boost-db 3 --bed-off
+
+The report.json includes all toggles, input/output WAV SHA-256, exact
+strength, spectral floor and adaptive profile fraction. Do NOT include
+private user recordings in the public Git repository, and do NOT confuse
+improvement on synthetic waveforms with perceptual audio quality.

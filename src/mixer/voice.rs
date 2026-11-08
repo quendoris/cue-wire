@@ -20,9 +20,11 @@ pub struct VoiceConfig {
     pub highpass_hz: Option<f32>,
     /// Noise PSD multiplier in power-spectrum subtraction.
     pub noise_strength: f32,
-    /// Gain floor prevents full subtraction / musical-noise holes.
+    /// Gain floor prevents full subtraction / metallic musical-noise holes.
     pub spectral_floor: f32,
     /// Fraction of quietest nonzero STFT frames for deterministic profile.
+    /// If the input has no reliable noise-only interval this is a heuristic,
+    /// not an oracle: gentle default and A/B validation are intentional.
     pub profile_fraction: f32,
     pub expander_attenuation_db: f32,
     pub expander_threshold_above_floor_db: f32,
@@ -38,19 +40,19 @@ pub struct VoiceConfig {
 impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
-            enable_highpass: true,
+            enable_highpass: false,
             enable_denoise: true,
-            enable_expander: true,
-            enable_leveler: true,
+            enable_expander: false,
+            enable_leveler: false,
             highpass_hz: None,
-            noise_strength: 1.7,
-            spectral_floor: 0.12,
-            profile_fraction: 0.18,
-            expander_attenuation_db: 14.0,
+            noise_strength: 1.0,
+            spectral_floor: 0.42,
+            profile_fraction: 0.12,
+            expander_attenuation_db: 10.0,
             expander_threshold_above_floor_db: 7.0,
             target_dbfs: -26.0,
-            max_boost_db: 7.0,
-            noise_bed_dbfs: Some(-78.0),
+            max_boost_db: 4.0,
+            noise_bed_dbfs: Some(-90.0),
             noise_seed: 0xC0E5_2026,
             ceiling_dbfs: -3.0,
         }
@@ -209,12 +211,18 @@ fn stft_denoise(
             let ratio = residual / (power + 1e-20);
             target_gains[k] = ratio.sqrt().max(f64::from(floor));
         }
-        // Neighbour averaging avoids narrow, chattering frequency holes.
+        // Gentle, five-bin smoothing prevents narrow spectral holes.
+        // Attenuation evolves slowly between frames; recovery is faster,
+        // preserving fricatives and the leading edges of consonants.
         for k in 0..BINS {
-            let lower = if k>0 { target_gains[k-1] } else { target_gains[k] };
-            let upper = if k+1<BINS { target_gains[k+1] } else { target_gains[k] };
-            let smooth = 0.25 * lower + 0.5 * target_gains[k] + 0.25 * upper;
-            let gain = 0.55 * previous_gains[k] + 0.45 * smooth;
+            let a = target_gains[k.saturating_sub(2)];
+            let b = target_gains[k.saturating_sub(1)];
+            let c = target_gains[k];
+            let d = target_gains[(k+1).min(BINS-1)];
+            let e = target_gains[(k+2).min(BINS-1)];
+            let smooth = 0.10*a + 0.20*b + 0.40*c + 0.20*d + 0.10*e;
+            let speed = if smooth < previous_gains[k] { 0.18 } else { 0.50 };
+            let gain = previous_gains[k] + speed * (smooth - previous_gains[k]);
             previous_gains[k] = gain;
             complex[k].re *= gain;
             complex[k].im *= gain;

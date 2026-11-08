@@ -53,7 +53,7 @@ def main():
         try:
             proc=subprocess.Popen([sys.executable,str(APP),"--out",str(dest),
                                    "--max-seconds","20"],
-                                  env=env,capture_output=True,text=True)
+                                  env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
             try:
                 end=time.monotonic()+4
                 while not (tmp/"ready").exists():

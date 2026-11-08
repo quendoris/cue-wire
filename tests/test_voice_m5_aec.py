@@ -163,7 +163,8 @@ class M5Tests(unittest.TestCase):
         args = SimpleNamespace(capture_backend="alsa", source=None,
                                mic="hw:0,0", expect_card_id="MICAudio97i", seconds=20)
         card = {"arecord_listing": "expected ALSA card"}
-        with mock.patch.object(capture, "physical_card", return_value=card):
+        with mock.patch.object(capture, "physical_card", return_value=card), \
+             mock.patch.object(capture, "checked_program", return_value="/usr/bin/arecord"):
             cmd, name, info = capture.build_mic_recorder(
                 args, Path("/tmp/private.wav"))
         self.assertEqual(cmd[0], "arecord")

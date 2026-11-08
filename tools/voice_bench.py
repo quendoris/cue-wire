@@ -24,6 +24,8 @@ from voice_bench_metrics import collect, measure_speech_file
 RATE = 48000
 KNOWN = {"identity", "cplus", "deepfilter", "deepfilter_pf", "rnnoise", "rnnoise_lib",
          "clearvoice", "clearvoice_frcrn", "clearvoice_gan",
+         "gtcrn", "dpdfnet2", "dpdfnet2_soft", "dpdfnet8", "dpdfnet8_soft",
+         "metricgan_plus",
          "resemble_denoise", "resemble_full", "voicefixer",
          "voicefixer_mode1", "roformer"}
 DEFAULT_MODELS = ("identity,cplus,deepfilter,deepfilter_pf,rnnoise,"
@@ -168,6 +170,28 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
         execute(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
                  "-y", "-f", "s16le", "-ar", str(RATE), "-ac", "1",
                  "-i", raw_out, "-c:a", "pcm_s16le", selected], log, timeout)
+    elif model in ("gtcrn", "dpdfnet2", "dpdfnet2_soft", "dpdfnet8", "dpdfnet8_soft"):
+        python = python_env(
+            "CUEWIRE_BENCH_SHERPA_PYTHON",
+            str(Path(__file__).resolve().parent.parent / ".audit/voice-tools/sherpa/bin/python"))
+        if not executable(python):
+            raise FileNotFoundError(f"{python}: install optional sherpa-onnx environment")
+        model_dir = Path(tool_env("CUEWIRE_BENCH_SHERPA_MODELS_DIR",
+            str(Path(__file__).resolve().parent.parent / ".audit/voice-tools/sherpa-models")))
+        selected = scratch / "sherpa_output.wav"
+        execute([python, Path(__file__).with_name("voice_bench_sherpa.py"),
+                 source, selected, "--model", model,
+                 "--models-dir", model_dir], log, timeout)
+    elif model == "metricgan_plus":
+        python = python_env("CUEWIRE_BENCH_SPEECHBRAIN_PYTHON",
+            str(Path(__file__).resolve().parent.parent / ".audit/voice-tools/speechbrain/bin/python"))
+        if not executable(python):
+            raise FileNotFoundError(f"{python}: install optional SpeechBrain environment")
+        selected = scratch / "metricgan_16k.wav"
+        cache_dir = Path(__file__).resolve().parent.parent / ".audit/voice-tools/speechbrain-model-cache"
+        execute([python, Path(__file__).with_name("voice_bench_metricgan.py"),
+                 source, selected, "--cache-dir", cache_dir,
+                 "--device", "cpu" if device == "auto" else device], log, timeout)
     elif model in ("clearvoice", "clearvoice_frcrn", "clearvoice_gan"):
         python = python_env("CUEWIRE_BENCH_CLEARVOICE_PYTHON", "~/.venvs/cuewire-clearvoice/bin/python")
         if not executable(python): raise FileNotFoundError(f"{python}: install ClearerVoice-Studio")

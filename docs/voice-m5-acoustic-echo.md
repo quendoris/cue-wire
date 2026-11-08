@@ -70,6 +70,105 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-004: direct ALSA read error and explicit PipeWire backend
+
+The first real M5 attempts did **not** produce a valid paired recording:
+`arecord -D hw:0,0` printed `pcm_read:2285: read error: Input/output error`.
+M5-003 did successfully get as far as launching the speaker stream but
+physical ALSA capture failed during playback. The green tests and an ERLE
+of ~18.94 dB observed in the terminal were from **synthetic fixture
+audio**, not a measurement of the real speaker.
+
+The prior direct-ALSA capture worked in a different M4 session, so do
+not infer permanent hardware failure. EIO alone does not identify whether
+the cause is a transient USB/driver issue, a lost stream, a capture
+configuration, an audio-session conflict, or another fault.
+
+M5 capture now supports a **deliberate** choice of backend:
+`--capture-backend alsa` retains the original verified `hw:0,0`;
+`--capture-backend pipewire --source EXACT_ALSA_INPUT_NODE` uses
+`pw-record` on a **specific** physical `alsa_input.*` node, never on
+a default input, output monitor, or CueWire virtual microphone.
+The program never silently falls back to another device/backend.
+
+### Inspect actual mic sources
+
+~~~bash
+cd /data/cue-wire
+python3 tools/voice_raw_capture.py inspect
+pactl list short sources
+~~~
+
+Find the exact `alsa_input.*` source that corresponds to the physical
+USB microphone (not any `.monitor` entry). Do not guess its name.
+
+### Mic-only PipeWire probe, BEFORE playing music
+
+Replace the sample placeholder with the source name you actually saw:
+
+~~~bash
+cd /data/cue-wire
+pw-record \
+  --target="EXACT_ALSA_INPUT_NODE" \
+  --rate=48000 --channels=1 --channel-map=mono --format=s16 \
+  .audit/voice-aec/pw-probe-001.wav
+~~~
+
+Allow about 3–5 seconds of recording; then press Ctrl+C so `pw-record`
+closes the WAV. No system routes/defaults/settings are changed.
+
+To check that the file contains PCM:
+
+~~~bash
+python3 -c 'import wave; w=wave.open(".audit/voice-aec/pw-probe-001.wav","rb"); print(w.getframerate(),w.getnchannels(),w.getsampwidth(),w.getnframes()); w.close()'
+~~~
+
+Do not run the 20-second acoustic experiment until the mic-only test
+produces actual 48 kHz, mono PCM16 frames. If `pw-record` also fails,
+keep its stderr and inspect the device/driver separately rather than
+disabling PipeWire services.
+
+### Full capture using PipeWire (after successful mic probe)
+
+~~~bash
+cd /data/cue-wire
+python3 -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+python3 tools/voice_m5_capture.py \
+  --music '/data/oae-research/ACDC_-_Thunderstruck_(Official_Video).wav' \
+  --speaker 'alsa_output.pci-0000_00_1f.3.analog-stereo' \
+  --capture-backend pipewire \
+  --source 'EXACT_ALSA_INPUT_NODE' \
+  --seconds 20 --calibration-seconds 5 --volume 0.30 \
+  --out .audit/voice-aec/M5-004
+~~~
+
+The source name is intentionally left as a placeholder: user-specific
+USB node IDs have not been observed. All actual device choices must be
+verified from the local inspection output.
+
+Playback is still launched immediately after the recorder process
+(no three-second waiting). Failure before/during capture aborts the
+paired experiment, stops the player and records the current
+`pw-record.log` tail in the failed manifest. A successful result
+records the selected capture backend/node in the manifest.
+
+The first five seconds of the **speaker playback** must contain no local
+speech; after the terminal prompt, read the test passage naturally.
+M5-001/M5-002/M5-003 are failed evidence and must not be overwritten.
+
+For a successful M5-004 capture, the subsequent analysis command is:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aec.py \
+  --capture .audit/voice-aec/M5-004 \
+  --out .audit/voice-aec/M5-analysis-004
+~~~
+
+This is not a promise that PipeWire capture will work. It is a
+controlled attempt to isolate whether direct-ALSA read failures can be
+bypassed while keeping the microphone identity explicit.
+
 ## Step 2: record speaker plus physical mic
 
 ~~~bash

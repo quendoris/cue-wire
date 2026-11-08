@@ -9,6 +9,10 @@ on:
       - .github/workflows/voice-benchmark.yml
       - tools/voice_bench*.py
       - tools/voice_bench_publish.sh
+      - tools/voice_bench_install.sh
+      - tools/voice_bench_env.sh
+      - tools/voice_bench_listen.py
+      - docs/voice-license-and-model-matrix.md
       - tests/test_voice_bench.py
       - docs/voice-benchmark.md
       - .gitignore
@@ -36,8 +40,10 @@ jobs:
         run: |
           python -m py_compile tools/voice_bench.py \
             tools/voice_bench_metrics.py \
-            tools/voice_bench_clearvoice.py tests/test_voice_bench.py
-          bash -n tools/voice_bench_publish.sh
+            tools/voice_bench_clearvoice.py tools/voice_bench_listen.py tests/test_voice_bench.py
+          bash -n tools/voice_bench_publish.sh tools/voice_bench_install.sh tools/voice_bench_env.sh
+          bash tools/voice_bench_install.sh --help
+          bash tools/voice_bench_install.sh --check
       - name: Reference alignment, identity baseline, manifest/checksum test
         run: |
           python tests/test_voice_bench.py

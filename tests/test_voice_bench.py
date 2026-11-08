@@ -70,6 +70,60 @@ def main():
         assert (output/"results"/"identity__identity.wav").exists()
         assert (output/"results"/"identity.wav").read_bytes() == (output/"results"/"identity__identity.wav").read_bytes()
         assert (output/"SHA256SUMS").exists()
+        # Deterministic, fixed-level listening kit never touches PipeWire.
+        listening = path/"listening"
+        audition = subprocess.run(
+            [sys.executable, str(TOOLS/"voice_bench_listen.py"),
+             str(output), "--out", str(listening), "--seed", "77"],
+            capture_output=True, text=True, timeout=30)
+        assert audition.returncode == 0, audition.stdout + audition.stderr
+        key = json.loads((listening/"answer_key.json").read_text())
+        assert len(key["tracks"]) == 2, key
+        assert sorted(v["model"] for v in key["tracks"].values()) == [
+            "identity", "identity__identity"
+        ]
+        assert (listening/"reference_clean.wav").exists()
+        assert (listening/"reference_noisy.wav").exists()
+        # No models are actually downloaded in CI: mocks verify that
+        # model variants dispatch the correct tool-specific parameters.
+        mock = path/"mock-model"
+        mock.write_text("""#!/usr/bin/env python3
+import sys, shutil
+from pathlib import Path
+args=sys.argv[1:]
+if "--infile" in args:
+    assert args[args.index("--mode")+1] == "1"
+    shutil.copyfile(args[args.index("--infile")+1],
+                    args[args.index("--outfile")+1])
+elif "-o" in args:
+    assert "--pf" in args
+    out=Path(args[args.index("-o")+1])
+    out.mkdir(parents=True,exist_ok=True)
+    shutil.copyfile(args[-1],out/"processed.wav")
+else:
+    sys.exit(10)
+""")
+        mock.chmod(0o755)
+        overrides = os.environ.copy()
+        overrides["CUEWIRE_BENCH_DEEPFILTER"] = str(mock)
+        overrides["CUEWIRE_BENCH_VOICEFIXER"] = str(mock)
+        run_variant = subprocess.run(
+            [sys.executable, str(TOOLS/"voice_bench.py"),
+             "--clean", str(clean), "--noisy", str(bad),
+             "--out", str(path/"variant-run"),
+             "--models", "deepfilter_pf,voicefixer_mode1",
+             "--chains", "deepfilter_pf+voicefixer_mode1"],
+            capture_output=True, text=True, env=overrides, timeout=60)
+        assert run_variant.returncode == 0, run_variant.stdout + run_variant.stderr
+        manifest_2=json.loads((path/"variant-run"/"manifest.json").read_text())
+        assert all(x["status"]=="ok" for x in manifest_2["jobs"].values()), manifest_2["jobs"]
+        # Model cards only, not inference: adapter must expose 3 supported names.
+        adapter_help = subprocess.run(
+            [sys.executable, str(TOOLS/"voice_bench_clearvoice.py"), "--help"],
+            capture_output=True, text=True, timeout=5)
+        assert adapter_help.returncode == 0
+        assert "FRCRN_SE_16K" in adapter_help.stdout
+        assert "MossFormerGAN_SE_16K" in adapter_help.stdout
         # Publisher must REFUSE public visibility without attempting an upload.
         stub_bin = path/"fake-bin"
         stub_bin.mkdir()
@@ -87,7 +141,7 @@ def main():
         assert publishing.returncode != 0
         assert "REFUSED" in publishing.stderr, publishing.stderr
         assert "UNEXPECTED RELEASE CALL" not in publishing.stderr
-    print("PASS: reference alignment, 2-stage chain, scoring/checksums and private-release-only guard")
+    print("PASS: reference alignment, 2-stage chains, opt-in variants, audition, checksums, private-release guard")
 
 
 if __name__ == "__main__":

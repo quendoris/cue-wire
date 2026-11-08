@@ -70,6 +70,99 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 actual A/B/A spectral audit — reproduced (2026-11-08)
+
+The user supplied `M5-ABA-spectral-001/aba-spectral.json` and its
+`SHA256SUMS`. Their actual SHA256 matches:
+`27863368dc9cdc89bddb7eddc64c7c1bc330bd4d982f9cc36bd213ab30998931`.
+
+The spectrum report reproduces the independently inspected
+source WAV checksums and A/B/A measured values:
+
+- OFF before **-59.78533 dBFS**; speaker ON **-58.43360 dBFS**;
+  OFF after **-59.93715 dBFS**.
+- Whole-band speaker ON minus average OFF power:
+  **+1.42697 dB**, equivalent to a *conditional* stationary
+  background power fraction **0.719951**.
+- 20–70 Hz makes up **0.406871** of OFF-phase total mic
+  power and changes **-0.07276 dB** between ON and OFF.
+- The 1500–4000 Hz band changes **+5.92131 dB** and
+  4000–8000 Hz changes **+0.13466 dB**.
+- Welch low-frequency lines remain at **50 Hz and 64 Hz**
+  in ALL phases; spectral line levels vary by only a few
+  tenths of a dB. Their sources are not identified.
+- Transient peak summary shows impulses near 28.75–30s and
+  35.75s, outside measurement interiors.
+
+The previous real M5-006 acoustic filter still has rejected
+whole-band **0.7574 dB heldout ERLE**. The combined
+observations support the need to separate constant mic
+background from audio linearly linked to the digital speaker
+reference. They **do not** establish a physically exact
+"28% speaker signal" fraction, nor prove echo cancellation
+is safe for concurrent near-end speech.
+
+### Next M5 diagnostic: reference-conditioned speaker leakage
+
+Added `tools/voice_m5_refcoherence.py` to run on the
+already recorded `M5-ABA-001` physical WAV and the
+verified original `M5-006/reference-sent.wav` digital
+playback file. The A/B/A manifest already records the
+linked M5-006 location, launch time, physical source/sink,
+volume and SHA256 values; the diagnostic verifies all
+of those before analysis.
+
+The tool estimates global lag using **1500–4000 Hz**, where
+the previous independent spectral experiment found the
+most stable correlation. It then assesses two
+non-overlapping speaker-ON windows (digital reference
+time 3–9s and 10–16s) with:
+
+- median squared spectral coherence by band;
+- **mic-PSD-weighted coherence**, a frequency-averaged
+  normalized linear relation (not a measured fraction
+  of removable physical speaker energy);
+- reference-PSD-weighted coherence;
+- a negative control: a speaker-OFF physical microphone
+  segment compared with reference samples that were NOT
+  playing at that time.
+
+This permits a direct test of whether the digital speaker
+reference explains a stronger *linear spectral relation*
+during music than during OFF. It does not fit an echo
+filter, create a cleaned WAV, or change AEC policy.
+The negative control is a sanity check, not a formal
+statistical null distribution.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_refcoherence.py \
+  --capture .audit/voice-aec/M5-ABA-001 \
+  --out .audit/voice-aec/M5-reference-coherence-001
+
+cd .audit/voice-aec/M5-reference-coherence-001
+sha256sum -c SHA256SUMS
+~~~
+
+The new output is strictly `reference-coherence.json`
+and `SHA256SUMS`. No voice or playback is generated.
+Tests include an injected known 85-ms acoustic/digital
+offset, independent 50Hz background and positive/negative
+coherence discrimination.
+
+The local test suite must be run before accepting the new
+code. Successful reference-conditioned coherence would
+motivate a subsequent carefully validated frozen AEC
+model comparison with a genuinely unused speaker-only
+holdout, followed by preservation tests on concurrent voice.
+The real-time virtual-mic chain and approved M4 voice
+master are **not touched**.
+
 ## M5 real continuous A/B/A: uploaded RAW independently verified
 
 User uploaded `M5-ABA-001/manifest.json`, `SHA256SUMS`

@@ -28,6 +28,8 @@ KNOWN = {"identity", "cplus", "deepfilter", "deepfilter_pf", "rnnoise", "rnnoise
          "clearvoice", "clearvoice_frcrn", "clearvoice_gan",
          "gtcrn", "dpdfnet2", "dpdfnet2_soft", "dpdfnet8", "dpdfnet8_soft",
          "metricgan_plus",
+         "sr_lavasr", "sr_lavasr_denoise", "sr_flowhigh",
+         "sr_apbwe", "sr_sidon", "sr_novasr",
          "resemble_denoise", "resemble_full", "voicefixer",
          "voicefixer_mode1", "roformer"}
 DEFAULT_MODELS = ("identity,cplus,deepfilter,deepfilter_pf,rnnoise,"
@@ -244,6 +246,25 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
         execute([python, Path(__file__).with_name("voice_bench_metricgan.py"),
                  source, selected, "--cache-dir", cache_dir,
                  "--device", "cpu" if device == "auto" else device], log, timeout)
+    elif model in ("sr_lavasr", "sr_lavasr_denoise", "sr_flowhigh",
+                   "sr_apbwe", "sr_sidon", "sr_novasr"):
+        binary = tool_env(
+            "CUEWIRE_BENCH_AUDIOSRONNX",
+            str(Path(__file__).resolve().parent.parent /
+                ".audit/voice-tools/audiosronnx/bin/audiosronnx"))
+        if not executable(binary):
+            raise FileNotFoundError(
+                f"{binary}: install optional audiosronnx in its own venv")
+        engine_name = {
+            "sr_lavasr": "lavasr", "sr_lavasr_denoise": "lavasr",
+            "sr_flowhigh": "flowhigh", "sr_apbwe": "apbwe",
+            "sr_sidon": "sidon", "sr_novasr": "novasr"
+        }[model]
+        selected = scratch / "restored_48k.wav"
+        cmd = [binary, "upscale", source, selected, "--engine", engine_name]
+        if model == "sr_lavasr_denoise":
+            cmd.append("--denoise")
+        execute(cmd, log, timeout)
     elif model in ("clearvoice", "clearvoice_frcrn", "clearvoice_gan"):
         python = python_env("CUEWIRE_BENCH_CLEARVOICE_PYTHON", "~/.venvs/cuewire-clearvoice/bin/python")
         if not executable(python): raise FileNotFoundError(f"{python}: install ClearerVoice-Studio")

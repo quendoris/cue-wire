@@ -11,6 +11,7 @@ CueWire additional speech models (explicit downloads only):
   bash tools/voice_bench_extra_install.sh --download sherpa-models
   bash tools/voice_bench_extra_install.sh --download dpdfnet8
   bash tools/voice_bench_extra_install.sh --install speechbrain
+  bash tools/voice_bench_extra_install.sh --install audiosronnx
 Python environments are isolated in .audit/voice-tools, with uv caches separate.
 SpeechBrain may fetch weights at the FIRST explicit model run.
 TXT
@@ -20,7 +21,7 @@ if (( $# == 1 )) && [[ "$1" == --check ]]; then
   for f in "$base/sherpa/bin/python" "$base/sherpa-models/gtcrn_simple.onnx" \
            "$base/sherpa-models/dpdfnet2_48khz_hr.onnx" \
            "$base/sherpa-models/dpdfnet8_48khz_hr.onnx" \
-           "$base/speechbrain/bin/python"; do
+           "$base/speechbrain/bin/python" "$base/audiosronnx/bin/audiosronnx"; do
     if [[ -f "$f" ]]; then printf 'PRESENT  %s\n' "$f"
     else printf 'ABSENT   %s\n' "$f"; fi
   done
@@ -37,6 +38,7 @@ if [[ "$action" == --install ]]; then
   case "$choice" in
     sherpa) name=sherpa ;;
     speechbrain) name=speechbrain ;;
+    audiosronnx) name=audiosronnx ;;
     *) help; exit 2 ;;
   esac
   if [[ -e "$base/$name" ]]; then
@@ -48,6 +50,9 @@ if [[ "$action" == --install ]]; then
   uv venv --python 3.11 "$base/$name"
   if [[ "$name" == sherpa ]]; then
     uv pip install --python "$base/$name/bin/python" 'sherpa-onnx' 'numpy' 'soundfile'
+  elif [[ "$name" == audiosronnx ]]; then
+    uv pip install --python "$base/$name/bin/python" 'audiosronnx'
+    "$base/$name/bin/audiosronnx" list
   else
     uv pip install --python "$base/$name/bin/python" 'speechbrain' 'numpy' 'soundfile'
   fi

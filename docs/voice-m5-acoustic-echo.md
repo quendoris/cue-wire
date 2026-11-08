@@ -70,6 +70,61 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## USB topology finding: microphone behind cascaded hubs
+
+The read-only check confirms the following **observed, current** device
+state, without guessing from generic USB errors:
+
+- Anlya.cn `MICAudio-97i`; USB VID:PID `0031:1133`, serial
+  `08613544166503`
+- USB bus path `3-3.1.4`: host xHCI → external/embedded USB hub
+  `3-3` → downstream hub `3-3.1` → **port 4** microphone
+- Device enumerates at **12 Mbps (Full Speed)**, uses kernel
+  `snd-usb-audio`; normal USB 1.1 audio speed alone does not
+  establish a bandwidth fault
+- ALSA `card 0 [MICAudio97i], device 0`, capture subdevice present
+- `/sys/bus/usb/devices/3-3.1.4/power/control=on` and
+  `runtime_status=active` at inspection; it is **not currently in
+  runtime suspend**, so do not apply autosuspend hacks without evidence
+- Previous `pw-record` stream was correctly linked to the physical
+  `capture_MONO` port but finalized with **zero audio frames**.
+  PipeWire node RUNNING and ALSA card enumeration do not prove actual
+  samples are streaming.
+
+**Controlled physical isolation test (optional, explicit user action):**
+
+1. Stop/finish *only* the microphone recording process; don't unplug
+   anything with an active read or write.
+2. Identify a **direct motherboard USB port** and move **only the
+   USB microphone** from the cascaded hubs to that port. Do not reset
+   or unplug the shared hubs containing printer, storage, mouse, etc.
+3. Check new `lsusb -t`, `arecord -l`, and
+   `pactl list short sources`. The ALSA card index and source name may
+   change. Confirm matching VID:PID and serial before using a source.
+4. Run a **fresh 5-second isolated microphone test** using the *new,
+   explicitly observed* `alsa_input.*` source; gracefully Ctrl+C,
+   then check WAV frame count and source peak.
+5. If frames appear, this supports a USB path/port dependency, but
+   doesn't yet prove the exact failing hub, connector, power issue, or
+   driver behavior. Repeated stable captures and a later paired AEC
+   run would be separate acceptance stages.
+6. If still zero, collect targeted kernel/USB audio logs and
+   `pw-top` diagnostics before any service restarts, driver reloads,
+   default routing changes or permanent system configuration changes.
+
+Example read-only pre/post checks:
+
+~~~bash
+lsusb -t
+cat /proc/asound/cards
+arecord -l
+pactl list short sources
+~~~
+
+This recommendation leaves the approved M4 speech WAVs and all private
+failed M5 attempts immutable; no AEC result may be claimed while the
+microphone produces zero samples.
+
 ## M5 upstream USB / ALSA log diagnosis (2026-11-08)
 
 Subsequent diagnostics from the actual Arch host:

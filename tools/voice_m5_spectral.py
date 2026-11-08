@@ -49,12 +49,42 @@ def correlation_windows(x: np.ndarray, y: np.ndarray, peak_lag: int) -> list[dic
             np.maximum(energy * float(speaker @ speaker), 1e-20))
         k = int(np.argmax(score))
         local_lag = peak_lag - margin + k
+        # Identify alternative correlation peaks without fitting or
+        # promoting any of them into the acoustic cancellation filter.
+        # Independent candidates must be >=0.8 ms apart; adding the
+        # global-lag candidate explicitly helps distinguish ambiguous
+        # music/reverberation peaks from a genuine clock trend.
+        spacing = max(1, round(0.0008 * RATE))
+        peak_indices, _ = signal.find_peaks(score, distance=spacing)
+        peak_indices = np.unique(np.r_[peak_indices, 0, len(score)-1, k, margin])
+        ranked = sorted((int(i) for i in peak_indices),
+                        key=lambda i: float(score[i]), reverse=True)
+        kept = []
+        for idx in ranked:
+            if all(abs(idx - previous) >= spacing for previous in kept):
+                kept.append(idx)
+            if len(kept) >= 5:
+                break
+        options = [{
+            "relative_shift_from_global_ms": round(
+                (idx - margin) * 1000 / RATE, 5),
+            "candidate_lag_ms": round(
+                (peak_lag - margin + idx) * 1000 / RATE, 5),
+            "normalized_correlation": round(float(score[idx]), 6)
+        } for idx in kept]
+        dominance = (float(score[kept[0]]) / max(float(score[kept[1]]), 1e-12)
+                     if len(kept) >= 2 else None)
         records.append({
             "reference_interval_s": [start_s, end_s],
             "estimated_local_lag_ms": round(local_lag * 1000 / RATE, 5),
             "difference_from_initial_lag_ms": round(
                 (local_lag - peak_lag) * 1000 / RATE, 5),
             "normalized_correlation": round(float(score[k]), 6),
+            "correlation_at_global_lag": round(float(score[margin]), 6),
+            "top_alternative_peaks": options,
+            "best_to_second_separated_peak_ratio": (
+                round(dominance, 5) if dominance is not None else None),
+            "candidate_minimum_spacing_ms": round(spacing * 1000 / RATE, 5),
             "searched_relative_offset_ms": 10
         })
     return records
@@ -134,7 +164,7 @@ def analyze(capture_dir: Path, target_dir: Path) -> dict:
             source_hashes["capture_manifest"] != digest(manifest_path)):
         raise RuntimeError("Source changed during analysis")
     output = {
-        "schema": "cuewire-M5-spectral-diagnostics-v1",
+        "schema": "cuewire-M5-spectral-diagnostics-v2",
         "status": "diagnostic_only_not_aec_accepted",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "sources": source_hashes,
@@ -146,6 +176,7 @@ def analyze(capture_dir: Path, target_dir: Path) -> dict:
             "Magnitude-squared coherence is not ERLE and does not measure voice preservation.",
             "Coherence can be biased in short records, and low energy bands are unreliable.",
             "Local lag estimates on musical audio may jump from periodicity, reflections or noise.",
+            "Alternative peaks are exploratory and are not independent model-validation evidence.",
             "Only the speaker-only calibration segment is used, never the user's voice.",
             "No WAVs created, no model threshold lowered, no source files changed."
         ]
@@ -163,7 +194,9 @@ def analyze(capture_dir: Path, target_dir: Path) -> dict:
     for entry in local:
         print("Lag window", entry["reference_interval_s"],
               "lag_ms", entry["estimated_local_lag_ms"],
-              "correlation", entry["normalized_correlation"])
+              "correlation", entry["normalized_correlation"],
+              "global_candidate", entry["correlation_at_global_lag"],
+              "peak_ratio", entry["best_to_second_separated_peak_ratio"])
     for entry in coherence["bands"]:
         print("Band", entry["band_hz"], "coherence median",
               entry["median_magnitude_squared_coherence"],

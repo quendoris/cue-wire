@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import select
 import socket
 import subprocess
@@ -159,7 +160,7 @@ def socket_path():
     return Path(runtime)/"hypr"/instance/".socket2.sock"
 
 
-def listen(engine,path):
+def listen(engine,path,on_connect=None):
     start=time.monotonic()
     buffer=b""
     with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as sock:
@@ -167,6 +168,7 @@ def listen(engine,path):
         sock.connect(str(path))
         sock.setblocking(False)
         engine.log("system","connected",[],source="hyprland_socket2")
+        if on_connect is not None:on_connect()
         while True:
             engine.tick(int((time.monotonic()-start)*1000))
             ready,_,_=select.select([sock],[],[],.025)
@@ -200,6 +202,53 @@ def simulate(engine,script):
     engine.reset(engine.now,"simulation_finished")
 
 
+LUA_TABLE="__cuewire_keypad_h2_runtime"
+
+
+def activate_lua(device,game,owner_tag):
+    # Each handle is retained in a namespace, never use hl.unbind(all).
+    binds=[line for line in render(device,game).splitlines()
+           if line.startswith("hl.bind(")]
+    script=[
+        'do',
+        'local n = "'+LUA_TABLE+'"',
+        'if _G[n] ~= nil then error("CueWire H2 binding session already active") end',
+        'local obj = { tag = "'+owner_tag+'", handles = {} }',
+        '_G[n] = obj',
+    ]
+    script.extend('table.insert(obj.handles, '+line+')' for line in binds)
+    script.append('end')
+    return "\n".join(script)
+
+
+def deactivate_lua(owner_tag=None):
+    # Optional owner tag prevents a stale client from cleaning another.
+    condition='obj and obj.tag == "'+owner_tag+'"' if owner_tag else 'obj'
+    return ('do local n = "'+LUA_TABLE+'"; local obj = _G[n]; '
+            'if '+condition+' then '
+            'for i = #obj.handles, 1, -1 do obj.handles[i]:remove() end; '
+            '_G[n] = nil end end')
+
+
+def hyprland_eval(source):
+    proc=subprocess.run(["hyprctl","eval",source],capture_output=True,
+                        text=True,timeout=7)
+    if proc.returncode or proc.stdout.strip()!="ok":
+        raise RuntimeError("Hyprland eval not confirmed: "+
+                           (proc.stderr or proc.stdout)[-600:])
+
+
+def ensure_no_key_conflicts():
+    proc=subprocess.run(["hyprctl","-j","binds"],capture_output=True,
+                        text=True,timeout=5)
+    if proc.returncode:
+        raise RuntimeError("Cannot preflight binds: "+proc.stderr[-500:])
+    hits=conflicts(json.loads(proc.stdout))
+    if hits:
+        raise RuntimeError("Temporary NumPad activation REFUSED (conflicts): "+
+                           json.dumps(hits)[:600])
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     sub=ap.add_subparsers(dest="mode",required=True)
@@ -209,6 +258,12 @@ def main():
     check=sub.add_parser("check")
     check.add_argument("--fixture",type=Path)
     run=sub.add_parser("run",help="Foreground listener; Ctrl+C stops logging")
+    run.add_argument("--temporary-bindings",action="store_true",
+                     help="Explicitly add scoped Hyprland Lua binds for this session")
+    run.add_argument("--device",help="Optional exact NumPad device name")
+    run.add_argument("--game",action="store_true",
+                     help="Optionally bypass focused game shortcut inhibition")
+    sub.add_parser("restore",help="Remove only H2 temporary Lua handles after a crash")
     sim=sub.add_parser("simulate")
     sim.add_argument("script",type=Path)
     for p in (run,sim):
@@ -218,6 +273,10 @@ def main():
     args=ap.parse_args()
     if args.mode=="render":
         print(render(args.device,args.game),end="")
+        return
+    if args.mode=="restore":
+        hyprland_eval(deactivate_lua())
+        print("Removed CueWire H2 temporary Lua handles (if present).")
         return
     if args.mode=="check":
         if args.fixture:
@@ -241,15 +300,34 @@ def main():
         print(line,flush=True)
         if fp:fp.write(line+"\n");fp.flush()
     engine=Gestures(emit,args.long_ms,args.double_ms)
+    owner=(str(os.getpid())+"-"+str(time.monotonic_ns()))         if args.mode=="run" and args.temporary_bindings else None
+    def activate():
+        if owner:
+            ensure_no_key_conflicts()
+            hyprland_eval(activate_lua(args.device,args.game,owner))
+            print("H2 temporary binds registered for this terminal session.",
+                  file=sys.stderr)
+    def terminate(_sig,_frame):
+        raise KeyboardInterrupt
+    if args.mode=="run":
+        signal.signal(signal.SIGTERM,terminate)
     try:
         if args.mode=="simulate":
             simulate(engine,json.loads(args.script.read_text()))
         else:
             print("CueWire H2 log-only foreground; Ctrl+C to stop",file=sys.stderr)
-            listen(engine,socket_path())
+            listen(engine,socket_path(),on_connect=activate)
     except KeyboardInterrupt:
-        engine.reset(engine.now,"ctrl_c")
+        engine.reset(engine.now,"ctrl_c_or_sigterm")
     finally:
+        if owner:
+            try:
+                hyprland_eval(deactivate_lua(owner))
+                print("H2 temporary Lua handles removed.",file=sys.stderr)
+            except Exception as exc:
+                print("WARNING: H2 temporary binds may remain! "
+                      "Run: python3 tools/cuewire_keypad.py restore. "
+                      +str(exc),file=sys.stderr)
         if fp:fp.close()
 
 

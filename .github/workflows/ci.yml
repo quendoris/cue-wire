@@ -40,6 +40,16 @@ jobs:
             cargo run --locked --offline --example voice_restore -- --out "/tmp/cuewire-voice-sweep-$strength" --seconds 3 --strength "$strength"
             python3 tests/voice_quality.py "/tmp/cuewire-voice-sweep-$strength"
           done
+      - name: Isolate voice restoration stages for quality diagnosis
+        run: |
+          cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-stage-no-processing --seconds 3 --no-highpass --no-denoise --no-expander --no-leveler --bed-off
+          python3 tests/voice_quality.py /tmp/cuewire-stage-no-processing --diagnostic
+          cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-stage-spectral-only --seconds 3 --no-highpass --no-expander --no-leveler --bed-off
+          python3 tests/voice_quality.py /tmp/cuewire-stage-spectral-only --diagnostic
+          cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-stage-filtered --seconds 3 --no-expander --no-leveler --bed-off
+          python3 tests/voice_quality.py /tmp/cuewire-stage-filtered --diagnostic
+          cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-stage-no-leveler --seconds 3 --no-leveler --bed-off
+          python3 tests/voice_quality.py /tmp/cuewire-stage-no-leveler --diagnostic
       - name: Fake PipeWire end-to-end process and cleanup smoke
         run: python3 tests/fake_runtime.py target/debug/cuewire
       - name: Show CLI and command validation

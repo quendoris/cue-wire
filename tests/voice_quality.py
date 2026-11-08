@@ -67,8 +67,8 @@ def best_aligned_sdr(reference, estimate):
 
 
 def main():
-    if len(sys.argv)!=2:
-        raise SystemExit("usage: voice_quality.py VOICE_PREVIEW_DIRECTORY")
+    if len(sys.argv)<2 or len(sys.argv)>3 or (len(sys.argv)==3 and sys.argv[2]!="--diagnostic"):
+        raise SystemExit("usage: voice_quality.py VOICE_PREVIEW_DIRECTORY [--diagnostic]")
     directory=Path(sys.argv[1])
     clean=read(directory/"voice_reference.wav")
     bad=read(directory/"voice_before.wav")
@@ -99,11 +99,15 @@ def main():
     }
     (directory/"quality.json").write_text(json.dumps(metrics,indent=2,sort_keys=True)+"\n")
     assert all(math.isfinite(value) for key,value in metrics.items() if isinstance(value,float))
-    assert quiet_after<quiet_before-2.0, (
+    if len(sys.argv)==2:
+        assert quiet_after<quiet_before-2.0, (
         f"noise-only interval not quiet enough: {quiet_before:.2f} -> {quiet_after:.2f} dBFS"
     )
     print("WAVEFORM QUALITY AUDIT: "+json.dumps(metrics,sort_keys=True))
-    print("PASS: measured quiet-section noise reduction exceeds 2 dB; no claim on intelligibility")
+    if len(sys.argv)==2:
+        print("PASS: measured quiet-section noise reduction exceeds 2 dB; no claim on intelligibility")
+    else:
+        print("DIAGNOSTIC ONLY: no quality gate applied")
 
 if __name__=="__main__":
     main()

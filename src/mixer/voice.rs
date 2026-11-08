@@ -12,6 +12,10 @@ const BINS: usize = FFT / 2 + 1;
 
 #[derive(Clone, Copy, Debug)]
 pub struct VoiceConfig {
+    pub enable_highpass: bool,
+    pub enable_denoise: bool,
+    pub enable_expander: bool,
+    pub enable_leveler: bool,
     /// None = select 75 or 105 Hz from the input's low-frequency spectrum.
     pub highpass_hz: Option<f32>,
     /// Noise PSD multiplier in power-spectrum subtraction.
@@ -34,6 +38,10 @@ pub struct VoiceConfig {
 impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
+            enable_highpass: true,
+            enable_denoise: true,
+            enable_expander: true,
+            enable_leveler: true,
             highpass_hz: None,
             noise_strength: 1.7,
             spectral_floor: 0.12,
@@ -279,24 +287,36 @@ pub fn restore(
     let input_overload_samples = input.iter().filter(|&&s|s.abs()>1.0).count();
     let input_rms_dbfs = linear_to_db(rms(input));
     let input_quiet_rms_dbfs = low_percentile_rms(input, 960);
-    let highpass_hz = cfg.highpass_hz.unwrap_or_else(||choose_highpass(input,48_000));
-    let first = highpass(input,48_000,highpass_hz);
-    let (mut result, analyzed_frames, noise_profile_frames) =
-        stft_denoise(&first, cfg.noise_strength, cfg.spectral_floor, cfg.profile_fraction);
+    let highpass_hz = if cfg.enable_highpass {
+        cfg.highpass_hz.unwrap_or_else(||choose_highpass(input,48_000))
+    } else { 0.0 };
+    let first = if cfg.enable_highpass {
+        highpass(input,48_000,highpass_hz)
+    } else { input.to_vec() };
+    let (mut result, analyzed_frames, noise_profile_frames) = if cfg.enable_denoise {
+        stft_denoise(&first, cfg.noise_strength, cfg.spectral_floor, cfg.profile_fraction)
+    } else { (first,0,0) };
     let after_filter_rms_dbfs = linear_to_db(rms(&result));
-    let (post_filter_quiet_rms_dbfs, gate_active) = expander(&mut result,cfg);
+    let (post_filter_quiet_rms_dbfs, gate_active) = if cfg.enable_expander {
+        expander(&mut result,cfg)
+    } else { (low_percentile_rms(&result,960),false) };
 
     let mut leveled = vec![0.0_f32; result.len()];
-    let leveler_cfg = LevelerConfig {
-        target_dbfs: cfg.target_dbfs,
-        max_boost_db: cfg.max_boost_db,
-        ..LevelerConfig::default()
+    let final_leveler_gain_db = if cfg.enable_leveler {
+        let leveler_cfg = LevelerConfig {
+            target_dbfs: cfg.target_dbfs,
+            max_boost_db: cfg.max_boost_db,
+            ..LevelerConfig::default()
+        };
+        let mut leveler = RmsLeveler::new(leveler_cfg).map_err(|_|VoiceError::InvalidConfig)?;
+        for (src,dst) in result.chunks(512).zip(leveled.chunks_mut(512)) {
+            leveler.process_block(src,dst).map_err(|_|VoiceError::Internal)?;
+        }
+        leveler.gain_db()
+    } else {
+        leveled.copy_from_slice(&result);
+        0.0
     };
-    let mut leveler = RmsLeveler::new(leveler_cfg).map_err(|_|VoiceError::InvalidConfig)?;
-    for (src,dst) in result.chunks(512).zip(leveled.chunks_mut(512)) {
-        leveler.process_block(src,dst).map_err(|_|VoiceError::Internal)?;
-    }
-    let final_leveler_gain_db = leveler.gain_db();
     let ceiling = 10_f32.powf(cfg.ceiling_dbfs / 20.0);
     let peak = leveled.iter().fold(0.0_f32,|p,&x|p.max(x.abs()));
     let safety = if peak > ceiling { ceiling / peak } else { 1.0_f32 };

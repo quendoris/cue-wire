@@ -109,3 +109,8 @@ OFFLINE ONLY. Before a live microphone extension, create preallocated
 realtime DSP with bounded callback timing, sample-rate conversion,
 model latency and a fault-injection suite. Do not silently run this
 whole-file algorithm in a PipeWire audio callback.
+
+For diagnosis only, independently bypass the four stages with
+--no-highpass, --no-denoise, --no-expander, --no-leveler. These flags
+are recorded in report.json to prevent accidental comparisons of
+unlike processing chains.

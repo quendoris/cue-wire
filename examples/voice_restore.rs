@@ -101,10 +101,14 @@ fn parse() -> Result<(Option<PathBuf>,PathBuf,VoiceConfig,u32),String> {
     let mut args=env::args().skip(1);
     while let Some(flag)=args.next() {
         if flag=="--help" {
-            println!("cargo run --example voice_restore -- [--input dirty.wav] [--out DIR] [--seconds 2..20] [--strength 0..6] [--highpass-hz 45..250] [--target-dbfs -50..-12] [--max-boost-db 0..18] [--bed-dbfs -100..-60 | --bed-off] [--seed U32] [--profile-fraction 0.05..0.4] [--expander-db 0..36]");
+            println!("cargo run --example voice_restore -- [--input dirty.wav] [--out DIR] [--seconds 2..20] [--strength 0..6] [--highpass-hz 45..250] [--target-dbfs -50..-12] [--max-boost-db 0..18] [--bed-dbfs -100..-60 | --bed-off] [--seed U32] [--profile-fraction 0.05..0.4] [--expander-db 0..36] [--no-highpass] [--no-denoise] [--no-expander] [--no-leveler]");
             println!("Without --input, an original VOICE-LIKE synthesizer fixture is generated, not intelligible speech.");
             return Err(String::new());
         }
+        if flag=="--no-highpass" { cfg.enable_highpass=false; continue; }
+        if flag=="--no-denoise" { cfg.enable_denoise=false; continue; }
+        if flag=="--no-expander" { cfg.enable_expander=false; continue; }
+        if flag=="--no-leveler" { cfg.enable_leveler=false; continue; }
         if flag=="--bed-off" {
             cfg.noise_bed_dbfs=None;
             continue;
@@ -169,6 +173,10 @@ fn run()->Result<(),String> {
             "  \"sample_rate\": 48000,\n",
             "  \"frames\": {},\n",
             "  \"strength\": {},\n",
+            "  \"enable_highpass\": {},\n",
+            "  \"enable_denoise\": {},\n",
+            "  \"enable_expander\": {},\n",
+            "  \"enable_leveler\": {},\n",
             "  \"profile_fraction\": {},\n",
             "  \"highpass_hz\": {},\n",
             "  \"highpass_auto\": {},\n",
@@ -194,7 +202,7 @@ fn run()->Result<(),String> {
         ),
         if demo {"synthetic-voice-like-noise"} else {"external-wav"},
         input_sha,output_sha,reference_sha,!demo,input.len(),
-        cfg.noise_strength,cfg.profile_fraction,report.highpass_hz,cfg.highpass_hz.is_none(),
+        cfg.noise_strength,cfg.enable_highpass,cfg.enable_denoise,cfg.enable_expander,cfg.enable_leveler,cfg.profile_fraction,report.highpass_hz,cfg.highpass_hz.is_none(),
         cfg.target_dbfs,cfg.expander_attenuation_db,cfg.max_boost_db,
         cfg.noise_bed_dbfs.map(|v|v.to_string()).unwrap_or_else(||"null".into()),
         cfg.noise_seed,cfg.ceiling_dbfs,report.analyzed_frames,report.noise_profile_frames,

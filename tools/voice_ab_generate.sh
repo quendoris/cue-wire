@@ -28,6 +28,6 @@ cp -- "$source_file" "$outdir/voice_before.wav"
 (
   cd -- "$outdir"
   sha256sum voice_before.wav voice_band_only_v2.wav \
-    voice_mild_v2.wav voice_focus_v2.wav > SHA256SUMS
+    voice_mild_v2.wav voice_focus_v2.wav voice_c_plus_v3.wav > SHA256SUMS
 )
 printf 'Ready: bash tools/voice_ab_play.sh "%s" all\n' "$outdir"

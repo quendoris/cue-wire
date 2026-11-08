@@ -28,6 +28,7 @@ Or select exactly one recording:
     bash tools/voice_ab_play.sh voice-ab-preview a
     bash tools/voice_ab_play.sh voice-ab-preview b
     bash tools/voice_ab_play.sh voice-ab-preview c
+    bash tools/voice_ab_play.sh voice-ab-preview c+
 
 The script uses only manual, foreground pw-play. Ctrl+C stops it.
 No changes to system audio defaults or background services.
@@ -46,9 +47,28 @@ voice-preview/voice_before.wav created by the Rust preview example.
 
     bash tools/voice_ab_play.sh voice-lab-ab all
 
-The output includes 4 WAVs, report.json with source and result SHA-256,
+The output includes 5 WAVs, report.json with source and result SHA-256,
 software versions, and SHA256SUMS. File generation runs locally without
 recording or PipeWire access; only explicit pw-play opens the selected
 default output for listening.
 
 No speech restoration or intelligibility improvement is guaranteed.
+
+## C+ stronger than C
+
+C is unchanged for A/B control. C+ uses a 125-4600 Hz zero-phase
+bandpass, nonstationary noise suppression strength 0.92 (C uses 0.78),
+and a smoothed 220 ms / 580 Hz mask (C: 175 ms / 450 Hz).
+Up to 6x makeup gain is permitted while retaining a peak cap of 0.88.
+
+For an even stronger, intentionally aggressive local test:
+
+    ~/.venvs/cuewire-voice-lab/bin/python tools/voice_ab_lab.py \
+      --input voice-preview/voice_before.wav --out voice-strong-cplus \
+      --cplus-strength 0.98 --cplus-low-hz 145 \
+      --cplus-high-hz 4000 --cplus-max-gain 7
+
+    bash tools/voice_ab_play.sh voice-strong-cplus c+
+
+All C+ settings and software versions are in report.json. More attenuation
+may make consonants less intelligible and the timbre more metallic.

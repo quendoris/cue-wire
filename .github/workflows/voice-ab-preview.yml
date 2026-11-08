@@ -34,7 +34,7 @@ jobs:
           cargo run --locked --offline \
             --example voice_restore -- \
             --out /tmp/cuewire-synthetic-voice --seconds 3
-      - name: Generate three A-B-C WAVs
+      - name: Generate A-B-C and stronger C+ WAVs
         run: |
           /tmp/cuewire-voice-ab-venv/bin/python tools/voice_ab_lab.py \
             --input /tmp/cuewire-synthetic-voice/voice_before.wav \
@@ -43,7 +43,7 @@ jobs:
             build/voice-ab-preview/voice_before.wav
           (cd build/voice-ab-preview && sha256sum \
             voice_before.wav voice_band_only_v2.wav \
-            voice_mild_v2.wav voice_focus_v2.wav > SHA256SUMS)
+            voice_mild_v2.wav voice_focus_v2.wav voice_c_plus_v3.wav > SHA256SUMS)
       - name: Verify WAV lengths, format and hashes
         run: |
           (cd build/voice-ab-preview && sha256sum --check SHA256SUMS)
@@ -52,11 +52,12 @@ jobs:
           from pathlib import Path
           root = Path("build/voice-ab-preview")
           for name in ("voice_before.wav", "voice_band_only_v2.wav",
-                       "voice_mild_v2.wav", "voice_focus_v2.wav"):
+                       "voice_mild_v2.wav", "voice_focus_v2.wav",
+                       "voice_c_plus_v3.wav"):
               with wave.open(str(root/name), "rb") as f:
                   assert (f.getnchannels(), f.getframerate(), f.getsampwidth(),
                           f.getnframes()) == (1, 48000, 2, 144000), name
-          print("PASS: 4 × 3 seconds, mono PCM16, 48 kHz; all SHA-256 match")
+          print("PASS: 5 × 3 seconds, mono PCM16, 48 kHz; all SHA-256 match")
           PY
       - name: Attach downloadable audio files to this workflow run
         uses: actions/upload-artifact@v4

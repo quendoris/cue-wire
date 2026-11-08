@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-    printf 'Usage: bash tools/voice_ab_play.sh OUTPUT_DIR [original|a|b|c|all]\n' >&2
+    printf 'Usage: bash tools/voice_ab_play.sh OUTPUT_DIR [original|a|b|c|c+|all]\n' >&2
     printf 'No system audio settings are changed.\n' >&2
 }
 if (( $# < 1 || $# > 2 )); then usage; exit 2; fi
@@ -28,11 +28,13 @@ case "$choice" in
     a|A) play_one 'A - band only' voice_band_only_v2.wav ;;
     b|B) play_one 'B - mild denoise' voice_mild_v2.wav ;;
     c|C) play_one 'C - speech focus' voice_focus_v2.wav ;;
+    d|D|c+|C+) play_one 'C+ - stronger speech focus' voice_c_plus_v3.wav ;;
     all)
         play_one ORIGINAL voice_before.wav
         play_one 'A - band only' voice_band_only_v2.wav
         play_one 'B - mild denoise' voice_mild_v2.wav
         play_one 'C - speech focus' voice_focus_v2.wav
+        play_one 'C+ - stronger speech focus' voice_c_plus_v3.wav
         ;;
     *) usage; exit 2 ;;
 esac

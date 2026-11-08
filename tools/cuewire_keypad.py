@@ -23,6 +23,7 @@ KEYS={"K0":90,"K1":87,"K2":88,"K3":89,"K4":83,"K5":84,"K6":85,
 PREFIX="cuewire_keypad_v1/"
 LONG_MS=550
 DOUBLE_MS=290
+CHORD_MS=25
 
 
 def parse_socket_event(line):
@@ -80,20 +81,49 @@ def conflicts(data):
 
 class Gestures:
     """Pure state machine. Inputs (key,phase,monotonic_ms), output JSON dicts."""
-    def __init__(self,emit,long_ms=LONG_MS,double_ms=DOUBLE_MS):
-        if not 100<=long_ms<=5000 or not 100<=double_ms<=1500:
-            raise ValueError("Invalid long/double window")
+    def __init__(self,emit,long_ms=LONG_MS,double_ms=DOUBLE_MS,
+                 chord_ms=CHORD_MS):
+        if not 100<=long_ms<=5000 or not 100<=double_ms<=1500 or not 5<=chord_ms<=250:
+            raise ValueError("Invalid long/double/chord window")
         self.emit=emit;self.long_ms=long_ms;self.double_ms=double_ms
+        self.chord_ms=chord_ms
         self.now=0;self.down={};self.pending={};self.chord=None
         self.chord_at=0;self.used=set()
+        self.candidate=None;self.candidate_at=0
 
     def log(self,kind,event,keys,**data):
         self.emit(dict(kind=kind,event=event,keys=list(keys),
                        at_ms=self.now,**data))
 
+    def _membership_change(self,at):
+        ordered=tuple(sorted(self.down))
+        if self.chord and self.chord!=ordered:
+            self.log("gesture","chord_end",self.chord,
+                     held_ms=at-self.chord_at,changed=True)
+            self.chord=None
+        if len(ordered)<2 or self.chord==ordered:
+            self.candidate=None
+        elif self.candidate!=ordered:
+            self.candidate=ordered
+            self.candidate_at=at
+
     def tick(self,at):
         if at<self.now:raise ValueError("Nonmonotonic event clock")
         self.now=at
+        # Confirm a chord only if ALL member keys overlap for long
+        # enough. A 0-5ms overlap caused by IPC event ordering must not
+        # produce an action-capable chord_start.
+        if self.candidate and at-self.candidate_at>=self.chord_ms:
+            if tuple(sorted(self.down))==self.candidate:
+                self.chord=self.candidate
+                self.chord_at=self.candidate_at
+                for key in self.candidate:
+                    self.down[key]["chord"]=True
+                    self.used.add(key)
+                    self.pending.pop(key,None)
+                self.log("gesture","chord_start",self.candidate,
+                         confirmed_overlap_ms=at-self.candidate_at)
+            self.candidate=None
         for key,end in list(self.pending.items()):
             if at-end>self.double_ms:
                 del self.pending[key]
@@ -116,16 +146,7 @@ class Gestures:
             self.pending.pop(key,None)
             self.down[key]={"at":at,"long":False,"chord":False,"second":second}
             if len(self.down)>1:
-                ordered=tuple(sorted(self.down))
-                if self.chord:
-                    self.log("gesture","chord_end",self.chord,held_ms=at-self.chord_at,
-                             changed=True)
-                self.chord=ordered;self.chord_at=at
-                for k,s in self.down.items():
-                    s["chord"]=True
-                    self.used.add(k)
-                    self.pending.pop(k,None)
-                self.log("gesture","chord_start",ordered)
+                self._membership_change(at)
         else:
             state=self.down.pop(key,None)
             if state is None:
@@ -135,10 +156,15 @@ class Gestures:
             if self.chord and key in self.chord:
                 self.log("gesture","chord_end",self.chord,held_ms=at-self.chord_at)
                 self.chord=None
-            if state["chord"] or key in self.used:
+            self._membership_change(at)
+            # A hold_start MUST have a corresponding hold_end even if
+            # the held key later participates in a chord. Previously
+            # the chord flag swallowed its hold_end forever.
+            if state["long"]:
+                self.log("gesture","hold_end",[key],held_ms=elapsed,
+                         participated_in_chord=state["chord"])
+            if state["chord"] or key in self.used or state["long"]:
                 self.used.discard(key)
-            elif state["long"]:
-                self.log("gesture","hold_end",[key],held_ms=elapsed)
             elif state["second"]:
                 self.log("gesture","double",[key],last_press_ms=elapsed)
             else:
@@ -149,6 +175,7 @@ class Gestures:
         if self.chord:self.log("diagnostic","chord_cancel",self.chord,reason=reason)
         if self.down:self.log("diagnostic","pressed_discarded",sorted(self.down),reason=reason)
         self.down.clear();self.pending.clear();self.chord=None;self.used.clear()
+        self.candidate=None
         self.log("system","reset",[],reason=reason)
 
 
@@ -259,7 +286,8 @@ def exec_legacy(args):
     argv=[sys.executable,str(path),args.mode]
     if args.mode=="run":
         argv.extend(["--long-ms",str(args.long_ms),
-                     "--double-ms",str(args.double_ms)])
+                     "--double-ms",str(args.double_ms),
+                     "--chord-ms",str(args.chord_ms)])
         if args.log_jsonl:argv.extend(["--log-jsonl",str(args.log_jsonl)])
         if args.game:argv.append("--game")
         if args.legacy_transparent:argv.append("--transparent")
@@ -301,6 +329,8 @@ def main():
         p.add_argument("--log-jsonl",type=Path,help="Optional new log file (never overwrite)")
         p.add_argument("--long-ms",type=int,default=LONG_MS)
         p.add_argument("--double-ms",type=int,default=DOUBLE_MS)
+        p.add_argument("--chord-ms",type=int,default=CHORD_MS,
+                       help="Require this much simultaneous overlap before chord_start")
     args=ap.parse_args()
     if args.mode=="render":
         print(render(args.device,args.game),end="")
@@ -347,7 +377,7 @@ def main():
         line=json.dumps(obj,sort_keys=True,ensure_ascii=False,separators=(",",":"))
         print(line,flush=True)
         if fp:fp.write(line+"\n");fp.flush()
-    engine=Gestures(emit,args.long_ms,args.double_ms)
+    engine=Gestures(emit,args.long_ms,args.double_ms,args.chord_ms)
     owner=(str(os.getpid())+"-"+str(time.monotonic_ns()))         if args.mode=="run" and args.temporary_bindings else None
     def activate():
         if owner:

@@ -67,7 +67,9 @@ def cases():
     engine.input("K7","up",3330)
     engine.tick(4000)
     starts=[x["keys"] for x in events if x["event"]=="chord_start"]
-    assert starts==[["K7","PLUS"],["K7","K8","PLUS"]],starts
+    # The original 10 ms pair is below 25 ms: do not falsely
+    # confirm it before the real sustained triple-key chord.
+    assert starts==[["K7","K8","PLUS"]],starts
     assert not any(x["event"]=="single" for x in events)
     events.clear()
 
@@ -130,6 +132,51 @@ def cases():
         raise AssertionError("bad hyprctl accepted")
     except ValueError:
         pass
+    # 2-3 ms overlap from asynchronous legacy dispatch is NOT
+    # evidence of a deliberate chord; both simple taps are retained.
+    micro=[]
+    e=pad.Gestures(micro.append,chord_ms=25)
+    e.input("K1","down",0)
+    e.input("K2","down",100)
+    e.input("K2","up",103)
+    e.input("K1","up",150)
+    e.tick(500)
+    assert not any(v["event"].startswith("chord_") for v in micro),micro
+    assert sorted(v["keys"][0] for v in micro if v["event"]=="single")==["K1","K2"],micro
+
+    # A sustained modifier can generate TWO independent chords while
+    # K1 remains physically down, without phantom single/double taps.
+    mods=[]
+    e=pad.Gestures(mods.append,chord_ms=25)
+    e.input("K1","down",0)
+    e.input("K2","down",100)
+    e.input("K2","up",140)
+    e.input("K2","down",200)
+    e.input("K2","up",260)
+    e.input("K1","up",450)
+    e.tick(800)
+    assert sum(v["event"]=="chord_start" for v in mods)==2,mods
+    assert sum(v["event"]=="chord_end" for v in mods)==2,mods
+    assert not any(v["event"] in ("single","double") for v in mods),mods
+
+    # Regression: after a hold_start, making a valid K1+K2 chord
+    # must NOT swallow its corresponding hold_end.
+    mixed=[]
+    e=pad.Gestures(mixed.append,chord_ms=25)
+    e.input("K1","down",0)
+    e.tick(600)
+    e.input("K2","down",650)
+    e.input("K2","up",720)
+    e.input("K1","up",1000)
+    e.tick(1400)
+    assert sum(v["event"]=="hold_start" for v in mixed)==1,mixed
+    holds=[v for v in mixed if v["event"]=="hold_end"]
+    assert len(holds)==1 and holds[0]["keys"]==["K1"],mixed
+    assert holds[0]["participated_in_chord"] is True,mixed
+    assert sum(v["event"]=="chord_start" for v in mixed)==1,mixed
+    assert sum(v["event"]=="chord_end" for v in mixed)==1,mixed
+    assert not any(v["event"]=="single" for v in mixed),mixed
+
     print("PASS keypad pure: gestures, held keys, double, chord, code isolation")
 
 

@@ -57,6 +57,8 @@ def main():
     p.add_argument("run_dir",type=Path)
     p.add_argument("--out",required=True,type=Path)
     p.add_argument("--seed",type=int,default=20261108)
+    p.add_argument("--anchor",type=Path,action="append",default=[],
+                   help="Previously rated blind WAV to include, repeat for multiple controls")
     p.add_argument("--target-dbfs",type=float,default=-28.0)
     p.add_argument("--peak-ceiling-dbfs",type=float,default=-3.0)
     p.add_argument("--max-tracks",type=int,default=24)
@@ -67,12 +69,24 @@ def main():
     if args.out.exists(): p.error("Output exists: use a fresh folder")
     candidates=sorted((args.run_dir/"results").glob("*.wav"))
     if not candidates: p.error("Run contains no successful model WAVs")
-    if len(candidates)>args.max_tracks:
-        p.error("Too many outputs; choose a larger --max-tracks")
+    if len(candidates)+len(args.anchor)>args.max_tracks:
+        p.error("Too many outputs/anchors; choose larger --max-tracks")
+    if len(args.anchor)>4:
+        p.error("At most four prior blind anchors permitted")
+    anchors=[]
+    for file in args.anchor:
+        if not file.is_file() or not file.suffix.lower()==".wav":
+            p.error(f"Prior blind anchor WAV not found: {file}")
+        if file.resolve() in [p.resolve() for p in candidates]:
+            p.error("Anchor duplicates a model output file")
+        anchors.append(file)
     clean=args.run_dir/"inputs"/"clean.wav"
     noisy=args.run_dir/"inputs"/"noisy.wav"
     if not clean.is_file() or not noisy.is_file(): p.error("Missing reference/noisy WAV")
-    order=list(candidates)
+    # Keep the old blind recording ID, NOT its model identity.
+    # The previous answer_key.json is deliberately neither opened nor used.
+    order=[("model",f) for f in candidates]
+    order.extend(("prior_blind_anchor",f) for f in anchors)
     random.Random(args.seed).shuffle(order)
     args.out.mkdir(parents=True)
     report={"schema":"cuewire-blind-listening-v1",
@@ -85,15 +99,21 @@ def main():
         path=args.out/name
         write_wav(path,out)
         report["reference"][name]={"source_sha256":sha(src),"wav_sha256":sha(path),"gain":gain}
-    for i,source in enumerate(order,1):
+    for i,(kind,source) in enumerate(order,1):
         name=f"track_{i:02}.wav"
         path=args.out/name
         out,gain=normalized(read_wav(source),args.target_dbfs,args.peak_ceiling_dbfs)
         write_wav(path,out)
-        report["tracks"][name]={"model":source.stem,"source_sha256":sha(source),
-                                "wav_sha256":sha(path),"gain":gain}
+        track={"source_sha256":sha(source),
+               "wav_sha256":sha(path),"gain":gain,
+               "source_kind":kind}
+        if kind=="model":
+            track["model"]=source.stem
+        else:
+            track["previous_blind_id"]=source.stem
+        report["tracks"][name]=track
     (args.out/"answer_key.json").write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
-    print(f"Created {len(order)} gain-matched numbered tracks. No playback started.")
+    print(f"Created {len(order)} gain-matched numbered tracks (including {len(anchors)} preserved blind anchors). No playback started.")
     print("FIRST listen without reading answer_key.json. Keep system volume fixed.")
     print(f"  pw-play {args.out}/reference_clean.wav")
     print(f"  pw-play {args.out}/reference_noisy.wav")

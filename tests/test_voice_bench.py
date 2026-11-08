@@ -82,6 +82,22 @@ def main():
         assert sorted(v["model"] for v in key["tracks"].values()) == [
             "identity", "identity__identity"
         ]
+        # Reuse previous opaque tracks as controls; the actual previous
+        # algorithm mappings remain unknown to this process.
+        second_listening=path/"listening-with-anchors"
+        replay=subprocess.run(
+            [sys.executable,str(TOOLS/"voice_bench_listen.py"),
+             str(output),"--out",str(second_listening),
+             "--anchor",str(listening/"track_01.wav"),
+             "--anchor",str(listening/"track_02.wav"),
+             "--seed","88"],capture_output=True,text=True,timeout=30)
+        assert replay.returncode==0,replay.stdout+replay.stderr
+        anchor_key=json.loads((second_listening/"answer_key.json").read_text())
+        assert len(anchor_key["tracks"])==4
+        assert sum(x["source_kind"]=="prior_blind_anchor"
+                   for x in anchor_key["tracks"].values())==2
+        assert all("model" not in x for x in anchor_key["tracks"].values()
+                   if x["source_kind"]=="prior_blind_anchor")
         assert (listening/"reference_clean.wav").exists()
         assert (listening/"reference_noisy.wav").exists()
         # No models are actually downloaded in CI: mocks verify that

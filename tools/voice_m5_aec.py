@@ -105,7 +105,8 @@ def lag_estimate(reference: np.ndarray, mic: np.ndarray,
 
 
 def fit_transfer(reference: np.ndarray, mic: np.ndarray,
-                 lag: int, calibration_s: float = 5.0) -> tuple[np.ndarray, np.ndarray, dict]:
+                 lag: int, calibration_s: float = 5.0,
+                 enforce_heldout: bool = True) -> tuple[np.ndarray, np.ndarray, dict]:
     """Identify acoustic FIR on first ~3.5 s and validate on *held-out* echo.
 
     Offset starts 10 ms before strongest echo peak to keep preceding RIR
@@ -162,11 +163,11 @@ def fit_transfer(reference: np.ndarray, mic: np.ndarray,
     val_y = mic[val_start:val_end]
     val_echo = echo[val_start:val_end]
     val_erle = erle(val_y, val_echo)
-    if val_erle < 1.0:
+    if enforce_heldout and val_erle < 1.0:
         raise ValueError(f"Held-out speaker-only echo cancellation improved only "
                          f"{val_erle:.2f} dB (<1.0 dB). "
                          "Calibration rejected; no voice subtraction generated.")
-    if val_erle > train_erle + 8.0:
+    if enforce_heldout and val_erle > train_erle + 8.0:
         raise ValueError("Suspicious train/validation mismatch; check alignment")
     return aligned, echo, {
         "approx_acoustic_peak_lag_samples": lag,
@@ -276,14 +277,128 @@ def analyze(input_dir: Path, output_dir: Path) -> dict:
     return data
 
 
+def diagnose(input_dir: Path, output_dir: Path) -> dict:
+    """Research-only numerical report; no audio output and no relaxed AEC acceptance.
+
+    The calibration hold-out may be used to diagnose model/timing errors,
+    but diagnostic-only hindsight estimates MUST NOT be used to render
+    the double-talk voice. A new independent validation would be required.
+    """
+    source = input_dir.expanduser().resolve(strict=True)
+    audit = AUDIT.resolve(strict=True)
+    if audit not in source.parents or not source.is_dir():
+        raise ValueError("Capture directory must be private under .audit")
+    manifest_path = source / "manifest.json"
+    record = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (record.get("schema") != "cuewire-M5-paired-physical-capture-v1" or
+            record.get("status") != "captured_for_offline_aec"):
+        raise ValueError("Capture was not successfully completed")
+    x_path = source / "reference-sent.wav"
+    y_path = source / "microphone-raw.wav"
+    x_sha = digest(x_path)
+    y_sha = digest(y_path)
+    if (x_sha != record.get("reference", {}).get("sha256") or
+            y_sha != record.get("microphone", {}).get("sha256")):
+        raise ValueError("Captured WAV SHA256 mismatch; refuse diagnostics")
+
+    if output_dir.exists() or output_dir.is_symlink():
+        raise FileExistsError("Diagnostics directory exists; choose another")
+    parent = output_dir.expanduser().parent.resolve(strict=True)
+    if parent != source.parent or audit not in parent.parents:
+        raise ValueError("Output must be a NEW private sibling of the capture")
+    outdir = parent / output_dir.name
+    x = read_wav(x_path)
+    y = read_wav(y_path)
+    lag, corr = lag_estimate(x, y, record["speaker_only_calibration_s"])
+    _, echo, fit = fit_transfer(
+        x, y, lag, record["speaker_only_calibration_s"],
+        enforce_heldout=False)
+    offset = fit["reference_offset_frames"]
+    start = offset + int(3.45 * RATE)
+    end = offset + int(4.40 * RATE)
+    observed = y[start:end]
+
+    def erle(model: np.ndarray) -> float:
+        return float(10 * math.log10(
+            max(float(np.dot(observed, observed)), 1e-20) /
+            max(float(np.dot(observed-model, observed-model)), 1e-20)))
+    grid = []
+    # Diagnostic-only temporal shift scan using the hold-out, never used
+    # to adjust the official filter or to make a voice WAV.
+    for shift_ms in (-10, -5, -2, -1, -0.5, 0, 0.5, 1, 2, 5, 10):
+        shift = round(shift_ms * RATE / 1000)
+        predicted = echo[start-shift:end-shift]
+        if len(predicted) != len(observed):
+            continue
+        denominator = max(float(np.dot(predicted, predicted)), 1e-20)
+        hindsight_scale = float(np.dot(observed, predicted) / denominator)
+        grid.append({
+            "shift_ms": shift_ms,
+            "fixed_gain_erle_db": round(erle(predicted), 4),
+            "holdout_oracle_optimal_gain": round(hindsight_scale, 4),
+            "holdout_oracle_erle_db": round(erle(predicted * hindsight_scale), 4),
+        })
+
+    fit["passed_production_gate"] = bool(
+        fit["heldout_speaker_only_erle_db"] >= 1.0 and
+        fit["heldout_speaker_only_erle_db"] <= fit["training_erle_db"] + 8)
+    result = {
+        "schema": "cuewire-M5-AEC-diagnostics-v1",
+        "status": "diagnostic_only_not_accepted_for_voice",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "source_capture_manifest_sha256": digest(manifest_path),
+        "source_reference_sha256": x_sha,
+        "source_mic_sha256": y_sha,
+        "coarse_reference_mic_correlation": round(corr, 6),
+        "calibration": fit,
+        "holdout_microphone_rms_dbfs": round(db(rms(observed)), 5),
+        "holdout_prediction_rms_dbfs": round(db(rms(echo[start:end])), 5),
+        "holdout_shift_oracle_grid": grid,
+        "warnings": [
+            "All shifted/scaled hold-out values are hindsight diagnostics, NOT independent validation.",
+            "Never use hold-out optimized shifts or gains for double-talk subtraction.",
+            "No candidate WAV is generated when AEC acceptance fails.",
+            "A poor result may reflect clock drift, nonlinearity, near-end noise or model mismatch.",
+            "No change to audio devices, original files or PipeWire routes.",
+        ],
+    }
+    if digest(x_path) != x_sha or digest(y_path) != y_sha:
+        raise RuntimeError("Audio input changed during diagnostic analysis")
+    outdir.mkdir(mode=0o700)
+    with (outdir / "diagnostics.json").open("x", encoding="utf-8") as handle:
+        json.dump(result, handle, indent=2, sort_keys=True, ensure_ascii=False)
+        handle.write("\n")
+    with (outdir / "SHA256SUMS").open("x", encoding="utf-8") as handle:
+        handle.write(f'{digest(outdir / "diagnostics.json")}  diagnostics.json\n')
+    print("M5 numerical diagnosis ONLY; no WAV generated.")
+    print("Peak lag:", fit["approx_acoustic_peak_lag_ms"], "ms")
+    print("Coarse correlation:", round(corr, 5))
+    print("Training ERLE:", fit["training_erle_db"], "dB")
+    print("Held-out ERLE:", fit["heldout_speaker_only_erle_db"], "dB")
+    print("Official acceptance:", "PASS" if fit["passed_production_gate"] else "REJECT")
+    print("Diagnostic-only holdout shift / gain scan:")
+    for item in grid:
+        print("  shift={:+5g}ms fixed={:+7.3f}dB oracle={:+7.3f}dB scale={:+.3f}".format(
+            item["shift_ms"], item["fixed_gain_erle_db"],
+            item["holdout_oracle_erle_db"],
+            item["holdout_oracle_optimal_gain"]))
+    print("Saved numerical audit:", outdir / "diagnostics.json")
+    return result
+
+
 def main():
     os.umask(0o077)
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--capture", required=True, type=Path)
     p.add_argument("--out", required=True, type=Path)
+    p.add_argument("--diagnose", action="store_true",
+                   help="Write numeric diagnostics ONLY (no residual WAV, no threshold bypass)")
     args = p.parse_args()
     try:
-        analyze(args.capture, args.out)
+        if args.diagnose:
+            diagnose(args.capture, args.out)
+        else:
+            analyze(args.capture, args.out)
     except (OSError, ValueError, RuntimeError, KeyError, wave.Error) as exc:
         p.exit(1, "ERROR: " + str(exc) + "\n")
 

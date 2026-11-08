@@ -51,8 +51,10 @@ on the same toolchain/platform in CI.
 
 Parameters are per-file and do not create ongoing profiles.
 
-- Adaptive high-pass: a conservative 75/105 Hz heuristic; override with
-  --highpass-hz 80. Not a fixed resonance remover.
+- Adaptive offline high-pass: a conservative 45/65 Hz heuristic with
+  forward-backward application and no net phase rotation; override with
+  --highpass-hz 60. Noncausal offline filtering is NOT suitable for a
+  real-time callback and may still reshape low harmonics.
 - Noise PSD: estimate from the quietest nonzero STFT frames selected by
   --profile-fraction (default 0.18). Spectral power subtraction --strength 1.7,
   floor 0.12, smoothed across bins and frames.

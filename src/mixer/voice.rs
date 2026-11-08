@@ -1,6 +1,6 @@
 //! Adaptive, deterministic, OFFLINE speech-oriented restoration prototype.
 //! Not neural source separation. Cannot recover clipped or masked phonemes.
-//! Core uses: 2-pole HPF, STFT Wiener-style suppression, pause expander,
+//! Core uses: offline zero-phase HPF, STFT spectral subtraction, pause expander,
 //! bounded RMS leveler, sample-peak safety scale, optional tiny white-noise bed.
 use super::dynamics::{LevelerConfig, RmsLeveler};
 use super::fft::{transform, Complex};
@@ -16,7 +16,7 @@ pub struct VoiceConfig {
     pub enable_denoise: bool,
     pub enable_expander: bool,
     pub enable_leveler: bool,
-    /// None = select 75 or 105 Hz from the input's low-frequency spectrum.
+    /// None = select 45 or 65 Hz from the input's low-frequency spectrum.
     pub highpass_hz: Option<f32>,
     /// Noise PSD multiplier in power-spectrum subtraction.
     pub noise_strength: f32,
@@ -122,8 +122,8 @@ fn validate(cfg: VoiceConfig) -> Result<(), VoiceError> {
     Ok(())
 }
 
-/// 2x simple 1-pole high-pass; reset for each independent file.
-fn highpass(input: &[f32], rate: u32, hz: f32) -> Vec<f32> {
+/// One-pole IIR high-pass for one direction of an offline pass.
+fn one_pole_highpass(input: &[f32], rate: u32, hz: f32) -> Vec<f32> {
     let rc = 1.0_f64 / (2.0 * PI * f64::from(hz));
     let dt = 1.0 / f64::from(rate);
     let coefficient = rc / (rc + dt);
@@ -137,16 +137,19 @@ fn highpass(input: &[f32], rate: u32, hz: f32) -> Vec<f32> {
         before = x;
         after = y;
     }
-    before = 0.0;
-    after = 0.0;
-    for out in &mut stage {
-        let x = f64::from(*out);
-        let y = coefficient * (after + x - before);
-        *out = y as f32;
-        before = x;
-        after = y;
-    }
     stage
+}
+
+/// Non-causal, forward-backward high-pass for OFFLINE speech only.
+/// Zero net phase rotation away from boundaries; NOT valid for real-time
+/// PipeWire capture where future samples are unavailable.
+fn highpass(input: &[f32], rate: u32, hz: f32) -> Vec<f32> {
+    let pass1 = one_pole_highpass(input,rate,hz);
+    let pass2 = one_pole_highpass(&pass1,rate,hz);
+    let reversed:Vec<f32> = pass2.into_iter().rev().collect();
+    let backward1 = one_pole_highpass(&reversed,rate,hz);
+    let backward2 = one_pole_highpass(&backward1,rate,hz);
+    backward2.into_iter().rev().collect()
 }
 
 /// Compare energy in 0..90 Hz and 90..500 Hz to pick a conservative HPF.
@@ -156,7 +159,7 @@ fn choose_highpass(input: &[f32], rate: u32) -> f32 {
     let stronger = highpass(input, rate, 110.0);
     let e_weak = rms(&weak).powi(2);
     let e_stronger = rms(&stronger).powi(2);
-    if e_weak > 0.0 && e_stronger / e_weak < 0.7 { 105.0 } else { 75.0 }
+    if e_weak > 0.0 && e_stronger / e_weak < 0.7 { 65.0 } else { 45.0 }
 }
 
 fn stft_denoise(

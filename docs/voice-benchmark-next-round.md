@@ -162,3 +162,50 @@ imply studio-quality restoration has been achieved.
 The studio benchmark includes a manifest, SHA256SUMS and scoring files,
 and can be uploaded to the separate PRIVATE benchmark repository using
 the existing explicit confirmation script after checking the contents.
+
+## Boundary-context experiment (2026-11-08)
+
+Private audit of voice-bench-studio-001: blind candidate 01, as reconstructed
+with the documented shuffle seed 20261108, came from the already-processed
+studio CONTROL, NOT from the clean reference WAV. Its file has 142560 frames
+(2.97 seconds), while the clean reference has 144000 (3.00 seconds).
+The overlapping samples correlate with clean at about 0.790, not 1.000.
+The other eleven studio candidates correlate with 01 at 0.997765..0.999853.
+No algorithm names were disclosed. Actual local listening folder hashes
+should be checked to validate the reconstructed ordering.
+
+Private provenance report:
+https://github.com/quendoris/cue-wire-voice-bench/blob/main/reports/studio-001-blind-01-provenance.json
+
+The optional offline flag --context-pad-ms 250 now reflects 250 ms of
+noisy speech around the input of EACH enhancement stage and crops the model
+output back to exactly the original length. It never reads clean.wav
+for processing, never repeats/zero-fills missing speech, and never changes
+audio routing. This probes (but does not guarantee a cure for) model
+boundary artifacts, late ringing and 30 ms frame truncation.
+
+Two independent runs, same input and models:
+
+    source tools/voice_bench_env.sh
+    ~/.venvs/cuewire-voice-lab/bin/python tools/voice_bench.py \
+      --clean /data/cue-wire/test.wav \
+      --noisy /data/cue-wire/voice_before.wav \
+      --out /data/cue-wire/bench-edge-dry-001 \
+      --models identity,deepfilter,rnnoise_lib,cplus \
+      --chains deepfilter+rnnoise_lib,deepfilter+cplus \
+      --context-pad-ms 0
+
+    ~/.venvs/cuewire-voice-lab/bin/python tools/voice_bench.py \
+      --clean /data/cue-wire/test.wav \
+      --noisy /data/cue-wire/voice_before.wav \
+      --out /data/cue-wire/bench-edge-context-001 \
+      --models identity,deepfilter,rnnoise_lib,cplus \
+      --chains deepfilter+rnnoise_lib,deepfilter+cplus \
+      --context-pad-ms 250
+
+Each output report includes duration_difference_ms and last_300ms
+correlation/RMS, and manifest.json logs exact stage frame counts.
+Tail similarity is a diagnostic, not proof of audible echo. The mock
+regression passes with a model that truncates its output by 30 ms.
+No claim of improved real speech quality until actual WAVs are auditioned.
+Model sizes remain UNRESTRICTED; large enhancement models are still in scope.

@@ -52,7 +52,7 @@ numbers alone cannot prove subjective quality.
 
 ## Execute in existing GitHub branch
 
-\`\`\`bash
+```bash
 cd /data/cue-wire
 git pull --ff-only
 python3 -m unittest discover -s tests -p test_voice_m4_refine.py -v
@@ -60,36 +60,36 @@ python3 -m unittest discover -s tests -p test_voice_m4_refine.py -v
 python3 tools/voice_m4_refine.py \
   --in .audit/voice-captures/M4-R0-ALSA-007/level-001/03-voice-leveled.wav \
   --out .audit/voice-captures/M4-R0-ALSA-007/level-002
-\`\`\`
+```
 
 Output folder must **not** exist beforehand. All audio stays under
-the ignored private \`.audit\`; it is not uploaded. If an attempt fails,
+the ignored private `.audit`; it is not uploaded. If an attempt fails,
 keep its log/partial evidence and use a distinct new folder next time
-(e.g. \`level-003\`).
+(e.g. `level-003`).
 
 Three files for the comparison:
 
-- \`level-001/03-voice-leveled.wav\` — known-good reference, unchanged.
-- \`level-002/04-soft.wav\` — delicate loud-phrase compression.
-- \`level-002/04-dense.wav\` — more assertive loud-phrase compression.
+- `level-001/03-voice-leveled.wav` — known-good reference, unchanged.
+- `level-002/04-soft.wav` — delicate loud-phrase compression.
+- `level-002/04-dense.wav` — more assertive loud-phrase compression.
 
 Both candidates are generated **independently** from the untouched
-\`03-voice-leveled.wav\`. The manifest records every profile and SHA256
+`03-voice-leveled.wav`. The manifest records every profile and SHA256
 for both versions, the input, RAW and CLEAN, plus before/after measured
 RMS, peak, frame count, speech p25/p50/p90 range, maximum gain
-reduction and limiting activity. A separate \`SHA256SUMS\` covers outputs
+reduction and limiting activity. A separate `SHA256SUMS` covers outputs
 and the manifest. Incomplete runs are marked failed.
 
 ## Audition
 
-\`\`\`bash
+```bash
 cd /data/cue-wire/.audit/voice-captures/M4-R0-ALSA-007/level-002
 sha256sum -c SHA256SUMS
 
 pw-play ../level-001/03-voice-leveled.wav
 pw-play 04-soft.wav
 pw-play 04-dense.wav
-\`\`\`
+```
 
 **Compare without changing headphones volume:** unusually loud words,
 quiet sentence endings, onset/offset of phrases, breaths, residual

@@ -179,3 +179,9 @@ improvement against its synthetic reference. The earlier >8 dB quiet
 reduction target belonged to aggressive processing, which produced
 metallic artifacts on the supplied 3-second A/B example. Stronger
 noise suppression is opt-in via the explicit strength and floor flags.
+
+CLI detail: --highpass-hz explicitly enables high-pass; --expander-db
+explicitly enables the expander; --target-dbfs / --max-boost-db explicitly
+enable the RMS leveler. Processing-stage --no-* toggles remain available
+and the last conflicting flag takes precedence. This prevents users
+from changing a numerical value that is silently ignored by default.

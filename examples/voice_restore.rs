@@ -123,13 +123,13 @@ fn parse() -> Result<(Option<PathBuf>,PathBuf,VoiceConfig,u32),String> {
             "--seconds" => seconds=value.parse().map_err(|_|"bad seconds")?,
             "--strength" => cfg.noise_strength=value.parse().map_err(|_|"bad strength")?,
             "--spectral-floor" => cfg.spectral_floor=value.parse().map_err(|_|"bad spectral floor")?,
-            "--highpass-hz" => cfg.highpass_hz=Some(value.parse().map_err(|_|"bad highpass")?),
-            "--target-dbfs" => cfg.target_dbfs=value.parse().map_err(|_|"bad target")?,
-            "--max-boost-db" => cfg.max_boost_db=value.parse().map_err(|_|"bad boost")?,
+            "--highpass-hz" => { cfg.highpass_hz=Some(value.parse().map_err(|_|"bad highpass")?); cfg.enable_highpass=true; },
+            "--target-dbfs" => { cfg.target_dbfs=value.parse().map_err(|_|"bad target")?; cfg.enable_leveler=true; },
+            "--max-boost-db" => { cfg.max_boost_db=value.parse().map_err(|_|"bad boost")?; cfg.enable_leveler=true; },
             "--bed-dbfs" => cfg.noise_bed_dbfs=Some(value.parse().map_err(|_|"bad bed")?),
             "--seed" => cfg.noise_seed=value.parse().map_err(|_|"bad seed")?,
             "--profile-fraction" => cfg.profile_fraction=value.parse().map_err(|_|"bad fraction")?,
-            "--expander-db" => cfg.expander_attenuation_db=value.parse().map_err(|_|"bad expander")?,
+            "--expander-db" => { cfg.expander_attenuation_db=value.parse().map_err(|_|"bad expander")?; cfg.enable_expander=true; },
             _ => return Err(format!("unknown flag {flag}")),
         }
     }

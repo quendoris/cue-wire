@@ -83,7 +83,12 @@ def prepare_gain(before,target_rms_dbfs,peak_ceiling_dbfs,max_gain_db):
     if rms<1e-8:
         raise ValueError("Source essentially silent; refusing to amplify noise")
     goal=10**(target_rms_dbfs/20)
-    ceiling=10**(peak_ceiling_dbfs/20)
+    # PCM16 quantization rounds to the nearest integer. A gain chosen
+    # exactly at the floating-point dB ceiling can round UP by one LSB,
+    # producing a valid WAV but a misleading post-render safety failure.
+    # Reserve two integer sample steps BEFORE rendering.
+    ceiling_integer=max(1,math.floor(32768*10**(peak_ceiling_dbfs/20))-2)
+    ceiling=ceiling_integer/32768
     requested=max(1.0,goal/rms)  # Never LOWER a quiet voice to match RMS.
     peak_limit=(ceiling/peak) if peak>0 else 1.0
     gain=min(requested,10**(max_gain_db/20),peak_limit)

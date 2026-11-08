@@ -171,6 +171,55 @@ class M5Tests(unittest.TestCase):
         self.assertEqual(name, "arecord.log")
         self.assertEqual(info["backend"], "alsa")
 
+    def test_buffered_capture_progress_does_not_abort_playback(self):
+        """Live WAV may not grow until pw-record closes; fail only on final WAV."""
+        class Recorder:
+            returncode = None
+            def poll(self):
+                return None
+
+        clock = [0.0]
+        class Player:
+            returncode = None
+            def poll(self):
+                if clock[0] >= 20.1:
+                    self.returncode = 0
+                    return 0
+                return None
+        report = {}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            with mock.patch.object(capture.time, "monotonic",
+                                   side_effect=lambda: clock[0]), \
+                 mock.patch.object(capture.time, "sleep",
+                                   side_effect=lambda seconds: clock.__setitem__(
+                                       0, clock[0] + seconds)), \
+                 mock.patch("builtins.print"):
+                capture.watch_paired_streams(
+                    Recorder(), Player(), path / "not-yet-flushed.wav", path,
+                    "pw-record.log", 5, 20, report, 0.0)
+        self.assertFalse(report["capture_wav_bytes_observed_during_playback"])
+        self.assertGreaterEqual(clock[0], 20.1)
+
+    def test_finalized_capture_validation_rejects_short_or_empty(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            log = folder / "pw-record.log"
+            log.write_text("synthetic test log")
+            short_file = folder / "short.wav"
+            pcm16_file(short_file, np.full(RATE, 0.02, dtype=np.float64))
+            with self.assertRaisesRegex(RuntimeError, "too short"):
+                capture.validate_completed_microphone(short_file, 20, log)
+            zero_file = folder / "silent.wav"
+            pcm16_file(zero_file, np.zeros(RATE * 20, dtype=np.float64))
+            with self.assertRaisesRegex(RuntimeError, "effectively silent"):
+                capture.validate_completed_microphone(zero_file, 20, log)
+            good_file = folder / "good.wav"
+            pcm16_file(good_file, np.full(RATE * 20, 0.03, dtype=np.float64))
+            report = capture.validate_completed_microphone(good_file, 20, log)
+            self.assertEqual(report["measurements"]["frames"], RATE * 20)
+            self.assertEqual(report["sha256"], capture.sha256(good_file))
+
     def test_cli_import_help_offline(self):
         for script in ("voice_m5_capture.py", "voice_m5_aec.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],

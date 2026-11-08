@@ -172,3 +172,10 @@ The report.json includes all toggles, input/output WAV SHA-256, exact
 strength, spectral floor and adaptive profile fraction. Do NOT include
 private user recordings in the public Git repository, and do NOT confuse
 improvement on synthetic waveforms with perceptual audio quality.
+
+CI acceptance for conservative speech mode intentionally requires
+>3 dB reduction of the known noise-only interval AND >0.5 dB SI-SDR
+improvement against its synthetic reference. The earlier >8 dB quiet
+reduction target belonged to aggressive processing, which produced
+metallic artifacts on the supplied 3-second A/B example. Stronger
+noise suppression is opt-in via the explicit strength and floor flags.

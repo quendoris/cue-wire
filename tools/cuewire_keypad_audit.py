@@ -21,6 +21,7 @@ def audit(events, *, suspicious_ms=2000):
     duplicates=Counter()
     orphan=Counter()
     bad_chords=[]
+    chord_durations=[]
     times=[]
     stages=[]
     source=None
@@ -53,6 +54,8 @@ def audit(events, *, suspicious_ms=2000):
                 released[k]+=1
                 if k not in active:orphan[k]+=1
                 else:del active[k]
+        if kind=="gesture" and event=="chord_end" and isinstance(ev.get("held_ms"),int):
+            chord_durations.append(ev["held_ms"])
         if kind=="gesture" and event=="chord_start":
             # Unconfirmed physical state: a down older than 2s can be
             # intentionally held. We only label it "possibly polluted".
@@ -96,6 +99,16 @@ def audit(events, *, suspicious_ms=2000):
             "count":len(bad_chords),
             "sample":bad_chords[:3],
         },
+        "observed_chord_durations_ms":{
+            "count":len(chord_durations),
+            "at_most_2ms":sum(duration<=2 for duration in chord_durations),
+            "at_most_5ms":sum(duration<=5 for duration in chord_durations),
+            "at_most_20ms":sum(duration<=20 for duration in chord_durations),
+            "max":max(chord_durations,default=None),
+            "median":(sorted(chord_durations)[len(chord_durations)//2]
+                      if chord_durations else None),
+            "note":"Brief overlap is not automatically a deliberate chord; arrival-time jitter is possible."
+        },
         "expected_unique_down_count":clean_presses,
         "complete_raw_press_release_pairs":sum(released.values())-sum(orphan.values()),
         "diagnostic_status":"UNRELIABLE_KEY_UP_STREAM" if
@@ -105,6 +118,8 @@ def audit(events, *, suspicious_ms=2000):
             "Repeated down may result from a missed release or a genuine key repeat.",
             "Two-second held keys may be intentional; chords are suspicious, not disproven.",
             "The log cannot identify whether the device, compositor or bridge lost a release.",
+            "A balanced transparent-key trace is evidence of delivered down/up, not proof of faithful physical timing.",
+            "Chord overlaps of 0-5 ms should not trigger irreversible actions without independent confirmation.",
         ],
     }
     return output
@@ -115,6 +130,8 @@ def main():
     p.add_argument("jsonl",type=Path)
     p.add_argument("--threshold-ms",type=int,default=2000)
     p.add_argument("--out",type=Path,help="Optional fresh JSON report; never overwrite")
+    p.add_argument("--require-balanced",action="store_true",
+                   help="Exit 3 if key down/up integrity fails (action-engine gate)")
     args=p.parse_args()
     if not 500<=args.threshold_ms<=30000:p.error("--threshold-ms must be 500..30000")
     if not args.jsonl.is_file():p.error("JSONL not found")
@@ -131,6 +148,8 @@ def main():
         with args.out.open("x",encoding="utf-8") as f:
             json.dump(report,f,ensure_ascii=False,indent=2)
             f.write("\n")
+    if args.require_balanced and report["diagnostic_status"]!="BALANCED":
+        raise SystemExit(3)
 
 
 if __name__=="__main__":

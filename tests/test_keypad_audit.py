@@ -25,6 +25,7 @@ def main():
     assert v["diagnostic_status"]=="BALANCED",v
     assert (v["raw_down"],v["raw_up"])==(1,1)
     assert v["gestures"]["single"]==1
+    assert v["observed_chord_durations_ms"]["count"]==0
     assert not v["unreleased_at_end"]
     unhealthy=[
         row(0,"system","connected",[]),
@@ -34,6 +35,8 @@ def main():
         row(2500,"raw","down",["K1"]),
         row(2600,"raw","down",["K3"]),
         row(2600,"gesture","chord_start",["K1","K2","K3"]),
+        {"at_ms":2602,"kind":"gesture","event":"chord_end",
+         "keys":["K1","K2","K3"],"held_ms":2},
         row(2700,"raw","up",["K3"]),
         row(3000,"raw","up",["K3"]),
         {"at_ms":3400,"kind":"diagnostic","event":"pressed_discarded",
@@ -47,6 +50,8 @@ def main():
     assert v["unreleased_at_end"]=={"K1":100,"K2":140}
     assert v["possibly_polluted_chords_over_threshold"]["count"]==1
     assert v["complete_raw_press_release_pairs"]==1
+    assert v["observed_chord_durations_ms"]["at_most_2ms"]==1
+    assert v["observed_chord_durations_ms"]["at_most_5ms"]==1
     try:
         audit([row(200,"raw","down",["K1"]),row(100,"raw","up",["K1"])])
         raise AssertionError("Non-monotonic events accepted")
@@ -61,6 +66,9 @@ def main():
              str(source),"--out",str(dest)]
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=6)
         assert p.returncode==0,p.stderr
+        gated=subprocess.run(cmd[:3]+["--require-balanced"],capture_output=True,
+                            text=True,timeout=6)
+        assert gated.returncode==3, (gated.stdout,gated.stderr)
         assert json.loads(dest.read_text())["unreleased_at_end"]=={"K1":100,"K2":140}
         assert source.read_text().count("\n")==len(unhealthy)
         p=subprocess.run(cmd,capture_output=True,text=True,timeout=6)

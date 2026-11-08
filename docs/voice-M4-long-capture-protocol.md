@@ -1,8 +1,10 @@
 # CueWire — M4: long-form voice capture and acceptance protocol
 
 Status: **approved research plan, not a new recording nor a new live DSP path**.
-Next active development stream is HOTKEYS. Voice work is deliberately
-paused after documenting this protocol.
+Voice research has resumed after the successful NumPad H2 log-only trials.
+For the new loudspeaker echo-cancellation protocol, see
+[voice-M5-acoustic-echo-cancellation.md](voice-M5-acoustic-echo-cancellation.md).
+The M4 raw-recording baseline and immutable M1 cleanup chain remain intact.
 
 ## Frozen restoration baseline M1 (DO NOT CHANGE)
 

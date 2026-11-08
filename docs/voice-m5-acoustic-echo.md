@@ -70,6 +70,50 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 standalone capture diagnostic: live graph linked, zero frames
+
+After M5-005, a standalone explicit capture targeted the correct
+physical USB source:
+
+`alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback`
+
+During `pw-record --verbose`, the source showed **RUNNING** in
+`pactl list short sources` and `pw-link -l` showed the concrete port link
+`...capture_MONO -> pw-record:input_MONO`. Nevertheless, after graceful
+completion the standalone `mic-isolated-001.wav` also had **zero
+frames**. The verbose recorder repeatedly printed `buffered:0
+buffers:2 avail:0` (and `ticks:0` in the screenshot). This rules out
+the M5 program's startup timing or final-file acceptance checks as the
+sole explanation. Linking and node RUNNING status do **not** prove a
+driver actually delivered PCM samples.
+
+**Next phase is upstream hardware/graph diagnostics, not another AEC
+recording.** Do not restart audio services, change defaults, or relax
+the final zero-frame check to force apparent success.
+
+Read-only checks:
+
+~~~bash
+MIC='alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback'
+pactl get-source-mute "$MIC"
+pactl get-source-volume "$MIC"
+journalctl --user -b -u pipewire -u wireplumber --no-pager | tail -n 70
+journalctl -k -b --no-pager | grep -Ei 'snd.usb.audio|usb|xhci|audio' | tail -n 70
+~~~
+
+For a live diagnosis when a short isolated `pw-record` is running,
+use `pw-top` to inspect the *driver* and input stream's
+`WAIT`, `BUSY`, `ERR`, `QUANT` and `RATE`. Note whether counters
+change, not just whether the node says `RUNNING`. The source is
+correctly linked but has not produced WAV frames.
+
+The earlier M4 direct ALSA microphone recording did work in another
+session. The later repeated `arecord: pcm_read:2285: read error:
+Input/output error` and zero PipeWire frames suggest a possible
+USB/ALSA source/driver or stalled PipeWire graph. Exact cause
+**remains unproven**; gather logs and check the active device before
+any corrective state changes.
+
 ## M5-005 actual-hardware outcome: zero microphone frames
 
 The user confirmed that the speaker music completed all ~20 seconds,

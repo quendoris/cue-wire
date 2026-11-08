@@ -35,6 +35,11 @@ jobs:
           cp /tmp/cuewire-voice-preview/voice_after.wav /tmp/cuewire-voice-first.wav
           cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-voice-preview --seconds 3
           cmp /tmp/cuewire-voice-first.wav /tmp/cuewire-voice-preview/voice_after.wav
+          for strength in 0.35 0.8 1.3 1.7 2.2; do
+            echo "--- voice denoising profile strength=$strength ---"
+            cargo run --locked --offline --example voice_restore -- --out "/tmp/cuewire-voice-sweep-$strength" --seconds 3 --strength "$strength"
+            python3 tests/voice_quality.py "/tmp/cuewire-voice-sweep-$strength"
+          done
       - name: Fake PipeWire end-to-end process and cleanup smoke
         run: python3 tests/fake_runtime.py target/debug/cuewire
       - name: Show CLI and command validation

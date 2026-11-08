@@ -110,6 +110,17 @@ def cases():
         raise AssertionError("invalid device accepted")
     except ValueError:
         pass
+    temporary=pad.activate_lua("usb-numpad",True,"mock-owner-1")
+    assert temporary.count("table.insert(")==32
+    assert temporary.count("hl.bind(")==32
+    assert temporary.count("dont_inhibit = true")==32
+    assert 'list = { "usb-numpad" }' in temporary
+    assert 'CueWire H2 binding session already active' in temporary
+    cleanup=pad.deactivate_lua("mock-owner-1")
+    assert ":remove()" in cleanup
+    assert "mock-owner-1" in cleanup
+    assert "hl.unbind" not in cleanup
+    assert ":remove()" in pad.deactivate_lua()
     assert pad.conflicts([{"keycode":90,"key":"irrelevant"}])
     assert pad.conflicts([{"key":"KP_1","keycode":0}])
     assert not pad.conflicts([{"keycode":10,"key":"1"}])
@@ -162,6 +173,72 @@ def live_mock():
                     proc.communicate(timeout=3)
 
 
+def temporary_mock():
+    # Fake BOTH the compositor IPC and hyprctl Lua evaluator.
+    # No real user bindings are touched during this test.
+    with tempfile.TemporaryDirectory(prefix="cuewire-keypad-dynamic-") as tmp:
+        root=Path(tmp)
+        runtime=root/"hypr"/"synthetic-session"
+        runtime.mkdir(parents=True)
+        sockpath=runtime/".socket2.sock"
+        fakebin=root/"fakebin"
+        fakebin.mkdir()
+        fakehyprctl=fakebin/"hyprctl"
+        hyprlog=root/"hyprctl-calls.jsonl"
+        fakehyprctl.write_text("""#!/usr/bin/env python3
+import json,os,sys
+from pathlib import Path
+args=sys.argv[1:]
+with Path(os.environ["KEYPAD_FAKE_HYPR_LOG"]).open("a") as f:
+    f.write(json.dumps(args)+"\\n")
+if args[:2]==["-j","binds"]:
+    print("[]")
+elif args and args[0]=="eval":
+    print("ok")
+else:
+    sys.exit(5)
+""")
+        fakehyprctl.chmod(0o755)
+        env=os.environ.copy()
+        env["XDG_RUNTIME_DIR"]=str(root)
+        env["HYPRLAND_INSTANCE_SIGNATURE"]="synthetic-session"
+        env["PATH"]=str(fakebin)+os.pathsep+env.get("PATH","")
+        env["KEYPAD_FAKE_HYPR_LOG"]=str(hyprlog)
+        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as serv:
+            serv.bind(str(sockpath))
+            serv.listen(1)
+            proc=subprocess.Popen([
+                sys.executable,str(ROOT/"tools/cuewire_keypad.py"),
+                "run","--temporary-bindings","--device","usb-numpad",
+                "--log-jsonl",str(root/"log.jsonl")],
+                env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            serv.settimeout(3)
+            try:
+                peer,_=serv.accept()
+                with peer:
+                    peer.sendall(b"custom>>cuewire_keypad_v1/K3/down\n")
+                    time.sleep(.02)
+                    peer.sendall(b"custom>>cuewire_keypad_v1/K3/up\n")
+                    time.sleep(.35)
+                out,err=proc.communicate(timeout=5)
+                assert proc.returncode==0,(out,err)
+                calls=[json.loads(t) for t in hyprlog.read_text().splitlines()]
+                evals=[c for c in calls if c[0]=="eval"]
+                assert len(evals)==2,calls
+                assert "table.insert" in evals[0][1]
+                assert 'device = { inclusive = true, list = { "usb-numpad" } }' in evals[0][1]
+                assert ":remove()" in evals[1][1]
+                assert any(c[:2]==["-j","binds"] for c in calls)
+                assert any(json.loads(line)["event"]=="single"
+                           for line in (root/"log.jsonl").read_text().splitlines())
+                print("PASS keypad dynamic Lua scope: preflight, owned handles and cleanup")
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.communicate(timeout=3)
+
+
 if __name__=="__main__":
     cases()
     live_mock()
+    temporary_mock()

@@ -70,6 +70,56 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-006 actual paired capture results — FIRST SUCCESSFUL REAL TAKE
+
+The first *real*, successfully completed paired speaker + physical
+microphone capture is documented in the locally stored
+`.audit/voice-aec/M5-006/manifest.json`. It reports
+`status=captured_for_offline_aec`. This is an actual hardware capture,
+not the earlier synthetic AEC unit-test fixture.
+
+- Speaker stream: `alsa_output.pci-0000_00_1f.3.analog-stereo`;
+  `pw-play` exit code 0, observed playback 20.074 s
+- Digital reference: mono 48-kHz 16-bit PCM WAV, **960,000 frames = 20.0 s**;
+  SHA256 `afd3b0ea1141147d6df284bfab62d2a9c9adc579053cfbea8c35559f2e94aa90`
+  unchanged before/after recording
+- Microphone capture backend: explicit `pipewire`, physical node
+  `alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback`
+- Microphone actual WAV: mono, 48 kHz, PCM16,
+  **985,088 frames = 20.522667 s**; peak **-17.595 dBFS**, RMS
+  **-40.926 dBFS**, **0 clipped samples**
+- First file PCM bytes seen about 0.1606 s after playback launch
+- Microphone SHA256 `606d0876896150399ee729e4a9eea8fc2d261af956aae6d5159f229903d73b66`,
+  matching both manifest copy fields
+- `pw-record` reports exit code **1** after CueWire's controlled stop,
+  despite a verified valid WAV. Keep the `pw-record.log` for inspection;
+  no definitive explanation of this code is asserted from the manifest alone.
+- The microphone WAV is 0.522667 s longer than the digital reference.
+  This is the capture envelope difference, **not** an acoustically
+  measured playback delay. Estimate offset using AEC cross-correlation.
+
+**Next command (no new capture, no system changes):**
+
+~~~bash
+cd /data/cue-wire
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aec.py \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-analysis-006
+~~~
+
+The offline analyzer still must prove a usable correlation and
+held-out calibration ERLE before we can regard the AEC experiment as
+technically successful. Success of the capture does not establish
+that the local voice was preserved or that subtracting the speaker
+audio worked in double-talk. Keep the original RAW and reference
+unchanged, compare subjective sound only after numerical acceptance.
+
+To examine the recorder termination without changing system state:
+
+~~~bash
+tail -n 35 .audit/voice-aec/M5-006/pw-record.log
+~~~
+
 ## M5 hardware recovery: alternate powered hub (2026-11-08)
 
 The user could not connect the microphone directly to the laptop because

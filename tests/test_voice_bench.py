@@ -248,6 +248,39 @@ with wave.open(str(directory/"trimmed.wav"),"wb") as writer:
         assert unpadded.returncode==0,unpadded.stdout+unpadded.stderr
         nop=json.loads((unpad_run/"manifest.json").read_text())
         assert nop["jobs"]["deepfilter"]["output_frames"]==len(signal)-1440
+        # Check independent bandwidth-engine DISPATCH without downloading
+        # external model checkpoints. The mock is identity, NOT restoration.
+        fake_sr=path/"audiosronnx"
+        fake_sr.write_text("""#!/usr/bin/env python3
+import sys,shutil
+argv=sys.argv
+assert argv[1]=="upscale",argv
+assert "--engine" in argv,argv
+engine=argv[argv.index("--engine")+1]
+assert engine in ("lavasr","flowhigh"),engine
+shutil.copyfile(argv[2],argv[3])
+""")
+        fake_sr.chmod(0o755)
+        sr_env=os.environ.copy()
+        sr_env["CUEWIRE_BENCH_AUDIOSRONNX"]=str(fake_sr)
+        sr_run=path/"mock-bwe-run"
+        sr_proc=subprocess.run([
+            sys.executable,str(TOOLS/"voice_bench.py"),
+            "--clean",str(clean),"--noisy",str(bad),
+            "--out",str(sr_run),
+            "--models","identity,sr_lavasr,sr_flowhigh",
+            "--chains","sr_lavasr+sr_flowhigh"],
+            capture_output=True,text=True,timeout=65,env=sr_env)
+        assert sr_proc.returncode==0,sr_proc.stdout+sr_proc.stderr
+        sr_manifest=json.loads((sr_run/"manifest.json").read_text())
+        assert all(x["status"]=="ok" for x in sr_manifest["jobs"].values()),sr_manifest
+        assert len(json.loads((sr_run/"scores.json").read_text())["results"])==4
+        # CLI parameters are syntax-checked without importing third-party weights.
+        help_proc=subprocess.run([
+            sys.executable,str(TOOLS/"voice_bench_audiosr.py"),"--help"],
+            capture_output=True,text=True,timeout=5)
+        assert help_proc.returncode==0
+        assert "--cutoff-hz" in help_proc.stdout
         # Model cards only, not inference: adapter must expose 3 supported names.
         adapter_help = subprocess.run(
             [sys.executable, str(TOOLS/"voice_bench_clearvoice.py"), "--help"],

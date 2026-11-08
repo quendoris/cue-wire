@@ -14,6 +14,8 @@ on:
       - tools/voice_bench_listen.py
       - tools/voice_bench_sherpa.py
       - tools/voice_bench_metricgan.py
+      - tools/voice_bench_audiosr.py
+      - docs/voice-research-M2-restoration-beyond-denoise.md
       - tools/voice_bench_extra_install.sh
       - docs/voice-benchmark-next-round.md
       - docs/voice-license-and-model-matrix.md
@@ -48,7 +50,8 @@ jobs:
             tools/voice_bench_metrics.py \
             tools/voice_bench_clearvoice.py tools/voice_bench_listen.py \
             tools/voice_bench_rnnoise_lib.py tools/voice_bench_sherpa.py \
-            tools/voice_bench_metricgan.py tools/voice_bench_studio.py \
+            tools/voice_bench_metricgan.py tools/voice_bench_audiosr.py \
+            tools/voice_bench_studio.py \
             tests/test_voice_bench.py tests/test_voice_bench_studio.py
           bash -n tools/voice_bench_publish.sh tools/voice_bench_install.sh tools/voice_bench_env.sh tools/voice_bench_extra_install.sh
           bash tools/voice_bench_install.sh --help
@@ -57,6 +60,7 @@ jobs:
           bash tools/voice_bench_extra_install.sh --check
           python tools/voice_bench_sherpa.py --help
           python tools/voice_bench_metricgan.py --help
+          python tools/voice_bench_audiosr.py --help
       - name: Reference alignment, identity baseline, manifest/checksum test
         run: |
           python tests/test_voice_bench.py

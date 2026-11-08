@@ -3,6 +3,49 @@
 Status: implemented, mock tests passed. Actual Hyprland release/press
 bindings and keyboard scan codes still require physical acceptance.
 
+## H2.1 — compatibility with the active hyprlang provider
+
+Current user's Hyprland uses legacy hyprlang, which deliberately refuses
+hyprctl eval. No conversion to a Lua configuration is required.
+
+H2 detects the active provider before it creates any JSONL:
+- Lua config manager: temporary hl.bind handles and direct socket2 events
+- hyprlang manager: dynamic bindi for press and bindri for release,
+  forwarded to one foreground NumPad gesture interpreter through
+  a short-lived cuewire_keypad_emit.py Unix datagram sender per transition
+
+Legacy dynamic keys are checked for conflicts before registering. The
+adapter never writes to hyprland.conf or hyprland.lua. On Ctrl+C and
+SIGTERM, cleanup verifies that only our own bindings occupy each key
+before calling hyprctl keyword unbind. Foreign bindings are NOT deleted.
+After SIGKILL, cleanup cannot be guaranteed: run the H2 restore command
+when the foreground session has ended. It verifies owned markers.
+
+The earlier H2-001.jsonl exists because the Lua-only attempt opened
+it before registration failed. H2.1 opens the log only after success,
+and still refuses to overwrite any prior file. Use a new H2-002 name:
+
+    cd /data/cue-wire
+    git fetch origin
+    git switch feature/pcm-mixer-playground
+    git pull --ff-only
+    python3 tests/test_keypad.py
+    python3 tests/test_keypad_legacy.py
+    python3 tools/cuewire_keypad.py check
+    mkdir -p .audit/keypad
+    python3 tools/cuewire_keypad.py run --temporary-bindings \
+      --log-jsonl .audit/keypad/H2-002.jsonl
+
+Press the physical NumPad 1 once, twice, and hold it for a second;
+then test a 1+2 chord and normal number-row 1. Stop with Ctrl+C.
+
+Legacy limitation: --device is deliberately rejected. The physical
+NumPad is distinguished from number-row 0..9, but cannot be isolated
+from another full keyboard with an identical physical keypad. Such
+per-device filtering needs a different provider/back-end.
+
+Test coverage is synthetic: actual keyboard key-up delivery and
+Hyprland bindr behavior must still be verified locally.
 ## Core architecture
 
 H2 intentionally REPLACES the old H1 audio-triggering NumPad bindings.
@@ -151,7 +194,7 @@ an unrelated H1 emergency-control experiment, never registered by H2.
 
 ## Preferred opt-in TEMPORARY mode (no configuration-file edits)
 
-On current Lua-based Hyprland, the adapter can perform a **read-only
+With the Lua config provider, the adapter can perform a **read-only
 conflict preflight**, connect its foreground event listener, then
 register all 32 required press/release binds using ONE
 hyprctl eval invocation. Returned binding handles are retained in

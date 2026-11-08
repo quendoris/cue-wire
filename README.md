@@ -138,6 +138,13 @@ and single, double, hold_start/hold_end and multi-key chord gestures.
     python3 tools/cuewire_keypad.py render --device "SEPARATE_NUMPAD_DEVICE"
     python3 tools/cuewire_keypad.py run --temporary-bindings --log-jsonl .audit/keypad/H2-001.jsonl
 
+H2.1 autodetects legacy hyprlang and Lua providers before creating a
+log. In legacy mode it temporarily installs bindi/bindri at runtime
+and forwards NumPad events with a short-lived Unix datagram helper.
+Lua mode uses direct custom socket2 events. Both use preflight and
+cleanup on Ctrl+C. Legacy --device is unsupported and rejected;
+the old H2-001.jsonl is never overwritten.
+
 The generated Lua uses code:NN physical keypad keys and
 hl.dsp.event messages to Hyprland socket2. No child process per
 keypress, no keyboard evdev privileges, no recording other keys and no

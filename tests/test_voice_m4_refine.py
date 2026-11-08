@@ -113,6 +113,21 @@ class RefinementTests(unittest.TestCase):
             self.assertLess(result["outputs"][name]["active_voice_spread"]
                             ["speech_p90_minus_p25_db"],
                             result["before_active_voice_spread"]["speech_p90_minus_p25_db"])
+        # The two outputs must actually compress louder phrases and
+        # raise quiet speech compared with the already-good LEVEL-001.
+        def section_rms_db(pcm, left_sec, right_sec):
+            start, end = int(left_sec * RATE), int(right_sec * RATE)
+            region = pcm[start:end]
+            rms = math.sqrt(sum(int(v)*int(v) for v in region)/len(region))
+            return 20 * math.log10(max(rms / 32768, 1e-12))
+        input_quiet = section_rms_db(self.samples, 1.3, 2.7)
+        input_loud = section_rms_db(self.samples, 4.3, 5.7)
+        for name in ("soft", "dense"):
+            output = read_pcm16(self.out / ("04-" + name + ".wav"))
+            quiet = section_rms_db(output, 1.3, 2.7)
+            loud = section_rms_db(output, 4.3, 5.7)
+            self.assertGreater(quiet, input_quiet + 1.0)
+            self.assertLess(loud - quiet, input_loud - input_quiet - 1.0)
         self.assertNotEqual((self.out/"04-soft.wav").read_bytes(),
                             (self.out/"04-dense.wav").read_bytes())
         self.assertTrue((self.out / "SHA256SUMS").is_file())

@@ -70,6 +70,76 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## Actual M5-006 spectral.json review — low broadband coherence, one ambiguous lag
+
+The user provided the real `M5-spectral-006/spectral.json`.
+These are calibrated **speaker-only** measurements from the existing
+M5-006 WAV pair (not synthetic tests). The report repeats the exact
+SHA256s of the previous real microphone WAV, reference and capture
+manifest. The spectral file's own checksum was not provided in this
+turn, so integrity of that *report file* has not been separately
+verified via its `SHA256SUMS`.
+
+Band frequency / median magnitude-squared coherence / reference-energy
+weighted coherence:
+
+| Hz | Median | Weighted |
+| --- | ---: | ---: |
+| 150–500 | 0.041050 | 0.172791 |
+| 500–1500 | 0.034935 | 0.359191 |
+| 1500–4000 | 0.100132 | 0.331926 |
+| 4000–8000 | 0.037990 | 0.109944 |
+
+The energy-weighted values are substantially higher than the medians
+in some bands. This indicates the energetic components of the music
+have stronger linear coherence than typical frequencies **within each
+band**, not that the speaker leakage fraction or AEC ERLE equals these
+numbers. A short music-only interval and spectrally concentrated
+excitation can bias the interpretation.
+
+Measured global lag: **101.29167 ms**, normalized correlation 0.117837.
+The four independent ~0.9-s local windows:
+
+| Reference time (s) | Lag (ms) | Correlation |
+| --- | ---: | ---: |
+| 0.30–1.20 | 101.29167 | 0.122993 |
+| 1.35–2.25 | 101.54167 | 0.139832 |
+| 2.40–3.30 | **93.18750** | 0.153677 |
+| 3.40–4.30 | 101.52083 | 0.151539 |
+
+Three windows select ~101.3–101.5 ms; only the third selects ~93.2 ms,
+then the estimate returns to ~101.5 ms. This **does not support
+claiming monotonic clock drift**. Plausible causes include competing
+music-correlation peaks, acoustic reflections and weak broadband
+signal-to-background ratio. A short high correlation at the alternative
+lag does not prove it is the physical direct path.
+
+**Next test on the SAME frozen WAVs, no re-recording:**
+
+The spectral tool is now version 2. It keeps existing first-best lag
+estimates but additionally records up to five correlation-peak
+candidates separated by ~0.8 ms, score at the original global lag,
+and best/second-best separated-peak ratio for each window. This helps
+distinguish a genuinely different dominant delay from two near-tied
+competing peaks. The candidate search is **diagnostic only**, not an
+AEC filter update or production acceptance.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_spectral.py \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-spectral-peaks-006
+~~~
+
+Keep `M5-spectral-006` immutable. If any output directory exists,
+pick a new number. Inspect the v2 `spectral.json` before designing
+another acoustic take. Do not increase compression or denoising
+to mask an unverified echo cancellation model, and do not change the
+1-dB ERLE fail-closed gate.
+
 ## Follow-up M5-006 spectral audit (no new recording)
 
 The standalone `tools/voice_m5_spectral.py` provides additional

@@ -109,7 +109,10 @@ def frame_gains(levels: list[float], profile: dict
     speech = [v for v, yes in zip(levels, detected) if yes]
     # A broad threshold across the active speech distribution compresses
     # loud phrases while leaving quieter speech largely uncompressed.
-    threshold = percentile(speech, 0.60)
+    # At p60 a clip with equally long quiet/loud phrases can put the
+    # threshold inside the loud phrase, defeating the compressor entirely.
+    # Use the lower speech distribution with 1 dB margin instead.
+    threshold = percentile(speech, 0.35) + 1.0
     targets = [
         knee_reduction(level, threshold, profile["ratio"],
                        profile["knee_db"], profile["max_reduction_db"])

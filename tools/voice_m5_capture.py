@@ -164,6 +164,52 @@ def prepare_reference(source: Path, output: Path, seconds: int) -> dict:
             "sha256": sha256(output), "input_sha256": sha256(source)}
 
 
+def watch_paired_streams(record, play, mic_file: Path, out: Path,
+                         recorder_log: str, calibration_seconds: int,
+                         expected_seconds: int, report: dict,
+                         play_started: float) -> None:
+    """Wait for playback, observing recorder liveness but not requiring WAV flush.
+
+    File growth is advisory while the recording process is alive. A separate
+    post-close audit (verify_wav) determines whether audio really arrived.
+    """
+    announcement = False
+    observed_stream_bytes = False
+    buffered_notice = False
+    while True:
+        elapsed = time.monotonic() - play_started
+        # Detect a recorder process failure immediately, but do not
+        # mistake audio file write buffering for a broken capture.
+        # In particular pw-record/libsndfile may flush only at close.
+        if record.poll() is not None:
+            raise RuntimeError(
+                "Microphone recorder exited (rc=" + str(record.returncode) +
+                ") during playback; " + recorder_log + ": " +
+                log_excerpt(out / recorder_log))
+        if not observed_stream_bytes and mic_file.is_file() and mic_file.stat().st_size > 9600:
+            observed_stream_bytes = True
+            report["mic_bytes_observed_during_playback_at_s"] = round(elapsed, 4)
+            print("M5: capture file is growing; audio integrity will be checked after close.",
+                  flush=True)
+        if (not observed_stream_bytes and not buffered_notice and elapsed >= 1.0):
+            buffered_notice = True
+            print("M5: no incremental WAV bytes yet (possibly buffered); "
+                  "continuing and checking finalized WAV after playback.",
+                  flush=True)
+        if play.poll() is not None:
+            break
+        if not announcement and elapsed >= calibration_seconds:
+            print("M5: CALIBRATION COMPLETE — NOW READ YOUR TEXT!", flush=True)
+            announcement = True
+        if elapsed > expected_seconds + 8:
+            raise RuntimeError("pw-play exceeded expected playback duration")
+        time.sleep(0.04)
+    report["capture_wav_bytes_observed_during_playback"] = observed_stream_bytes
+    if not announcement:
+        raise RuntimeError("Playback ended before 5-second calibration/reading prompt")
+
+
+
 def experiment(args) -> None:
     if not sys.platform.startswith("linux"):
         raise RuntimeError("Linux only (parent-death signal required)")
@@ -227,40 +273,9 @@ def experiment(args) -> None:
               "; verifying concurrent", args.capture_backend, "recording.", flush=True)
         print("Remain silent for the first", args.calibration_seconds,
               "seconds of playback.", flush=True)
-        announcement = False
-        observed_stream_bytes = False
-        buffered_notice = False
-        while True:
-            elapsed = time.monotonic() - play_started
-            # Detect a recorder process failure immediately, but do not
-            # mistake audio file write buffering for a broken capture.
-            # In particular pw-record/libsndfile may flush only at close.
-            if record.poll() is not None:
-                raise RuntimeError(
-                    "Microphone recorder exited (rc=" + str(record.returncode) +
-                    ") during playback; " + recorder_log + ": " +
-                    log_excerpt(out / recorder_log))
-            if not observed_stream_bytes and mic_file.is_file() and mic_file.stat().st_size > 9600:
-                observed_stream_bytes = True
-                report["mic_bytes_observed_during_playback_at_s"] = round(elapsed, 4)
-                print("M5: capture file is growing; audio integrity will be checked after close.",
-                      flush=True)
-            if (not observed_stream_bytes and not buffered_notice and elapsed >= 1.0):
-                buffered_notice = True
-                print("M5: no incremental WAV bytes yet (possibly buffered); "
-                      "continuing and checking finalized WAV after playback.",
-                      flush=True)
-            if play.poll() is not None:
-                break
-            if not announcement and elapsed >= args.calibration_seconds:
-                print("M5: CALIBRATION COMPLETE — NOW READ YOUR TEXT!", flush=True)
-                announcement = True
-            if elapsed > args.seconds + 8:
-                raise RuntimeError("pw-play exceeded expected playback duration")
-            time.sleep(0.04)
-        report["capture_wav_bytes_observed_during_playback"] = observed_stream_bytes
-        if not announcement:
-            raise RuntimeError("Playback ended before 5-second calibration/reading prompt")
+        watch_paired_streams(
+            record, play, mic_file, out, recorder_log,
+            args.calibration_seconds, args.seconds, report, play_started)
         report["player_returncode"] = play.returncode
         report["player_wall_seconds"] = round(time.monotonic() - play_started, 3)
         if play.returncode:

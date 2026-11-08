@@ -29,7 +29,7 @@ import wave
 
 from voice_alsa_capture import physical_card
 from voice_aec_inspect import pactl, short_nodes
-from voice_raw_capture import child_ownership, terminate_group, sha256, verify_wav
+from voice_raw_capture import child_ownership, terminate_group, sha256, verify_wav, choose_source
 
 RATE = 48000
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,19 +85,50 @@ def stop_children() -> None:
 
 
 def start_paired_streams(record_cmd: list[str], playback_cmd: list[str],
-                         out: Path):
+                         out: Path, recorder_log: str = "arecord.log"):
     """Attempt playback immediately after launching the microphone process.
 
     Do not wait 3 seconds for ALSA readiness; failure is detected in the
     concurrent monitoring loop, and playback is stopped on any failure.
     """
-    recorder = spawn(record_cmd, out / "arecord.log")
+    recorder = spawn(record_cmd, out / recorder_log)
     try:
         player = spawn(playback_cmd, out / "pw-play.log")
     except BaseException:
         terminate_group(recorder)
         raise
     return recorder, player
+
+
+def build_mic_recorder(args, mic_file: Path) -> tuple[list[str], str, dict]:
+    """Select exactly one capture backend; never silently switch devices."""
+    if args.capture_backend == "alsa":
+        if args.source:
+            raise ValueError("--source is valid only with --capture-backend pipewire")
+        checked_program("arecord")
+        card = physical_card(args.mic, args.expect_card_id)
+        return (["arecord", "-D", args.mic, "-f", "S16_LE",
+                 "-c", "1", "-r", str(RATE), "-t", "wav",
+                 "-d", str(args.seconds + 4), str(mic_file)],
+                "arecord.log",
+                {"backend": "alsa", "mic_device": args.mic,
+                 "mic_card_id": args.expect_card_id,
+                 "mic_card_listing": card["arecord_listing"]})
+    if args.capture_backend == "pipewire":
+        if not args.source:
+            raise ValueError("PipeWire backend requires --source EXACT_PHYSICAL_NODE")
+        if not args.source.startswith("alsa_input."):
+            raise ValueError("Require explicit physical alsa_input.* node, not a monitor/virtual source")
+        checked_program("pw-record")
+        chosen = choose_source(args.source)
+        return (["pw-record", "--target=" + chosen["name"],
+                 "--rate=48000", "--channels=1", "--channel-map=mono",
+                 "--format=s16", str(mic_file)],
+                "pw-record.log",
+                {"backend": "pipewire", "mic_source_name": chosen["name"],
+                 "mic_source_id_at_start": chosen["id"],
+                 "mic_source_sample_spec": chosen["sample_spec"]})
+    raise ValueError("Unknown recorder backend")
 
 
 def log_excerpt(path: Path, limit: int = 1400) -> str:
@@ -136,9 +167,8 @@ def prepare_reference(source: Path, output: Path, seconds: int) -> dict:
 def experiment(args) -> None:
     if not sys.platform.startswith("linux"):
         raise RuntimeError("Linux only (parent-death signal required)")
-    for tool in ("arecord", "pw-play", "ffmpeg", "pactl"):
+    for tool in ("pw-play", "ffmpeg", "pactl"):
         checked_program(tool)
-    mic = physical_card(args.mic, args.expect_card_id)
     sink = checked_speaker(args.speaker)
     original = args.music.expanduser().resolve(strict=True)
     if not original.is_file() or original.stat().st_size < 1000:
@@ -147,13 +177,12 @@ def experiment(args) -> None:
     out.mkdir(mode=0o700)
     ref = out / "reference-sent.wav"
     mic_file = out / "microphone-raw.wav"
+    recorder_cmd, recorder_log, mic_info = build_mic_recorder(args, mic_file)
     report = {
         "schema": "cuewire-M5-paired-physical-capture-v1",
         "status": "running",
         "started_utc": datetime.now(timezone.utc).isoformat(),
-        "mic_device": args.mic,
-        "mic_card_id": args.expect_card_id,
-        "mic_card_listing": mic["arecord_listing"],
+        "mic_capture": mic_info,
         "speaker_sink_name": sink["name"],
         "speaker_sink_id_at_start": sink["id"],
         "source_music_path": str(original),
@@ -166,6 +195,8 @@ def experiment(args) -> None:
             "Digital reference is pre-sink audio, not sample-clock synchronized.",
             "Playback launches immediately after the ALSA process, with no 3-second wait.",
             "If microphone capture fails, the player is stopped and this take is rejected.",
+            "The microphone backend is selected explicitly; no automatic fallback.",
+            "PipeWire capture is a separate opt-in experiment and may fail on this mic.",
             "If sink effects, resampling, volume or mixing change, the acoustic model can drift.",
             "No audio routing, defaults, or virtual mic changes were made.",
             "This first pilot intentionally plays one known source; other system audio invalidates the reference."
@@ -175,24 +206,21 @@ def experiment(args) -> None:
         report["reference"] = prepare_reference(original, ref, args.seconds)
         print("M5: input checks passed.", flush=True)
         print("Speaker:", args.speaker, "pw-play volume:", args.volume, flush=True)
-        print("Mic:", args.mic, "card:", args.expect_card_id, flush=True)
+        print("Mic:", mic_info, flush=True)
         print("Speaker-only calibration: first", args.calibration_seconds,
               "seconds, then READ TEST TEXT while music continues.", flush=True)
         print("Your voice will NOT be played into the headphones.", flush=True)
-        record_cmd = ["arecord", "-D", args.mic, "-f", "S16_LE",
-                      "-c", "1", "-r", str(RATE), "-t", "wav",
-                      "-d", str(args.seconds + 4), str(mic_file)]
         playback_cmd = ["pw-play", "--target", args.speaker, "--volume",
                         str(args.volume), str(ref)]
         # Both start back-to-back: no 3-second wait for the microphone.
         # An ALSA error is reported while playback is already attempted,
         # and will immediately stop the player through finally.
-        record, play = start_paired_streams(record_cmd, playback_cmd, out)
+        record, play = start_paired_streams(recorder_cmd, playback_cmd, out, recorder_log)
         play_started = time.monotonic()
         report["playback_launch_utc_approx"] = datetime.now(timezone.utc).isoformat()
         report["playback_start_policy"] = "launch_immediately_after_recorder_no_readiness_wait"
         print("M5: PLAYBACK LAUNCHED on", args.speaker,
-              "; verifying concurrent ALSA recording.", flush=True)
+              "; verifying concurrent", args.capture_backend, "recording.", flush=True)
         print("Remain silent for the first", args.calibration_seconds,
               "seconds of playback.", flush=True)
         announcement = False
@@ -200,23 +228,23 @@ def experiment(args) -> None:
         mic_confirmed_elapsed = None
         while True:
             elapsed = time.monotonic() - play_started
-            # Check the physical microphone before declaring calibration
+            # Check the selected microphone before declaring calibration
             # successful. Do not allow music-only runs to pass as paired data.
             if record.poll() is not None:
                 raise RuntimeError(
-                    "ALSA recorder exited (rc=" + str(record.returncode) +
-                    ") during playback; arecord.log: " +
-                    log_excerpt(out / "arecord.log"))
+                    "Microphone recorder exited (rc=" + str(record.returncode) +
+                    ") during playback; " + recorder_log + ": " +
+                    log_excerpt(out / recorder_log))
             if not mic_confirmed and mic_file.is_file() and mic_file.stat().st_size > 9600:
                 mic_confirmed = True
                 mic_confirmed_elapsed = elapsed
                 report["mic_pcm_detected_elapsed_s"] = round(elapsed, 4)
-                print("M5: microphone PCM bytes confirmed.", flush=True)
+                print("M5: microphone PCM bytes confirmed (" + args.capture_backend + ").", flush=True)
             if not mic_confirmed and elapsed >= 1.0:
                 raise RuntimeError(
-                    "ALSA has not written microphone PCM after 1 second; "
-                    "stopping playback; arecord.log: " +
-                    log_excerpt(out / "arecord.log"))
+                    "Microphone has not written PCM after 1 second; "
+                    "stopping playback; " + recorder_log + ": " +
+                    log_excerpt(out / recorder_log))
             if play.poll() is not None:
                 break
             if not announcement and elapsed >= args.calibration_seconds:
@@ -253,7 +281,7 @@ def experiment(args) -> None:
     except BaseException as exc:
         report["status"] = "failed_or_interrupted"
         report["error"] = type(exc).__name__ + ": " + str(exc)
-        report["arecord_log_tail"] = log_excerpt(out / "arecord.log")
+        report["recorder_log_tail"] = log_excerpt(out / recorder_log)
         report["pw_play_log_tail"] = log_excerpt(out / "pw-play.log")
         raise
     finally:
@@ -272,9 +300,13 @@ def main() -> None:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--music", required=True, type=Path, help="Local music WAV/FLAC/etc., >=20 seconds")
+    parser.add_argument("--capture-backend", choices=("alsa", "pipewire"), default="alsa",
+                        help="Explicit capture backend; no automatic fallback")
+    parser.add_argument("--source", help="Required exact alsa_input.* node for PipeWire capture")
     parser.add_argument("--speaker", required=True, help="EXACT pactl list short sinks name")
     parser.add_argument("--mic", default="hw:0,0", help="Direct ALSA hw:C,D")
-    parser.add_argument("--expect-card-id", default="MICAudio97i")
+    parser.add_argument("--expect-card-id", default="MICAudio97i",
+                        help="Only used by --capture-backend alsa")
     parser.add_argument("--seconds", type=int, default=20)
     parser.add_argument("--calibration-seconds", type=int, default=5)
     parser.add_argument("--volume", type=float, default=0.30)

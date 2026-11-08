@@ -55,11 +55,11 @@ class CleanTests(unittest.TestCase):
         with wave.open(str(self.root / '.audit/padded.wav'), 'rb') as w:
             src_pcm = w.readframes(w.getnframes())
         self.assertEqual(len(src_pcm), extra * 2)
-        self.assertEqual(src_pcm[48000 * 2:], b"\\x00" * (extra - 48000) * 2)
+        self.assertEqual(src_pcm[48000 * 2:], bytes([0]) * (extra - 48000) * 2)
         # The synthesised processor has 1440 samples (30ms) of latency.
         # Rust -D discards the first 1440 frames of its *delayed* output.
         delay = 1440
-        simulated = (b"\\x00" * (delay * 2) + src_pcm)[:extra * 2]
+        simulated = (bytes([0]) * (delay * 2) + src_pcm)[:extra * 2]
         compensated = simulated[delay * 2:]
         full = self.root / '.audit/deepfilter-full.wav'
         with wave.open(str(full), 'wb') as w:
@@ -82,7 +82,7 @@ class CleanTests(unittest.TestCase):
         output = self.root / '.audit/bad.wav'
         with wave.open(str(output), 'wb') as w:
             w.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
-            w.writeframes(b"\\x00" * ((padded - 6000) * 2))
+            w.writeframes(bytes([0]) * ((padded - 6000) * 2))
         with self.assertRaisesRegex(RuntimeError, 'Unexpected DeepFilter delay'):
             self.m.crop_deepfilter_compensated(
                 output, self.root / '.audit/should-not-exist.wav',

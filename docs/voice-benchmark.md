@@ -177,7 +177,14 @@ as a private GitHub Release archive:
 
 The script checks PRIVATE visibility, verifies SHA256SUMS, asks for
 interactive confirmation and uploads the full archive (including the
-CLEAN REFERENCE and NOISY VOICE) as a release attachment. No public
+CLEAN REFERENCE and NOISY VOICE) as a release attachment.
+
+At the interactive prompt, enter the literal uppercase Latin word
+`UPLOAD` and press Enter. It means 'I authorize this private upload',
+NOT a transport selection (SSH/HTTPS). Any other input cancels the
+operation without sending files. The prompt is also explained in Russian.
+The private results repository must have an initial commit (README.md)
+before its first GitHub Release is created. No public
 repository/audio commit is created. The connected GitHub integration
 must ALSO be authorized for the private results repo if ChatGPT is to
 fetch those files for independent review.

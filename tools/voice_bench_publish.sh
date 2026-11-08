@@ -34,12 +34,19 @@ fi
 archive=$(mktemp --suffix=.tar.gz)
 trap 'rm -f -- "$archive"' EXIT
 tar -C "$run_dir" -czf "$archive" .
-printf 'Archive includes the CLEAN reference, damaged speech, model outputs, logs and scores.\n'
-read -r -p "Upload this PRIVATE benchmark to $repo as $tag? Type UPLOAD: " answer
+printf '\n=== ПОДТВЕРЖДЕНИЕ ПУБЛИКАЦИИ ===\n'
+printf 'Репозиторий: %s (проверен как PRIVATE).\n' "$repo"
+printf 'Тег релиза: %s\n' "$tag"
+printf 'Архив содержит ЧИСТУЮ и ЗАШУМЛЁННУЮ записи голоса, результаты моделей, логи и метрики.\n'
+printf 'Сейчас ничего ещё не отправлено.\n'
+printf 'Чтобы РАЗРЕШИТЬ загрузку, введи точно английское слово UPLOAD (заглавными буквами) и нажми Enter.\n'
+printf 'Это не выбор SSH/HTTPS. Любой другой ответ, включая пустой ввод, ОТМЕНИТ загрузку.\n'
+read -r -p 'Введи UPLOAD для загрузки: ' answer
 if [[ "$answer" != "UPLOAD" ]]; then
-  printf 'Cancelled. No data uploaded.\n'
+  printf 'Отменено. Никакие файлы не загружены. Для повтора снова запусти команду.\n'
   exit 2
 fi
+printf 'Подтверждено: отправка архива в закрытый GitHub Release...\n'
 gh release create "$tag" "$archive#cuewire-voice-benchmark.tar.gz" \
   --repo "$repo" --title "CueWire voice benchmark $tag" \
   --notes "Private reference/noisy voice recordings and model outputs. See scores.json, manifest.json and SHA256SUMS." \

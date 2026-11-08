@@ -19,6 +19,7 @@ TOOLS = Path(__file__).resolve().parents[1] / "tools"
 sys.path.insert(0, str(TOOLS))
 import voice_m5_aec as aec
 import voice_m5_capture as capture
+import voice_m5_spectral as spectral
 
 RATE = aec.RATE
 
@@ -227,6 +228,22 @@ class M5Tests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertNotIn("Traceback", proc.stderr)
 
+    def test_spectral_diagnostics_synthetic_coherence_and_lag(self):
+        x, y, expected_lag = synthetic_pair(9)
+        lag, correlation = aec.lag_estimate(x, y, 5)
+        local = spectral.correlation_windows(x, y, lag)
+        spectrum = spectral.spectrum_summary(x, y, lag)
+        self.assertEqual(len(local), 4)
+        self.assertLess(abs(lag - expected_lag), 20)
+        self.assertTrue(all(v["normalized_correlation"] > .15 for v in local))
+        self.assertEqual(len(spectrum["bands"]), 4)
+        self.assertTrue(all(
+            0 <= v["median_magnitude_squared_coherence"] <= 1.00001
+            for v in spectrum["bands"]))
+        self.assertGreater(
+            max(v["reference_energy_weighted_coherence"]
+                for v in spectrum["bands"]), 0.3)
+
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -269,6 +286,16 @@ class M5Tests(unittest.TestCase):
                 self.assertEqual(list(diagnostics_dir.glob("*.wav")), [])
                 with self.assertRaises(FileExistsError):
                     aec.diagnose(capture_dir, diagnostics_dir)
+            with mock.patch.object(spectral, "AUDIT", audit.resolve()):
+                spectral_dir = audit / "voice-aec/M5-spectral-001"
+                spectral_report = spectral.analyze(capture_dir, spectral_dir)
+                self.assertEqual(spectral_report["status"],
+                                 "diagnostic_only_not_aec_accepted")
+                self.assertEqual(list(spectral_dir.glob("*.wav")), [])
+                self.assertTrue((spectral_dir / "spectral.json").exists())
+                self.assertTrue((spectral_dir / "SHA256SUMS").exists())
+                with self.assertRaises(FileExistsError):
+                    spectral.analyze(capture_dir, spectral_dir)
             manifest["reference"]["sha256"] = "WRONG"
             (capture_dir / "manifest.json").write_text(json.dumps(manifest))
             with mock.patch.object(aec, "AUDIT", audit.resolve()):

@@ -70,6 +70,75 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 reference-conditioned ABA report: actual run -002 (2026-11-08)
+
+User corrected the output-directory identifier:
+the real run was **`M5-reference-coherence-002`**,
+not the planned/example `M5-reference-coherence-001`.
+An attempted `cd .audit/voice-aec/M5-reference-coherence-001`
+failed because that directory did not exist. The numerical
+analyzer itself had **already succeeded** and written the
+report under `-002`. Correct audit command:
+
+~~~bash
+cd /data/cue-wire/.audit/voice-aec/M5-reference-coherence-002
+sha256sum -c SHA256SUMS
+~~~
+
+The user supplied the actual `reference-coherence.json` and
+`SHA256SUMS`; the report SHA256 was **independently verified**
+as `8fd671f53c7e1974b6fbfa5b1353bbcdfb00efc05f52ae80f4d5dcd4bd2816c7`.
+Source hashes match the earlier M5-006 verified music file
+and the previous A/B/A recording:
+
+- A/B/A manifest: `508a94b28ef91d19b8e6ebbcdef679aff496558b9cecdc0ef2eee14859f69d8d`
+- Digital reference: `afd3b0ea1141147d6df284bfab62d2a9c9adc579053cfbea8c35559f2e94aa90`
+- Physical microphone: `47bb10cd4f79e8e9a84a753bf05898a875955b966c4d2550315b77327eb53aef`
+
+The **mic-power-weighted magnitude-squared coherence** was:
+
+| Hz | Speaker ON 3–9s | Speaker ON 10–16s | Speaker OFF negative control |
+| --- | ---: | ---: | ---: |
+| 70–180 | 0.035567 | 0.103679 | 0.007473 |
+| 180–500 | 0.134160 | 0.177296 | 0.008939 |
+| 500–1500 | 0.179121 | **0.417548** | 0.013841 |
+| **1500–4000** | **0.495615** | **0.553982** | **0.011981** |
+| 4000–8000 | 0.080595 | 0.114123 | 0.012856 |
+| 8000–16000 | 0.064394 | 0.069379 | 0.008308 |
+
+Thus the 1500–4000-Hz weighted spectral coherence on ON
+windows is around **41.4x** and **46.2x** the corresponding
+negative-control value. This is strong within-session evidence
+of a linear association with the known played digital reference
+during the music. The two time windows do not make independent
+experimental replications, and neither a 0.554 coherence score
+nor its ratio is a measured percentage of removed acoustic echo.
+
+The algorithm estimates digital-reference-origin-to-microphone
+alignment of **8315.27083 ms**, and the approximate software
+`pw-play` launch was at **8033.9 ms** after recording start.
+Their difference is **281.37083 ms**, with band-limited
+alignment correlation **0.388004**. Do not equate this with
+a hardware ADC/DAC latency. The earlier M5-006 report's
+~101.29-ms reference-relative lag was from a different
+recorder/player startup sequence; a difference between
+them is NOT evidence of an altered physical room delay
+or a 180-ms sound propagation change.
+
+**Next scientifically meaningful step (not yet implemented):**
+Fit one pre-specified frozen acoustic model strictly
+on the first ON window, evaluate only the later ON
+window, and report, **without exporting a voice WAV**,
+held-out reference/mic coherence BEFORE and AFTER
+the fitted echo subtraction, plus full-band and
+band-specific ERLE and absolute noise floor. Do not
+select among filters using the same later interval and
+then present that interval as independent validation.
+The speaker-OFF section stays a negative control.
+This would test echo removal directly while leaving
+the existing AEC >=1-dB fail-closed gate and the
+working M4 voice chain unchanged.
+
 ## M5 actual A/B/A spectral audit — reproduced (2026-11-08)
 
 The user supplied `M5-ABA-spectral-001/aba-spectral.json` and its
@@ -143,9 +212,9 @@ git pull --ff-only
 
 ~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_refcoherence.py \
   --capture .audit/voice-aec/M5-ABA-001 \
-  --out .audit/voice-aec/M5-reference-coherence-001
+  --out .audit/voice-aec/M5-reference-coherence-002
 
-cd .audit/voice-aec/M5-reference-coherence-001
+cd .audit/voice-aec/M5-reference-coherence-002
 sha256sum -c SHA256SUMS
 ~~~
 

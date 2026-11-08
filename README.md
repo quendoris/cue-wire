@@ -126,6 +126,30 @@ limited DSP experiment, NOT certified full studio restoration or
 separation of vocals from full-band music.
 
 
+## NumPad H2 — standalone keypad event interpreter (preferred over H1 for keys)
+
+**H2 supersedes H1's direct soundboard NumPad bindings.** It assigns
+no audio/action to buttons. Instead it logs raw physical NumPad down/up
+and single, double, hold_start/hold_end and multi-key chord gestures.
+
+    python3 tests/test_keypad.py
+    python3 tools/cuewire_keypad.py check
+    python3 tools/cuewire_keypad.py render
+    python3 tools/cuewire_keypad.py render --device "SEPARATE_NUMPAD_DEVICE"
+    python3 tools/cuewire_keypad.py run --log-jsonl .audit/keypad/H2-001.jsonl
+
+The generated Lua uses code:NN physical keypad keys and
+hl.dsp.event messages to Hyprland socket2. No child process per
+keypress, no keyboard evdev privileges, no recording other keys and no
+audio controls. It is foreground-only; Ctrl+C stops. Bindings are NOT
+registered automatically. The optional --device allows physical
+isolation of a **separate** keypad from the main keyboard. See
+[NumPad H2](docs/keypad-H2-event-adapter.md).
+
+Do NOT install the older H1 NumPad audio-bind snippet in parallel;
+that older snippet is only kept for historical reference and the
+independent future Super+C emergency design.
+
 ## Hotkeys H1 (opt-in only; no automatic desktop modifications)
 
 The Rust CLI now accepts cue IDs 0..9. A separate, foreground-only
@@ -136,7 +160,7 @@ or legacy hyprlang bindings without making changes:
     python3 tools/cuewire_hotkeys.py render --format lua
     python3 tools/cuewire_hotkeys.py render --format legacy
 
-The desired bindings are NumPad 0..9 -> cue 0..9, KP_Decimal -> stop
+The historical H1 design used NumPad 0..9 -> cue 0..9, KP_Decimal -> stop
 the current cue **without stopping voice**, and Super+C -> terminate
 the explicitly isolated CueWire cgroup. Modifier-insensitive NumPad
 bindings work while holding W/A/Shift/Ctrl when supported by the

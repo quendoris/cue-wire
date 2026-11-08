@@ -2,7 +2,7 @@
 
 **Foreground-only, terminal-first PipeWire virtual microphone.** Written in Rust, using the PipeWire command-line tools on Arch Linux / Hyprland. No GUI, no daemon, no autostart, no permanent system configuration.
 
-**Current status:** v0.1 engineering preview, automated compilation and unit checks only. Real microphone/headphone audio has not yet been verified on the user's Arch machine. No denoising, reverb reduction, DSP gain/limiter, global NumPad or Super+C key binding yet.
+**Current status:** v0.1 engineering preview, automated compilation and unit checks only. Real microphone/headphone audio has not yet been verified on the user's Arch machine. No denoising, reverb reduction, DSP gain/limiter or automatically registered Hyprland hotkeys in the foreground runtime. An opt-in NumPad/Super+C hotkey helper and isolated cgroup launcher now exist but require live hardware acceptance.
 
 ## Graph
 
@@ -84,7 +84,7 @@ SIGKILL, abrupt machine shutdown or a crash cannot invoke cleanup handlers; veri
 | Play/replace/stop one cue in both mic and monitor | Implemented; hardware test still needed |
 | Foreground process, local control socket, cleanup | Implemented; live fault injection still needed |
 | Independent gains, noise suppression (RNNoise), HPF, limiter, reverberation reduction | Not yet implemented |
-| Global NumPad triggers, Super+C forced exit | Not yet implemented; no automatic key binding takeover |
+| NumPad 0..9 and decimal helper, supervised Super+C | Opt-in Hyprland snippet/preflight and transient scope available; no automatic binding registration; hardware test pending |
 | Confirmed latency, glitches, real Steam/game integration | Not measured |
 
 The requested latency value is not a measured end-to-end latency guarantee. No sound system defaults, services, persistent PipeWire configuration, system audio monitoring, or Hyprland keyboard settings are changed.
@@ -124,3 +124,36 @@ For real recordings and a deterministic real-speech damage fixture, see
 [voice restoration playground](docs/voice-restoration.md). This is a
 limited DSP experiment, NOT certified full studio restoration or
 separation of vocals from full-band music.
+
+
+## Hotkeys H1 (opt-in only; no automatic desktop modifications)
+
+The Rust CLI now accepts cue IDs 0..9. A separate, foreground-only
+Hyprland helper can inspect existing bindings and render **manual** Lua
+or legacy hyprlang bindings without making changes:
+
+    python3 tools/cuewire_hotkeys.py check
+    python3 tools/cuewire_hotkeys.py render --format lua
+    python3 tools/cuewire_hotkeys.py render --format legacy
+
+The desired bindings are NumPad 0..9 -> cue 0..9, KP_Decimal -> stop
+the current cue **without stopping voice**, and Super+C -> terminate
+the explicitly isolated CueWire cgroup. Modifier-insensitive NumPad
+bindings work while holding W/A/Shift/Ctrl when supported by the
+keyboard/compositor. No privileged key reader or persistent daemon.
+
+To make the emergency action exact and not kill other apps, launch the
+foreground instance in a transient user scope:
+
+    bash tools/cuewire_scope.sh check
+    bash tools/cuewire_scope.sh run -- --mic NODE --monitor SINK --cue 0=FILE
+
+Only when such a session is active, `bash tools/cuewire_scope.sh emergency`
+can terminate the cgroup. This is a **forceful SIGKILL**, so the
+foreground launcher additionally tries to remove a verified stale
+socket after scope exit. No automatic config changes or key injection.
+Do not activate bindings until on-device collision and force-kill tests
+are passed.
+
+See [hotkeys H1](docs/hotkeys-H1.md). The frozen research plan for
+long-form controlled voice recording is [M4](docs/voice-M4-long-capture-protocol.md).

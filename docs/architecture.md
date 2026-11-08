@@ -24,9 +24,30 @@ No actual PipeWire hardware graph, acoustic quality or latency is certified yet.
 
 Native callback-based unified DSP: optional voice high-pass, RNNoise or independently evaluated suppressor, voice gain and limiter, separate cue gain, final mix ceiling, 48 kHz channel/rate handling. Cue files decoded off the real-time callback; callback does not allocate or block. A bounded ring buffer handles rapid cue switching. Acoustic echo cancellation is different from dereverberation and requires a far-end reference; physical USB monitor/loopback routing problems must be diagnosed before DSP.
 
-## Stage v0.3 (not yet implemented)
+## Stage v0.3 (opt-in helper implemented, live activation not yet accepted)
 
-Opt-in Hyprland hotkeys: NumPad sound cues and Super+C to terminate the foreground process. Preflight must detect existing key conflicts; binds must not hijack the user's desktop or become persistent. If the compositor version cannot guarantee safe temporary install/cleanup, prefer user-managed bindings that send control commands to the CueWire local socket. Do not read raw evdev devices with privileged input-group access.
+The separate H1 module emits Hyprland Lua/legacy keybind previews for
+NumPad 0..9, KP_Decimal stop and Super+C. Read-only preflight reports
+existing matching keybind conflicts via `hyprctl -j binds` and
+refuses to modify any compositor setting. Core cue slot 0 and the
+local socket protocol are now implemented.
+
+Super+C requires the CueWire foreground process to be launched inside a
+transient user systemd scope (collectible, no resident service). The
+emergency command targets that scope's CGroup with SIGKILL; it refuses
+unmarked or foreign scopes, and the foreground launcher verifies a
+non-listening, owned socket before unlinking a stale socket after exit.
+This does **not** rely on the compositor's `forcekillactive`, which
+would miss detached audio subprocesses and could kill the wrong window.
+
+Binding installation is intentionally NOT automated: a SIGKILLed
+process cannot run unbind handlers, and Hyprland now supports both
+legacy hyprlang and Lua configuration. Preflight, runtime scope,
+modifiers-held behavior, actual keysyms, fullscreen games, hung
+subprocesses and safe cleanup all need on-device acceptance. Do not
+read raw evdev devices with privileged input-group access.
+
+See [hotkeys H1](hotkeys-H1.md).
 
 ## Acceptance checks on the real machine
 

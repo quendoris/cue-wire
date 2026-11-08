@@ -54,6 +54,11 @@ jobs:
             cargo run --locked --offline --example voice_restore -- --out "/tmp/cuewire-voice-sweep-$strength" --seconds 3 --strength "$strength"
             python3 tests/voice_quality.py "/tmp/cuewire-voice-sweep-$strength"
           done
+      - name: Hotkey safety preflight and scoped emergency (fake systemctl only)
+        run: |
+          bash -n tools/cuewire_scope.sh
+          python3 -m py_compile tools/cuewire_hotkeys.py tests/test_hotkeys.py
+          python3 tests/test_hotkeys.py
       - name: Fake PipeWire end-to-end process and cleanup smoke
         run: python3 tests/fake_runtime.py target/debug/cuewire
       - name: Show CLI and command validation

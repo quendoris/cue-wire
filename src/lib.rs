@@ -54,7 +54,7 @@ pub fn parse_control(parts:&[String])->Result<Control,String> {
         [s] if s=="help"=>Ok(Control::Help),
         [s,n] if s=="play"=>{
             let id=n.parse::<u8>().map_err(|_|"play needs integer 0..9".to_string())?;
-            if id>9 {return Err("play needs integer 1..9".into());}
+            if id>9 {return Err("play needs integer 0..9".into());}
             Ok(Control::Play(id))
         }
         _=>Err("expected: play N, stop, status, quit, or help".into())

@@ -110,3 +110,51 @@ the default. This does not prove synchronized echo reference.
 Echo cancellation with friends/game/music stays documented at:
 
     docs/voice-M5-acoustic-echo-cancellation.md
+
+## Recovery after a short or empty WAV (M4/R0 v2)
+
+An actual first take was rejected because verify_wav found fewer than
+48,000 PCM frames. This only proves the WAV contains less than 1s
+of audio; it does NOT establish the root cause. Inspect the LOCAL
+existing directory without deleting anything:
+
+    cd /data/cue-wire
+    ls -lh .audit/voice-captures/M4-R0-001/
+    cat .audit/voice-captures/M4-R0-001/pw-record.stderr.log
+    ffprobe -v error -show_entries format=duration,size \
+      -of default=noprint_wrappers=1 \
+      .audit/voice-captures/M4-R0-001/raw.wav
+
+The 2026-11-08 v2 recorder still preserves an incomplete WAV,
+but now ALWAYS creates a diagnostic manifest if the recorder exits
+with no frames, if WAV parsing fails, or if an early-startup test
+does not see audio samples being written. The report records
+the stop reason, elapsed wall time, recorder exit status, byte
+count, frame count, SHA256 and the bounded stderr excerpt.
+Rather than an opaque traceback, it exits code 3 for a rejected take.
+
+At 7 seconds the live recorder checks that >= 0.5s worth of
+PCM bytes were written (even captured silence generates PCM bytes).
+If not, it terminates the owned pw-record before the operator
+wastes time reading the full speech script. This is a liveness
+check of disk-writing progress, not proof of valid audio quality.
+
+After reviewing the previous log, make a NEW diagnostic take, never
+overwrite M4-R0-001:
+
+    git pull --ff-only
+    python3 tools/voice_raw_capture.py record \
+      --mic 'alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback' \
+      --out .audit/voice-captures/M4-DIAG-002 \
+      --max-seconds 20
+
+Stay at the physical mic and speak a short phrase for 10 seconds.
+If the terminal prints READY, the recorder has written audio
+bytes; Ctrl+C finishes and reports the WAV format/duration.
+Only after this gate should a fresh M4-R0-002 be recorded with
+the complete head-turn / distance protocol.
+
+NEVER delete M4-R0-001 simply because it failed; its stderr and
+incomplete WAV are evidence. This diagnostics stage does not
+enable microphone loopback, AEC, effects, source switching, or
+system configuration changes.

@@ -12,7 +12,7 @@ import re
 import socket
 import sys
 
-KEYS = frozenset(("K"+str(i) for i in range(10)) +
+KEYS = frozenset(tuple("K"+str(i) for i in range(10)) +
                  ("DOT","ENTER","PLUS","MINUS","STAR","SLASH"))
 PHASES = frozenset(("down","up"))
 

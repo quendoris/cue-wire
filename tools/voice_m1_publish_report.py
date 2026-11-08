@@ -47,6 +47,8 @@ def make_report(chain,comparison):
         "verified_blind_01_sha256":chain.get("blind_studio_wav_sha256"),
         "original_model_output_sha256":leaf.get("model_source_sha256"),
         "model_source_run":run,
+        "playback_level_normalization_history":
+            chain.get("playback_level_normalization_history",{}),
         "audio_comparison":comparison,
         "privacy":"JSON metadata only; no WAV or local absolute paths",
         "remaining_gaps":[

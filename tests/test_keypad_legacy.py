@@ -38,7 +38,7 @@ if argv[0]=="keyword":
     code=int(match.group(1))
     if name=="unbind":
         data=[r for r in data if r.get("keycode")!=code]
-    elif name in ("bindi","bindri","bindip","bindrip"):
+    elif name in ("bindi","bindri","bindip","bindrip","bindit","bindrit","bindipt","bindript"):
         fails=int(os.environ.get("H2_FAIL_AFTER","0"))
         before=int(os.environ.get("H2_KEYWORD_COUNT","0"))
         counter=Path(os.environ["H2_FAKE_COUNTER"])
@@ -137,6 +137,33 @@ def test_success(root):
             proc.communicate(timeout=3)
 
 
+def test_transparent_opt_in(root):
+    env,state,calls=fixture(root)
+    logfile=root/"transparent.jsonl"
+    proc=subprocess.Popen([
+        sys.executable,str(APP),"run","--temporary-bindings",
+        "--legacy-transparent","--log-jsonl",str(logfile)],
+        env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    try:
+        wait_ready(logfile,proc)
+        records=json.loads(state.read_text())
+        assert len(records)==32
+        history=[json.loads(line) for line in calls.read_text().splitlines()]
+        bindnames=[call[1] for call in history
+                   if len(call)>2 and call[:1]==["keyword"] and call[1]!="unbind"]
+        assert bindnames.count("bindit")==16,bindnames
+        assert bindnames.count("bindrit")==16,bindnames
+        proc.send_signal(signal.SIGTERM)
+        out,err=proc.communicate(timeout=8)
+        assert proc.returncode==0,(out,err)
+        assert json.loads(state.read_text())==[]
+        print("PASS hyprlang: transparent press/release opt-in and cleanup")
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate(timeout=3)
+
+
 def test_partial_failure(root):
     env,state,calls=fixture(root)
     env["H2_FAIL_AFTER"]="5"
@@ -171,6 +198,8 @@ def test_foreign_conflict(root):
 def main():
     with tempfile.TemporaryDirectory(prefix="cuewire-H2-legacy-ok-") as tmp:
         test_success(Path(tmp))
+    with tempfile.TemporaryDirectory(prefix="cuewire-H2-legacy-transparent-") as tmp:
+        test_transparent_opt_in(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="cuewire-H2-legacy-bad-") as tmp:
         test_partial_failure(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="cuewire-H2-legacy-foreign-") as tmp:

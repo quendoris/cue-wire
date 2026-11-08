@@ -116,3 +116,29 @@ For diagnosis only, independently bypass the four stages with
 --no-highpass, --no-denoise, --no-expander, --no-leveler. These flags
 are recorded in report.json to prevent accidental comparisons of
 unlike processing chains.
+
+## Validation findings from the first deterministic voice-like sample
+
+The first overly aggressive causal high-pass attenuated silent segments but
+reduced synthetic-reference waveform fidelity: -4.2 dB aligned SDR change.
+Independent stage bypass testing isolated the filter as the principal
+source of waveform phase rotation. In the corrected OFFLINE version, the
+high-pass is applied forward and backward with no net phase rotation.
+
+On the 3 s fixture at the current default parameters:
+
+- Exact quiet interval, input -> output: -22.795 -> -37.570 dBFS,
+  a 14.775 dB lower noise-only RMS.
+- Gain-invariant sample-domain SDR against its clean synthetic vocal
+  reference: 2.479 -> 3.590 dB (+1.111 dB).
+- With leveling disabled (but HPF, spectral suppression and expander ON):
+  the same SDR improves to 6.131 dB (+3.651 dB).
+- Spectral suppression alone (no HPF, expander, leveling or artificial bed):
+  2.479 -> 6.792 dB (+4.313 dB), noise-only RMS lower by 8.869 dB.
+
+These figures come from one artificial voice-like signal; they do NOT
+prove word intelligibility, studio quality or performance on music. They
+also show that leveling imposes a measurable waveform-distortion tradeoff.
+The default acceptance gate checks that the deterministic test both
+reduces quiet noise and improves its SDR, whereas detailed strength/stage
+sweeps run only during manual GitHub Actions workflow_dispatch.

@@ -100,12 +100,15 @@ def main():
     (directory/"quality.json").write_text(json.dumps(metrics,indent=2,sort_keys=True)+"\n")
     assert all(math.isfinite(value) for key,value in metrics.items() if isinstance(value,float))
     if len(sys.argv)==2:
-        assert quiet_after<quiet_before-2.0, (
+        assert after-before>0.5, (
+            f"gain-invariant SDR worsened or insufficient improvement: {before:.2f} -> {after:.2f} dB"
+        )
+        assert quiet_after<quiet_before-8.0, (
         f"noise-only interval not quiet enough: {quiet_before:.2f} -> {quiet_after:.2f} dBFS"
     )
     print("WAVEFORM QUALITY AUDIT: "+json.dumps(metrics,sort_keys=True))
     if len(sys.argv)==2:
-        print("PASS: measured quiet-section noise reduction exceeds 2 dB; no claim on intelligibility")
+        print("PASS: quiet noise reduction >8 dB AND synthetic waveform SDR improves >0.5 dB; no claim on intelligibility")
     else:
         print("DIAGNOSTIC ONLY: no quality gate applied")
 

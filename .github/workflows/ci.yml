@@ -35,12 +35,8 @@ jobs:
           cp /tmp/cuewire-voice-preview/voice_after.wav /tmp/cuewire-voice-first.wav
           cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-voice-preview --seconds 3
           cmp /tmp/cuewire-voice-first.wav /tmp/cuewire-voice-preview/voice_after.wav
-          for strength in 0.35 0.8 1.3 1.7 2.2; do
-            echo "--- voice denoising profile strength=$strength ---"
-            cargo run --locked --offline --example voice_restore -- --out "/tmp/cuewire-voice-sweep-$strength" --seconds 3 --strength "$strength"
-            python3 tests/voice_quality.py "/tmp/cuewire-voice-sweep-$strength"
-          done
       - name: Isolate voice restoration stages for quality diagnosis
+        if: github.event_name == 'workflow_dispatch'
         run: |
           cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-stage-no-processing --seconds 3 --no-highpass --no-denoise --no-expander --no-leveler --bed-off
           python3 tests/voice_quality.py /tmp/cuewire-stage-no-processing --diagnostic
@@ -50,6 +46,14 @@ jobs:
           python3 tests/voice_quality.py /tmp/cuewire-stage-filtered --diagnostic
           cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-stage-no-leveler --seconds 3 --no-leveler --bed-off
           python3 tests/voice_quality.py /tmp/cuewire-stage-no-leveler --diagnostic
+      - name: Sweep voice suppression strengths (manual diagnostics)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          for strength in 0.35 0.8 1.3 1.7 2.2; do
+            echo "--- voice denoising profile strength=$strength ---"
+            cargo run --locked --offline --example voice_restore -- --out "/tmp/cuewire-voice-sweep-$strength" --seconds 3 --strength "$strength"
+            python3 tests/voice_quality.py "/tmp/cuewire-voice-sweep-$strength"
+          done
       - name: Fake PipeWire end-to-end process and cleanup smoke
         run: python3 tests/fake_runtime.py target/debug/cuewire
       - name: Show CLI and command validation

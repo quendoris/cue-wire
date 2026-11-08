@@ -322,6 +322,12 @@ def main():
         except (OSError, ValueError, RuntimeError, AssertionError) as error:
             item["status"] = "failed"
             item["error"] = str(error)
+        if item["status"] != "ok":
+            # A failed model may leave a partial or invalid output WAV.
+            # Never allow collect() to score that artifact as a success.
+            failed_output = work/"results"/(name+".wav")
+            if failed_output.is_file():
+                failed_output.unlink()
         item["elapsed_seconds"] = round(time.perf_counter()-start_time, 3)
         record(work, state)
         print(f"{name}: {item['status']} ({item['elapsed_seconds']}s) "

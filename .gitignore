@@ -20,3 +20,8 @@
 /bench-*/
 /voice-bench-*/
 /voice-bench-results/
+
+# Private blind-listening derivatives (never commit speech)
+/voice-audition-*/
+/voice-compare-*/
+/voice-strong-*/

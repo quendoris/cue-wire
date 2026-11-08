@@ -137,6 +137,18 @@ def main():
         "source_identity_verified": True,
         "source_stage": "blind04__control (no added studio EQ/compression)",
         "original_listening_round": origin,
+        "playback_level_normalization_history": {
+            "prior_blind04": {
+                "gain_factor": prior_key.get("gain"),
+                "wav_sha256": prior_audio_hash,
+                "source_sha256": prior_key.get("source_sha256")
+            },
+            "studio_blind01": {
+                "gain_factor": studio_key.get("gain"),
+                "wav_sha256": studio_audio_hash,
+                "source_sha256": studio_key.get("source_sha256")
+            }
+        },
         "ordered_models": origin["ordered_stages"],
         "reproducibility_note": (
             "Ordered model names are verified by local answer keys. "
@@ -172,6 +184,15 @@ def main():
         else:
             print("WARNING: could not verify original source benchmark by SHA-256; "
                   "the model stages come from listening keys only.")
+    if origin["source_kind"] == "prior_blind_anchor":
+        previous_id = origin["anchor_id"]
+        _, _, prev_key, prev_audio_sha = get_key(
+            args.previous, int(previous_id[-2:]))
+        result["playback_level_normalization_history"]["previous_anchor"] = {
+            "gain_factor": prev_key.get("gain"),
+            "wav_sha256": prev_audio_sha,
+            "source_sha256": prev_key.get("source_sha256")
+        }
     if source_run:
         source_manifest_file = source_run / "manifest.json"
         if not source_manifest_file.is_file():

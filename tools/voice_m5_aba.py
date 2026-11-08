@@ -18,7 +18,6 @@ import json
 import math
 import os
 from pathlib import Path
-import shutil
 import sys
 import time
 
@@ -181,6 +180,10 @@ def run(args: argparse.Namespace) -> None:
                                log_excerpt(out / "pw-play.log"))
         result["playback_wall_seconds"] = round(
             time.monotonic() - player_start, 4)
+        if result["playback_wall_seconds"] < reference_duration - 1.0:
+            raise RuntimeError(
+                "Speaker player returned too early for the expected reference; "
+                "control take rejected")
         print("M5 ABA: speaker OFF again", args.post_seconds, "seconds.", flush=True)
         wait_alive(args.post_seconds, "speaker_off_after", None)
         result["mic_record_wall_seconds_before_stop"] = round(

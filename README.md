@@ -109,6 +109,28 @@ existing foreground PipeWire runtime or default audio routing.
 
 See [mixer playground design](docs/mixer-playground.md) for safety and DSP contracts.
 
+## M4 real-microphone chain: CLEAN -> speech leveling (offline)
+
+The accepted M4/R0 chain now has an auditable independent leveling stage:
+**physical ALSA RAW -> DeepFilterNet (-D, 30 ms aligned) -> DPDFNet2 Soft
+(12 dB limit) -> optional speech-aware leveler**. No live processing or
+system audio changes are implied. The user's listening approval applies to
+the CLEAN output; the new level result still requires separate listening.
+
+See [M4 clean protocol](docs/voice-m4-clean.md) and
+[M4 speech level protocol](docs/voice-m4-level.md).
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_voice_m4_level.py' -v
+python3 tools/voice_m4_level.py \
+  --in .audit/voice-captures/M4-R0-ALSA-007/clean-003/02-dpdfnet2-soft.wav \
+  --out .audit/voice-captures/M4-R0-ALSA-007/level-001
+~~~
+
+Files remain local and private in `.audit`; RAW and completed CLEAN
+runs are never overwritten. Leveling estimates speech RMS, not LUFS,
+and uses a sample-peak guard rather than a certified true-peak limiter.
+
 ## Offline voice restoration lab (not yet live)
 
 An opt-in, deterministic voice enhancement candidate lives in

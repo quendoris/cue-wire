@@ -47,7 +47,8 @@ fn no_silent_hard_clipping() {
     let mut out = [0.0; 2];
     let stats = mix_block(&[0.8, -0.8], &[0.6, -0.6], &mut out,
                           Gain::unity(), Gain::unity()).unwrap();
-    assert_eq!(out, [1.4, -1.4]);
+    assert!((out[0] - 1.4).abs() < 1e-6);
+    assert!((out[1] + 1.4).abs() < 1e-6);
     assert_eq!(stats.overloaded_samples, 2);
     assert!((stats.peak_abs - 1.4).abs() < 1e-6);
     let mut wav = Vec::new();

@@ -142,6 +142,33 @@ python3 tools/voice_m4_refine.py \
   --out .audit/voice-captures/M4-R0-ALSA-007/level-002
 ~~~
 
+## M5 controlled acoustic echo pilot: speaker reference + physical mic
+
+A new opt-in offline experiment identifies how an **explicit digital reference**
+sounds when emitted by one real speaker and recorded through the user's
+physical ALSA microphone. First 5 seconds speaker only (including
+pre-recorded vocals), then operator reads a passage while music continues.
+After recording, a separate offline analyzer finds clock offset, trains
+a frozen linear FIR from speaker-only samples and validates held-out
+echo reduction before producing a research-only subtraction candidate.
+
+This is **not** automatic voice separation or live AEC. It does not
+touch existing M4 masters, PipeWire defaults/routes, hotkeys, services
+or any permanent system configuration.
+
+See [M5 step-by-step pilot](docs/voice-m5-acoustic-echo.md),
+[read-only output discovery](tools/voice_aec_inspect.py),
+[paired capture](tools/voice_m5_capture.py), and
+[offline AEC analysis](tools/voice_m5_aec.py).
+
+~~~bash
+python3 tools/voice_aec_inspect.py
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover -s tests -p 'test_voice_m5_aec.py' -v
+~~~
+
+The test playback and microphone WAV remain in the private `.audit`
+directory. **No sound is played** by the AEC analyzer or the tests.
+
 ## Offline voice restoration lab (not yet live)
 
 An opt-in, deterministic voice enhancement candidate lives in

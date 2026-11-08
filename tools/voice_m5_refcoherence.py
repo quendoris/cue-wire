@@ -69,8 +69,8 @@ def band_lag(reference: np.ndarray, mic: np.ndarray, launch_s: float,
     if not np.isfinite(confidence) or confidence < .06:
         raise ValueError(
             f"Weak/ambiguous reference timing correlation: {confidence:.5f}")
-    if lag + round(16.0 * RATE) >= len(y):
-        raise ValueError("Aligned microphone does not include full evaluation windows")
+    if lag + round(probe_end_s * RATE) > len(y):
+        raise ValueError("Aligned microphone too short for timing probe")
     return lag, {
         "lag_from_reference_origin_ms": round(1000*lag / RATE, 5),
         "lag_after_launch_ms": round(1000*(lag / RATE - launch_s), 5),

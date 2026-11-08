@@ -20,6 +20,7 @@ sys.path.insert(0, str(TOOLS))
 import voice_m5_aec as aec
 import voice_m5_capture as capture
 import voice_m5_spectral as spectral
+import voice_m5_model_probe as model_probe
 
 RATE = aec.RATE
 
@@ -261,6 +262,66 @@ class M5Tests(unittest.TestCase):
         self.assertGreater(
             max(v["reference_energy_weighted_coherence"]
                 for v in spectrum["bands"]), 0.3)
+
+    def test_m5_fir_model_probe_matches_existing_baseline(self):
+        """120ms/0.02 model must reproduce original frozen M5 filter fit."""
+        x, y, _ = synthetic_pair(9)
+        lag, _ = aec.lag_estimate(x, y, 5)
+        _, _, original = aec.fit_transfer(x, y, lag, 5)
+        offset = max(0, lag - int(0.010 * RATE))
+        aligned = np.zeros(offset + int(4.60 * RATE))
+        aligned[offset:] = x[:len(aligned)-offset]
+        current = model_probe.fit_one(aligned, y[:len(aligned)],
+                                      offset, 120, 0.02)
+        self.assertAlmostEqual(
+            current["training_erle_db"], original["training_erle_db"],
+            delta=0.03)
+        self.assertAlmostEqual(
+            current["heldout_erle_db"], original["heldout_speaker_only_erle_db"],
+            delta=0.03)
+        self.assertEqual(len(current["heldout_erle_by_frequency_db"]), 4)
+        short = model_probe.fit_one(aligned, y[:len(aligned)],
+                                    offset, 30, 0.10)
+        self.assertTrue(math.isfinite(short["heldout_erle_db"]))
+
+    def test_m5_model_probe_writes_only_numeric_audit_and_refuses_reuse(self):
+        """No WAV is emitted, and source WAV hashes are enforced."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            audit = root / ".audit"
+            capture_dir = audit / "voice-aec/M5-001"
+            capture_dir.mkdir(parents=True)
+            x, y, _ = synthetic_pair(9)
+            ref_file = capture_dir / "reference-sent.wav"
+            mic_file = capture_dir / "microphone-raw.wav"
+            pcm16_file(ref_file, x)
+            pcm16_file(mic_file, y)
+            manifest_path = capture_dir / "manifest.json"
+            manifest = {
+                "schema": "cuewire-M5-paired-physical-capture-v1",
+                "status": "captured_for_offline_aec",
+                "reference": {"sha256": aec.digest(ref_file)},
+                "microphone": {"sha256": aec.digest(mic_file)},
+                "speaker_only_calibration_s": 5,
+            }
+            manifest_path.write_text(json.dumps(manifest))
+            hashes = [aec.digest(p) for p in (ref_file, mic_file, manifest_path)]
+            with mock.patch.object(model_probe, "AUDIT", audit.resolve()), \\
+                 mock.patch.object(model_probe, "LENGTH_MS", (120,)), \\
+                 mock.patch.object(model_probe, "RIDGE_FACTORS", (0.02,)):
+                dest = audit / "voice-aec/M5-model-001"
+                report = model_probe.probe(capture_dir, dest)
+                self.assertEqual(report["status"],
+                                 "exploratory_only_no_voice_output")
+                self.assertEqual(len(report["candidates"]), 1)
+                self.assertEqual(list(dest.glob("*.wav")), [])
+                self.assertTrue((dest/"model-probe.json").is_file())
+                self.assertTrue((dest/"SHA256SUMS").is_file())
+                self.assertEqual(
+                    hashes, [aec.digest(p) for p in
+                             (ref_file, mic_file, manifest_path)])
+                with self.assertRaises(FileExistsError):
+                    model_probe.probe(capture_dir, dest)
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

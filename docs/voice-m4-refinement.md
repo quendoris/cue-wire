@@ -80,6 +80,28 @@ RMS, peak, frame count, speech p25/p50/p90 range, maximum gain
 reduction and limiting activity. A separate `SHA256SUMS` covers outputs
 and the manifest. Incomplete runs are marked failed.
 
+## Listening verdict — 2026-11-08
+
+The user directly compared the successful LEVEL-002 recordings
+(`04-soft.wav`, `04-dense.wav`) with the already approved
+LEVEL-001 (`03-voice-leveled.wav`). The reported perceptual difference
+was small: all three versions sounded approximately the same.
+
+**Decision:** do **not** promote either LEVEL-002 candidate. Keep
+`level-001/03-voice-leveled.wav` as the chosen master for subsequent
+CueWire mixing/output experiments. Preserve LEVEL-002, its manifest,
+measurements, code, and checksums as experiment history, not as an
+audibly demonstrated improvement.
+
+This is a *subjective listening verdict*, not a measured null test.
+No claim is made that the files are bit-identical, equivalent under all
+listening conditions, or that one has objectively better dynamics.
+Do not increase compression solely to manufacture a difference.
+
+Next workstream: voice/cue combination and separate output routing.
+The user's proposed hypothesis about mixing/output behavior has not
+yet been supplied; validate it before choosing a routing topology.
+
 ## Audition
 
 ```bash

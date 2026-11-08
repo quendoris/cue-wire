@@ -163,7 +163,7 @@ def main():
     p.add_argument("--release-ms",type=float,default=100)
     p.add_argument("--max-preamp-db",type=float,default=24)
     args=p.parse_args()
-    all_numbers=[args.extra_db,args.peak_ceiling_db,args.attack_ms,
+    all_numbers=[args.extra_db,args.peak_ceiling_dbfs,args.attack_ms,
                  args.release_ms,args.max_preamp_db]
     if not all(map(math.isfinite,all_numbers)):
         p.error("All numeric parameters must be finite")

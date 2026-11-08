@@ -90,6 +90,8 @@ def main():
                    help="Old voice-audition-rnnoise-001, only if 04 was an anchor")
     p.add_argument("--studio-run", type=Path, required=True,
                    help="Original bench-studio-001 directory")
+    p.add_argument("--source-run", type=Path, default=None,
+                   help="Optional original model benchmark (e.g. bench-run-005 or bench-rnnoise-lib-001) to verify the exact model output and commit")
     p.add_argument("--out", type=Path, required=True,
                    help="Fresh local JSON output outside public Git tracking")
     args = p.parse_args()
@@ -136,6 +138,43 @@ def main():
             "This metadata must not be mistaken for checkpoint verification."
         )
     }
+    if args.source_run:
+        source_manifest_file = args.source_run / "manifest.json"
+        if not source_manifest_file.is_file():
+            raise RuntimeError(f"Missing model-run manifest: {source_manifest_file}")
+        model_run = json.loads(source_manifest_file.read_text())
+        ordered = origin["ordered_stages"]
+        label = "__".join(ordered)
+        stage_job = model_run.get("jobs", {}).get(label)
+        if not stage_job or stage_job.get("status") != "ok":
+            raise RuntimeError(f"The selected model chain {label} has no successful source-run job")
+        source_entry = origin
+        if origin["source_kind"] == "prior_blind_anchor":
+            source_entry = origin["upstream"]
+        source_hash = source_entry.get("model_source_sha256")
+        actual_model_file = args.source_run/"results"/(label+".wav")
+        if not actual_model_file.is_file() or digest(actual_model_file)!=source_hash:
+            raise RuntimeError(
+                "Source benchmark WAV does not match previous blind listening key. "
+                "Do not freeze an unverifiable chain.")
+        if stage_job.get("output_sha256")!=source_hash:
+            raise RuntimeError("Source benchmark manifest SHA is inconsistent with previous blind key")
+        result["source_run_verified"] = {
+            "source_run_dir": str(args.source_run),
+            "source_benchmark_commit": model_run.get("repo_commit"),
+            "output_sha256": source_hash,
+            "stage_details": stage_job.get("stage_details"),
+            "stage_names": stage_job.get("steps"),
+            "context_pad_ms": model_run.get("context_pad_ms"),
+            "source_input_sha256": model_run.get("input_files",{}).get("noisy",{}).get("sha256"),
+            "weights_recorded_by_benchmark": model_run.get("weights",[])
+        }
+        result["reproducibility_note"] += (
+            " Source-run WAV, manifest output hash and original model path also verified."
+        )
+    else:
+        result["source_run_verified"] = None
+        print("NOTE: exact stage IDs verified, but add --source-run to pin benchmark commit and verify the model output.")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True)+"\n")
     print("PASS: M1 blind WAV, source studio control and upstream listening key verified.")

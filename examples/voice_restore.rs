@@ -159,7 +159,7 @@ fn run()->Result<(),String> {
     let output_sha=sha256(&processed_path)?;
     let manifest=format!(
         concat!(
-            "{\n",
+            "{{\n",
             "  \"algorithm\": \"cuewire-voice-offline-v0.1\",\n",
             "  \"fixture\": \"{}\",\n",
             "  \"source_file_sha256\": \"{}\",\n",
@@ -190,7 +190,7 @@ fn run()->Result<(),String> {
             "  \"peak_safety_gain_db\": {},\n",
             "  \"final_leveler_gain_db\": {},\n",
             "  \"input_overload_samples\": {}\n",
-            "}\n"
+            "}}\n"
         ),
         if demo {"synthetic-voice-like-noise"} else {"external-wav"},
         input_sha,output_sha,reference_sha,!demo,input.len(),

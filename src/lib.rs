@@ -15,6 +15,8 @@ Usage:
 Terminal commands: play N, stop, status, quit. Ctrl+C / SIGTERM cleans owned nodes.
 Use exact PipeWire node.name strings. Audio is not captured from system playback.
 v0.1: raw microphone plus one active sound cue, with cue-only monitoring.
+NumPad 0..9 can trigger cues via optional Hyprland bindings; KP_Decimal stops cues only.
+Hotkeys are opt-in; CueWire never alters Hyprland configuration automatically.
 Voice DSP and global Hyprland key bindings are NOT implemented in this slice.
 "#;
 
@@ -51,8 +53,8 @@ pub fn parse_control(parts:&[String])->Result<Control,String> {
         [s] if s=="quit"=>Ok(Control::Quit),
         [s] if s=="help"=>Ok(Control::Help),
         [s,n] if s=="play"=>{
-            let id=n.parse::<u8>().map_err(|_|"play needs integer 1..9".to_string())?;
-            if !(1..=9).contains(&id) {return Err("play needs integer 1..9".into());}
+            let id=n.parse::<u8>().map_err(|_|"play needs integer 0..9".to_string())?;
+            if id>9 {return Err("play needs integer 1..9".into());}
             Ok(Control::Play(id))
         }
         _=>Err("expected: play N, stop, status, quit, or help".into())
@@ -81,9 +83,9 @@ pub fn parse(args:&[String])->Result<Action,String>{
                     "--monitor"=>{if monitor.replace(val.clone()).is_some(){return Err("duplicate --monitor".into());}}
                     "--cue"=>{
                         let(n,path)=val.split_once('=').ok_or("cue needs N=FILE")?;
-                        let id=n.parse::<u8>().map_err(|_|"cue id needs 1..9")?;
-                        if !(1..=9).contains(&id)||path.is_empty(){
-                            return Err("cue needs nonempty N=FILE with N in 1..9".into());
+                        let id=n.parse::<u8>().map_err(|_|"cue id needs 0..9")?;
+                        if id>9||path.is_empty(){
+                            return Err("cue needs nonempty N=FILE with N in 0..9".into());
                         }
                         if cues.insert(id,PathBuf::from(path)).is_some(){
                             return Err(format!("duplicate cue {id}"));
@@ -179,10 +181,11 @@ mod tests{
     #[test] fn parses_user_config(){
         let Action::Run(c)=parse(&a(&[
             "run","--mic","alsa_input.usb-mic","--monitor","bluez_output.headset.1",
-            "--cue","1=/tmp/a.wav","--cue","9=/tmp/b.wav","--latency-ms","20"
+            "--cue","0=/tmp/z.wav","--cue","1=/tmp/a.wav","--cue","9=/tmp/b.wav","--latency-ms","20"
         ])).unwrap() else {panic!("expected run")};
         assert_eq!(c.latency_ms,20);
-        assert_eq!(c.cues.len(),2);
+        assert_eq!(c.cues.len(),3);
+        assert!(c.cues.contains_key(&0));
     }
     #[test] fn requires_cues_and_rejects_unknown_args(){
         assert!(parse(&a(&["run","--mic","a","--monitor","b"])).is_err());
@@ -219,7 +222,7 @@ mod tests{
     }
     #[test] fn control_protocol_is_bounded(){
         assert_eq!(parse_control(&a(&["play","3"])),Ok(Control::Play(3)));
-        assert!(parse_control(&a(&["play","0"])).is_err());
+        assert_eq!(parse_control(&a(&["play","0"])),Ok(Control::Play(0)));
         assert!(parse_control(&a(&["play","10"])).is_err());
         assert!(parse_control(&a(&["quit","extra"])).is_err());
         assert_eq!(parse_control(&a(&["stop"])),Ok(Control::Stop));

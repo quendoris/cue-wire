@@ -242,7 +242,7 @@ impl Supervisor {
             ),
             Control::Quit=>("OK shutting down".into(),true),
             Control::Help=>(
-                "OK commands: play 1..9 | stop | status | quit".into(),false
+                "OK commands: play 0..9 | stop | status | quit".into(),false
             ),
         }
     }

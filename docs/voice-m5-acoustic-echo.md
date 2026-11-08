@@ -70,6 +70,71 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-006 numerical diagnosis — verified report 2026-11-08
+
+The independently generated private `M5-diagnostics-006/diagnostics.json`
+passed its own SHA256SUMS check (digest
+`1d25ca88ac2b5efc960d0c986b56c74c13efc33a6af6e8cc0395838c1ee34fc0`).
+These are actual measurements from the M5-006 captured microphone and
+speaker reference, **not** synthetic performance results.
+
+Measured:
+
+| Metric | Value |
+| --- | ---: |
+| Training ERLE | **0.7200 dB** |
+| Held-out ERLE | **0.7574 dB** (FAIL, threshold 1.0 dB) |
+| Reference/mic correlation | 0.117837 |
+| Coarse acoustic peak lag | 101.2917 ms / 4862 samples |
+| Fitted gain scalar | 1.121617 |
+| FIR impulse length | 120 ms / 5760 samples |
+| Validation mic RMS | -57.516 dBFS |
+| Validation echo prediction RMS | -64.91889 dBFS |
+| Holdout optimal **oracle** scale at 0 ms | 0.9400 |
+| Holdout oracle ERLE at 0 ms | 0.7608 dB |
+
+**Interpretation grounded in this diagnostic:**
+
+1. The fit is weak *on both training and hold-out*: 0.72 versus 0.7574
+   dB. Strong train-to-holdout overfitting is not indicated by these
+   numbers; poor model adequacy / a weak echo component remain possible.
+2. With unchanged fitted gain, small holdout timing shifts worsen
+   performance: at -0.5 ms ERLE -0.0493 dB; +0.5 ms +0.0497 dB;
+   at ±1 ms both values negative. The tested local optimum is near
+   **zero relative shift**; this does not exclude independent clock
+   drift over the full 20-s recording or errors smaller than 0.5 ms.
+3. Optimizing only a scalar on the holdout makes **negligible**
+   improvement (0.7574 -> 0.7608 dB), meaning a simple global gain
+   mismatch is unlikely to explain the weak suppression.
+4. The predicted echo RMS is 7.40289 dB below total mic RMS. The
+   squared-RMS ratio is `10^(-7.40289/10) = ~0.18185`, or 18.2% of
+   mic signal power. The achieved suppression corresponds to a
+   residual-to-original energy ratio `10^(-0.7574/10) = ~0.83996`,
+   a 16.0% energy reduction. **Those are energy ratios, not a
+   rigorously measured proportion of actual speaker sound**: the echo
+   predictor can contain error and may be correlated with ambient
+   signals. Never label 18.2% as ground-truth leakage fraction.
+5. No AEC voice WAV was generated, correctly. The production gate
+   remains unchanged; the holdout-optimized "oracle" shifts/gains
+   must never be reused for a purported independent validation.
+
+**Next discriminating experiment:**
+measure a quiet-mic/background-only baseline (speaker silent),
+followed by speaker-only reference music (no near-end voice),
+then simultaneous near-end speech and music. This would help
+distinguish a genuinely weak speaker component from a mismatched
+acoustic model. The baseline and speaker-only periods must be
+separately time-marked in both the reference and microphone signals
+and the code must use matching calibration indices; do **not**
+apply the current first-5-seconds assumptions to such a recording
+without explicitly updating the analyzer.
+
+For existing M5-006 samples, before recollecting audio, we can
+also compute frequency-resolved reference/mic coherence and
+time-varying lag on the clean speaker-only section, provided we
+report their statistical uncertainty. Neither requires loosening
+ERLE acceptance or touching existing voice.
+
 ## M5-006 first REAL AEC failure: independent hold-out 0.76 dB
 
 Using the successful, real M5-006 WAV pair, the original

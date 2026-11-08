@@ -158,3 +158,63 @@ NEVER delete M4-R0-001 simply because it failed; its stderr and
 incomplete WAV are evidence. This diagnostics stage does not
 enable microphone loopback, AEC, effects, source switching, or
 system configuration changes.
+
+
+## ALTERNATE VERIFIED BACKEND: M4 ALSA capture (November 8, 2026)
+
+The operator's real diagnostics establish that:
+
+- pw-record with an explicit source -> 44-byte WAV, zero PCM frames.
+- pw-record with automatic source -> 44-byte WAV, zero PCM frames.
+- pw-link confirms MICAudio-97i:capture_MONO -> pw-record:input_MONO.
+- Both capture-side nodes report no graph progress; speaker output advances.
+- arecord -D hw:0,0 -f S16_LE -c 1 -r 48000 -d 5 works;
+  file is exactly 480044 bytes, 5 seconds, exit code 0.
+
+This proves the hardware ALSA capture path works, but does not yet
+prove the recorded signal contains speech rather than digital silence.
+The failure appears between the USB microphone and the PipeWire
+capture processing path, not in WAV metadata alone. Defer PipeWire
+troubleshooting until the long-form M4 RAW take is safe.
+
+New standalone capture implementation:
+
+    tools/voice_alsa_capture.py
+
+ALSA physical hardware verification checks --device hw:0,0 and the
+card ID MICAudio97i from arecord -l BEFORE opening a new .audit folder.
+If the card number changes on USB reconnection or card 0 is another
+device, the recorder FAILS CLOSED and never records the wrong mic.
+Format matches the verified physical capture: mono 48kHz PCM16.
+No system source/sink defaults, service, WirePlumber config, DSP,
+speaker monitor, virtual mic or AEC are touched.
+
+After git pull:
+
+    cd /data/cue-wire
+    mkdir -p .audit/voice-captures
+    python3 tools/voice_alsa_capture.py \
+      --device hw:0,0 --expect-card-id MICAudio97i \
+      --out .audit/voice-captures/M4-R0-ALSA-007 \
+      --max-seconds 150
+
+Use the M4 script from this document: 5s silence, baseline speech,
+sibilants/plosives, head turns 45 degrees, distance 10/40-60/20cm,
+soft/normal/energetic speech, 3-5s ending silence. Ctrl+C or duration
+limit closes the WAV. On successful recording the script prints
+the signal peak, RMS, clip count, duration, SHA-256, and manifest path.
+
+Output files:
+
+    .audit/voice-captures/M4-R0-ALSA-007/raw.wav
+    .audit/voice-captures/M4-R0-ALSA-007/manifest.json
+    .audit/voice-captures/M4-R0-ALSA-007/arecord.stderr.log
+
+Every new run must use a fresh folder. The original is immutable.
+Only after capture, play it manually on a SAFE output with no live
+mic-monitor feedback and verify audible words/pauses. A nonempty
+WAV is not by itself proof of microphone signal quality.
+
+Next: derive a fresh R1 using frozen DeepFilterNet -> DPDFNet2 Soft
+(12dB limit). Never run denoising over R0 in place. AEC remains
+outside this phase in the separate M5 plan.

@@ -1,5 +1,6 @@
 /target/
 /.audit/
+/mixer-preview/
 *.swp
 *.tmp
 .DS_Store

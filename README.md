@@ -94,3 +94,17 @@ The requested latency value is not a measured end-to-end latency guarantee. No s
 Before starting, note the default sink/source and check the physical mic and headset nodes exist. After launch, inspect PipeWire source/sink graph and manually select CueWire Microphone in the app. Verify raw speech and cue, verify the monitor plays cues without echoing speech, verify unrelated system audio is absent, and confirm normal quit and microphone/headset disconnect do not leave owned running processes. Any failure is a valid development finding; do not silently weaken these requirements.
 
 References: [PipeWire loopback](https://pipewire.pages.freedesktop.org/pipewire/page_module_loopback.html), [pw-loopback Arch manual](https://man.archlinux.org/man/pw-loopback.1), [WirePlumber linking](https://pipewire.pages.freedesktop.org/wireplumber/policies/linking.html).
+
+## PCM mixer experiment (separate from v0.1 live runtime)
+
+The feature branch adds an **offline, deterministic mixer playground** with
+seeded white noise and a synthetic kick/snare beat. It does not alter the
+existing foreground PipeWire runtime or default audio routing.
+
+    cargo test --locked --offline --all-targets
+    cargo run --locked --offline --example mixer_preview -- --out mixer-preview
+    pw-play mixer-preview/noise.wav
+    pw-play mixer-preview/beat.wav
+    pw-play mixer-preview/mix.wav
+
+See [mixer playground design](docs/mixer-playground.md) for safety and DSP contracts.

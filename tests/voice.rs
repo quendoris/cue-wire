@@ -68,3 +68,44 @@ fn repeatability_same_seed_different_seed_bed_only() {
     let (third,_)=restore(&source,changed).unwrap();
     assert_ne!(first,third);
 }
+
+
+#[test]
+fn speech_safe_defaults_keep_optional_processing_separate() {
+    let cfg=VoiceConfig::default();
+    assert!(cfg.enable_denoise);
+    assert!(!cfg.enable_expander, "quiet consonants must not be gated without user opt-in");
+    assert!(!cfg.enable_leveler, "no pumping during restoration until separately auditioned");
+    assert!(!cfg.enable_highpass, "do not cut low voice fundamentals by default");
+    assert!(cfg.spectral_floor >= 0.35, "too-deep per-bin holes cause musical noise");
+    assert!(cfg.noise_strength <= 1.25);
+}
+
+#[test]
+fn unvoiced_sibilant_like_energy_is_preserved_in_gentle_mode() {
+    let sr=48_000_usize;
+    let mut state=0xA143_6C21_u32;
+    let mut data=vec![0.0_f32;sr*2];
+    let mut previous=0.0_f32;
+    for (i, x) in data.iter_mut().enumerate() {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        let white = ((state as f64/u32::MAX as f64)*2.0-1.0) as f32;
+        let fricative = if (sr/2..sr).contains(&i) {
+            // Sharp high-frequency signal: a synthetic /s/-like consonant.
+            (white - previous) * 0.035
+        } else { 0.0 };
+        *x = fricative + 0.002 * white;
+        previous=white;
+    }
+    let cfg=VoiceConfig{noise_bed_dbfs:None,..VoiceConfig::default()};
+    let (out,_)=restore(&data,cfg).unwrap();
+    let begin=sr*3/5;
+    let end=sr*9/10;
+    let input_energy=data[begin..end].iter().map(|&x| f64::from(x).powi(2)).sum::<f64>();
+    let output_energy=out[begin..end].iter().map(|&x| f64::from(x).powi(2)).sum::<f64>();
+    assert!(output_energy > input_energy * 0.10,
+        "sibilant was almost destroyed: output/input energy ratio {}",output_energy/input_energy);
+    assert!(out.iter().all(|&x|x.is_finite() && x.abs()<1.0));
+}

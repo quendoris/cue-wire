@@ -207,8 +207,8 @@ fn run()->Result<(),String> {
             "}}\n"
         ),
         if demo {"synthetic-voice-like-noise"} else {"external-wav"},
-        input_sha,output_sha,reference_sha,!demo,input.len(),
-        cfg.noise_strength,cfg.spectral_floor,cfg.expander_threshold_above_floor_db,cfg.enable_highpass,cfg.enable_denoise,cfg.enable_expander,cfg.enable_leveler,cfg.profile_fraction,report.highpass_hz,cfg.highpass_hz.is_none(),
+        input_sha,output_sha,reference_sha,if demo {"false"} else {"null"},input.len(),
+        cfg.noise_strength,cfg.spectral_floor,cfg.expander_threshold_above_floor_db,cfg.enable_highpass,cfg.enable_denoise,cfg.enable_expander,cfg.enable_leveler,cfg.profile_fraction,report.highpass_hz,cfg.enable_highpass && cfg.highpass_hz.is_none(),
         cfg.target_dbfs,cfg.expander_attenuation_db,cfg.max_boost_db,
         cfg.noise_bed_dbfs.map(|v|v.to_string()).unwrap_or_else(||"null".into()),
         cfg.noise_seed,cfg.ceiling_dbfs,report.analyzed_frames,report.noise_profile_frames,

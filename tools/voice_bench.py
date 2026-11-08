@@ -28,7 +28,7 @@ KNOWN = {"identity", "cplus", "deepfilter", "deepfilter_pf", "rnnoise", "rnnoise
          "clearvoice", "clearvoice_frcrn", "clearvoice_gan",
          "gtcrn", "dpdfnet2", "dpdfnet2_soft", "dpdfnet8", "dpdfnet8_soft",
          "metricgan_plus",
-         "sr_lavasr", "sr_lavasr_denoise", "sr_flowhigh",
+         "sr_lavasr", "sr_lavasr_6k", "sr_lavasr_9k", "sr_lavasr_denoise", "sr_flowhigh",
          "sr_apbwe", "sr_sidon", "sr_novasr",
          "resemble_denoise", "resemble_full", "voicefixer",
          "voicefixer_mode1", "roformer"}
@@ -246,7 +246,8 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
         execute([python, Path(__file__).with_name("voice_bench_metricgan.py"),
                  source, selected, "--cache-dir", cache_dir,
                  "--device", "cpu" if device == "auto" else device], log, timeout)
-    elif model in ("sr_lavasr", "sr_lavasr_denoise", "sr_flowhigh",
+    elif model in ("sr_lavasr", "sr_lavasr_6k", "sr_lavasr_9k",
+                   "sr_lavasr_denoise", "sr_flowhigh",
                    "sr_apbwe", "sr_sidon", "sr_novasr"):
         binary = tool_env(
             "CUEWIRE_BENCH_AUDIOSRONNX",
@@ -256,15 +257,26 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
             raise FileNotFoundError(
                 f"{binary}: install optional audiosronnx in its own venv")
         engine_name = {
-            "sr_lavasr": "lavasr", "sr_lavasr_denoise": "lavasr",
+            "sr_lavasr": "lavasr", "sr_lavasr_6k": "lavasr",
+            "sr_lavasr_9k": "lavasr", "sr_lavasr_denoise": "lavasr",
             "sr_flowhigh": "flowhigh", "sr_apbwe": "apbwe",
             "sr_sidon": "sidon", "sr_novasr": "novasr"
         }[model]
         selected = scratch / "restored_48k.wav"
-        cmd = [binary, "upscale", source, selected, "--engine", engine_name]
-        if model == "sr_lavasr_denoise":
-            cmd.append("--denoise")
-        execute(cmd, log, timeout)
+        if model in ("sr_lavasr_6k", "sr_lavasr_9k"):
+            # The original and previously denoised speech are already 48 kHz.
+            # An explicit crossover probes whether inferred high-frequency
+            # detail helps; no implicit downsampling of the reference.
+            cutoff = 6000 if model == "sr_lavasr_6k" else 9000
+            execute([str(Path(binary).parent/"python"),
+                     Path(__file__).with_name("voice_bench_audiosr.py"),
+                     source, selected, "--engine", "lavasr",
+                     "--cutoff-hz", cutoff], log, timeout)
+        else:
+            cmd = [binary, "upscale", source, selected, "--engine", engine_name]
+            if model == "sr_lavasr_denoise":
+                cmd.append("--denoise")
+            execute(cmd, log, timeout)
     elif model in ("clearvoice", "clearvoice_frcrn", "clearvoice_gan"):
         python = python_env("CUEWIRE_BENCH_CLEARVOICE_PYTHON", "~/.venvs/cuewire-clearvoice/bin/python")
         if not executable(python): raise FileNotFoundError(f"{python}: install ClearerVoice-Studio")

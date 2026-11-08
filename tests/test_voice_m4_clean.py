@@ -41,6 +41,16 @@ class CleanTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.m.private_paths(self.raw, self.out)
 
+    def test_executable_keeps_virtualenv_symlink(self):
+        """Dereferencing a uv/venv bin/python bypasses environment packages."""
+        bin_dir = self.root / '.audit/voice-tools/sherpa/bin'
+        bin_dir.mkdir(parents=True)
+        venv_python = bin_dir / 'python'
+        venv_python.symlink_to(sys.executable)
+        found = self.m.executable(str(venv_python))
+        self.assertEqual(found, venv_python)
+        self.assertNotEqual(found, venv_python.resolve())
+
     def test_capture_hash_guard(self):
         self.manifest.write_text(json.dumps({'status': 'recorded_unprocessed_raw',
                                               'raw_sha256': 'bad'}))

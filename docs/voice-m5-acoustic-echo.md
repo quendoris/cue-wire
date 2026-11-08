@@ -70,6 +70,130 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 real continuous A/B/A: uploaded RAW independently verified
+
+User uploaded `M5-ABA-001/manifest.json`, `SHA256SUMS`
+and **actual private** `microphone-aba-raw.wav`.
+The private mic WAV is not committed to this repository.
+
+The following SHA256s were **independently recomputed** from both
+uploaded files and match the provided `SHA256SUMS` exactly:
+
+- WAV `47bb10cd4f79e8e9a84a753bf05898a875955b966c4d2550315b77327eb53aef`
+- Manifest `508a94b28ef91d19b8e6ebbcdef679aff496558b9cecdc0ef2eee14859f69d8d`
+
+The WAV is unprocessed **PCM16 mono 48 kHz**, 1,739,776
+samples, **36.245333 s**, 0 clipped samples, actual full-record
+peak -29.852 dBFS and RMS -58.9 dBFS. The program marked
+`captured_aba_for_noise_diagnostics`. Controlled stop returned
+recorder code 1, but WAV finalized correctly. Playback lasted
+20.2548 s for a 20-second known reference (no premature exit).
+
+**Measurements independently recalculated directly from uploaded
+PCM samples using strictly interior windows (avoid transitions):**
+
+| Phase | Approx WAV interval | RMS | Peak |
+| --- | --- | ---: | ---: |
+| speaker OFF before | 2.0–6.0 s | **-59.7853 dBFS** | -41.4281 dBFS |
+| speaker ON | 12.0–24.0 s | **-58.4336 dBFS** | -43.1503 dBFS |
+| speaker OFF after | 30.2453–34.2453 s | **-59.9374 dBFS** | -47.7023 dBFS |
+
+The median half-second OFF-window RMS differs only **0.03799 dB**
+between pre and post. Their combined mean power corresponds to
+**-59.8607 dBFS**. The ON RMS increases only **1.4271 dB**.
+The report's conditional stationary OFF power fraction is
+**0.71993**, i.e. 72.0%; ON-related added power 28.0%.
+This is a much better same-session estimate than the
+non-contemporaneous baseline from separate WAVs, but
+stationarity, independence and constant firmware gain are still
+assumptions. A microphone on/off trial does not identify the
+physical origin of all emitted audio.
+
+**Independent bandpass analysis of the uploaded waveform**
+(4th-order Butterworth, zero-phase, identical per phase):
+
+| Frequency | OFF before | ON | OFF after | ON vs mean OFF power |
+| --- | ---: | ---: | ---: | ---: |
+| 20–70 Hz | -63.71 | -63.84 | -63.83 | **-0.07 dB** |
+| 70–180 Hz | -74.55 | -73.04 | -74.62 | +1.55 dB |
+| 180–500 Hz | -69.89 | -69.36 | -70.58 | +0.86 dB |
+| 500–1500 Hz | -68.81 | -67.29 | -70.41 | +2.25 dB |
+| **1500–4000 Hz** | **-69.80** | **-64.02** | **-70.09** | **+5.92 dB** |
+| 4000–8000 Hz | -69.93 | -70.10 | -70.56 | +0.13 dB |
+| 8000–16000 Hz | -78.14 | -80.17 | -81.14 | -0.78 dB |
+
+The 20–70-Hz band is remarkably stable across phases and
+accounts for roughly **40.6%** of power in the combined
+silent-speaker segments. Welch PSD from the actual samples
+has conspicuous narrow peaks around **50 Hz and 64 Hz** in all
+three phases, with no attribution: they could be acoustic,
+electrical, host/hub related or intrinsic USB mic/DSP features.
+Do not assume mains hum alone without isolating sources.
+
+Conversely the 1500–4000-Hz band gains **5.92 dB** when
+speaker playback starts; this is congruent with the previous
+M5-006 model producing **3.37 dB band-limited ERLE**, while
+full-band ERLE remains **0.7574 dB (REJECT)**. The stable
+low-frequency background can overwhelm a whole-band ERLE
+even when music-correlated components are suppressed
+meaningfully in a narrower band.
+
+The biggest instantaneous PCM peaks occur around
+**28.8–30.2 s and 36.0 s**, outside the selected
+interior measurement windows. No clipping occurs.
+Those peaks might be acoustic events, USB artifacts
+or other transient sources; there is insufficient
+evidence to label them.
+
+**Interpretation and next measurement policy**
+
+- One-session OFF/ON/OFF controls greatly strengthen the
+  evidence for stationary overall background.
+- `1.4271 dB` is NOT a proven upper bound on real
+  echo cancellation; it is the conditional upper bound
+  on removing additional independent ON power
+  while leaving a stationary OFF baseline.
+- AEC should also be evaluated by **removal of reference-
+  correlated energy/coherence**, with independently
+  measured speech preservation, rather than
+  relying on full-band ERLE alone. Do not lower
+  the existing fail-closed >=1 dB gate merely to
+  force a candidate WAV.
+- Retain the successful M4 microphone clean chain as-is.
+
+### New reproducible OFF/ON/OFF spectrum tool (offline)
+
+`tools/voice_m5_aba_spectrum.py` independently computes
+the phase RMS, frequency-band RMS and ON/OFF power changes,
+20–70Hz fraction, dominant ~50/64Hz spectral lines and
+transient locations on **the existing immutable M5-ABA-001 WAV**.
+
+The script rehashes both local source files against the
+capture manifest, refuses an existing output folder, does not
+write WAV or touch any audio device, and saves a JSON
+audit plus SHA256SUMS.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aba_spectrum.py \
+  --capture .audit/voice-aec/M5-ABA-001 \
+  --out .audit/voice-aec/M5-ABA-spectral-001
+
+cd .audit/voice-aec/M5-ABA-spectral-001
+sha256sum -c SHA256SUMS
+~~~
+
+Only `aba-spectral.json` and `SHA256SUMS` should
+appear in the new report directory. The newly added
+regression test checks synthetic stationary 50Hz noise
+and an independent 2kHz speaker component. New code
+requires a local test run before acceptance.
+
 ## Actual M5 noise-probe result and one-session ABA control (2026-11-08)
 
 The uploaded `M5-noise-probe-006/noise-probe.json` was independently

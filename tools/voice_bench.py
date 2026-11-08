@@ -22,10 +22,20 @@ from pathlib import Path
 from voice_bench_metrics import collect, measure_speech_file
 
 RATE = 48000
-KNOWN = {"identity", "cplus", "deepfilter", "rnnoise", "clearvoice",
-         "resemble_denoise", "resemble_full", "voicefixer", "roformer"}
-DEFAULT_MODELS = "identity,cplus,deepfilter,rnnoise,clearvoice,resemble_denoise,resemble_full,voicefixer"
-DEFAULT_CHAINS = "deepfilter+clearvoice,rnnoise+clearvoice,deepfilter+resemble_denoise,cplus+clearvoice"
+KNOWN = {"identity", "cplus", "deepfilter", "deepfilter_pf", "rnnoise",
+         "clearvoice", "clearvoice_frcrn", "clearvoice_gan",
+         "resemble_denoise", "resemble_full", "voicefixer",
+         "voicefixer_mode1", "roformer"}
+DEFAULT_MODELS = ("identity,cplus,deepfilter,deepfilter_pf,rnnoise,"
+                  "clearvoice,clearvoice_frcrn,clearvoice_gan,"
+                  "resemble_denoise,resemble_full,voicefixer,voicefixer_mode1")
+DEFAULT_CHAINS = (
+    "deepfilter+clearvoice,deepfilter+clearvoice_frcrn,"
+    "deepfilter+resemble_denoise,deepfilter+resemble_full,"
+    "rnnoise+clearvoice,cplus+clearvoice,"
+    "deepfilter+cplus,cplus+deepfilter,"
+    "clearvoice+resemble_full,resemble_denoise+clearvoice"
+)
 ACTIVE = None
 
 
@@ -129,11 +139,14 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
         script = Path(__file__).with_name("voice_ab_lab.py")
         execute([python, script, "--input", source, "--out", scratch], log, timeout)
         selected = scratch/"voice_c_plus_v3.wav"
-    elif model == "deepfilter":
+    elif model in ("deepfilter", "deepfilter_pf"):
         binary = tool_env("CUEWIRE_BENCH_DEEPFILTER", "deep-filter")
         if not executable(binary): raise FileNotFoundError(f"{binary}: install DeepFilterNet CLI")
         # Rust deep-filter (not Python deepFilter) as specified in upstream README
-        execute([binary, "-D", "-o", scratch, source], log, timeout)
+        command = [binary, "-D", "-o", scratch]
+        if model == "deepfilter_pf":
+            command.append("--pf")
+        execute(command + [source], log, timeout)
         selected = select_one(scratch)
     elif model == "rnnoise":
         binary = tool_env("CUEWIRE_BENCH_RNNOISE", "rnnoise_demo")
@@ -151,12 +164,17 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
         execute(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
                  "-y", "-f", "s16le", "-ar", str(RATE), "-ac", "1",
                  "-i", raw_out, "-c:a", "pcm_s16le", selected], log, timeout)
-    elif model == "clearvoice":
+    elif model in ("clearvoice", "clearvoice_frcrn", "clearvoice_gan"):
         python = python_env("CUEWIRE_BENCH_CLEARVOICE_PYTHON", "~/.venvs/cuewire-clearvoice/bin/python")
         if not executable(python): raise FileNotFoundError(f"{python}: install ClearerVoice-Studio")
-        selected = scratch/"mossformer.wav"
+        selected = scratch/"clearvoice.wav"
+        model_name = {
+            "clearvoice": "MossFormer2_SE_48K",
+            "clearvoice_frcrn": "FRCRN_SE_16K",
+            "clearvoice_gan": "MossFormerGAN_SE_16K",
+        }[model]
         execute([python, Path(__file__).with_name("voice_bench_clearvoice.py"),
-                 source, selected], log, timeout)
+                 source, selected, "--model", model_name], log, timeout)
     elif model in ("resemble_denoise", "resemble_full"):
         binary = tool_env("CUEWIRE_BENCH_RESEMBLE", "resemble-enhance")
         if not executable(binary): raise FileNotFoundError(f"{binary}: install Resemble Enhance")
@@ -169,11 +187,12 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
         if device != "auto": cmd += ["--device", device]
         execute(cmd, log, timeout)
         selected = select_one(outputdir)
-    elif model == "voicefixer":
+    elif model in ("voicefixer", "voicefixer_mode1"):
         binary = tool_env("CUEWIRE_BENCH_VOICEFIXER", "voicefixer")
         if not executable(binary): raise FileNotFoundError(f"{binary}: install VoiceFixer")
         selected = scratch/"voicefixer.wav"
-        execute([binary, "--infile", source, "--outfile", selected, "--mode", "0"],
+        mode = "1" if model == "voicefixer_mode1" else "0"
+        execute([binary, "--infile", source, "--outfile", selected, "--mode", mode],
                 log, timeout)
     elif model == "roformer":
         binary = tool_env("CUEWIRE_BENCH_SEPARATOR", "audio-separator")
@@ -269,7 +288,6 @@ def main():
         raise RuntimeError("Input pair not verified as the same utterance. "
                            "Check both files or explicitly pass --force-unverified-pair; "
                            "objective rankings remain disabled.")
-    prior = {}
     work = args.out.resolve()
     normalized = work/"inputs"/"noisy.wav"
 
@@ -332,6 +350,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # Ctrl+C is just as strict as SIGTERM: kill the owned model process group.
+    signal.signal(signal.SIGINT, stop_active)
     signal.signal(signal.SIGTERM, stop_active)
     try:
         main()

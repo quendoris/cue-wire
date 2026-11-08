@@ -7,11 +7,15 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("input_wav", type=Path)
     p.add_argument("output_wav", type=Path)
+    p.add_argument("--model",
+                   choices=("MossFormer2_SE_48K", "FRCRN_SE_16K",
+                            "MossFormerGAN_SE_16K"),
+                   default="MossFormer2_SE_48K")
     args = p.parse_args()
     if not args.input_wav.is_file(): p.error("input WAV does not exist")
     if args.output_wav.exists(): p.error("output already exists")
     from clearvoice import ClearVoice
-    model = ClearVoice(task="speech_enhancement", model_names=["MossFormer2_SE_48K"])
+    model = ClearVoice(task="speech_enhancement", model_names=[args.model])
     enhanced = model(input_path=str(args.input_wav), online_write=False)
     args.output_wav.parent.mkdir(parents=True, exist_ok=True)
     model.write(enhanced, output_path=str(args.output_wav))

@@ -22,7 +22,7 @@ from pathlib import Path
 from voice_bench_metrics import collect, measure_speech_file
 
 RATE = 48000
-KNOWN = {"identity", "cplus", "deepfilter", "deepfilter_pf", "rnnoise",
+KNOWN = {"identity", "cplus", "deepfilter", "deepfilter_pf", "rnnoise", "rnnoise_lib",
          "clearvoice", "clearvoice_frcrn", "clearvoice_gan",
          "resemble_denoise", "resemble_full", "voicefixer",
          "voicefixer_mode1", "roformer"}
@@ -148,6 +148,10 @@ def process_stage(model, source, dest, scratch, workdir, timeout, device):
             command.append("--pf")
         execute(command + [source], log, timeout)
         selected = select_one(scratch)
+    elif model == "rnnoise_lib":
+        selected = scratch/"rnnoise_lib.wav"
+        execute([sys.executable, Path(__file__).with_name("voice_bench_rnnoise_lib.py"),
+                 source, selected], log, timeout)
     elif model == "rnnoise":
         binary = tool_env("CUEWIRE_BENCH_RNNOISE", "rnnoise_demo")
         if not executable(binary): raise FileNotFoundError(f"{binary}: build xiph/rnnoise demo")

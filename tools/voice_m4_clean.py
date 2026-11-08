@@ -86,6 +86,84 @@ def metrics(path: Path) -> dict:
     }
 
 
+def pad_deepfilter_input(source: Path, target: Path, original_frames: int,
+                         pad_ms: int = 250, hop_frames: int = 480) -> int:
+    """Append explicit silence to a throwaway input; align end to complete STFT hops.
+
+    Rust deep-filter -D slices its algorithmic delay from the front and does
+    NOT append frames at the end. Tail padding must happen *before* inference.
+    """
+    padding = math.ceil((RATE * pad_ms / 1000) / hop_frames) * hop_frames
+    padded_frames = ((original_frames + padding + hop_frames - 1)
+                     // hop_frames) * hop_frames
+    with wave.open(str(source), "rb") as src:
+        if (src.getframerate(), src.getnchannels(), src.getsampwidth(),
+                src.getcomptype(), src.getnframes()) != (RATE, 1, 2, "NONE", original_frames):
+            raise RuntimeError("RAW format/frames changed before padding")
+        with target.open("xb") as handle:
+            with wave.open(handle, "wb") as dst:
+                dst.setnchannels(1)
+                dst.setsampwidth(2)
+                dst.setframerate(RATE)
+                copied = 0
+                while copied < original_frames:
+                    block = src.readframes(min(16384, original_frames - copied))
+                    if not block or len(block) % 2:
+                        raise RuntimeError("RAW truncated during padding")
+                    copied += len(block) // 2
+                    dst.writeframesraw(block)
+                dst.writeframesraw(b"\\x00" * (2 * (padded_frames - original_frames)))
+    return padded_frames
+
+
+def crop_deepfilter_compensated(source: Path, target: Path, original_frames: int,
+                                padded_frames: int) -> dict:
+    """Crop only the known artificial tail, never an unknown piece of speech.
+
+    The -D compensated Rust output starts at source sample zero and has
+    input_length - algorithmic_delay samples. Check plausible delay explicitly.
+    """
+    with wave.open(str(source), "rb") as src:
+        if (src.getframerate(), src.getnchannels(), src.getsampwidth(),
+                src.getcomptype()) != (RATE, 1, 2, "NONE"):
+            raise ValueError("DeepFilter PCM conversion format unexpected")
+        actual_frames = src.getnframes()
+        estimated_delay = padded_frames - actual_frames
+        if not (0 <= estimated_delay <= RATE // 10):
+            raise RuntimeError(
+                f"Unexpected DeepFilter delay: {estimated_delay} frames "
+                f"({1000 * estimated_delay / RATE:.3f} ms); "
+                f"padded={padded_frames}, processed={actual_frames}. "
+                "Refusing arbitrary realignment.")
+        if actual_frames < original_frames:
+            raise RuntimeError(
+                f"DeepFilter still too short after explicit tail pad: "
+                f"source={original_frames}, processed={actual_frames}, "
+                f"padded={padded_frames}; do not fill lost speech with zeros.")
+        with target.open("xb") as handle:
+            with wave.open(handle, "wb") as dst:
+                dst.setnchannels(1)
+                dst.setsampwidth(2)
+                dst.setframerate(RATE)
+                copied = 0
+                while copied < original_frames:
+                    block = src.readframes(min(16384, original_frames - copied))
+                    if not block or len(block) % 2:
+                        raise RuntimeError("DeepFilter output truncated")
+                    copied += len(block) // 2
+                    dst.writeframesraw(block)
+    return {
+        "raw_frames": original_frames,
+        "padded_input_frames": padded_frames,
+        "compensated_model_output_frames": actual_frames,
+        "inferred_delay_frames": estimated_delay,
+        "inferred_delay_ms": round(1000 * estimated_delay / RATE, 6),
+        "cropped_artificial_tail_frames": actual_frames - original_frames,
+        "kept_frames": original_frames,
+        "method": "silence_tail_padding_before_deepfilter_D_then_exact_tail_crop"
+    }
+
+
 def private_paths(source: Path, output: Path) -> tuple[Path, Path]:
     audit = AUDIT.resolve(strict=True)
     source = source.expanduser().resolve(strict=True)
@@ -208,9 +286,11 @@ def process(args: argparse.Namespace) -> dict:
     stage_dir = outdir / "deepfilter-cli"
     stage_dir.mkdir(mode=0o700)
     df_wav = outdir / "01-deepfilter.wav"
+    padded_wav = outdir / "deepfilter-padded-input.wav"
+    full_wav = outdir / "deepfilter-compensated-full.wav"
     soft_wav = outdir / "02-dpdfnet2-soft.wav"
     info = {
-        "schema": "cuewire-M4-offline-clean-v1",
+        "schema": "cuewire-M4-offline-clean-v2",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "status": "running",
         "purpose": "cleaning_only_no_gain_eq_compression_aec",
@@ -231,7 +311,14 @@ def process(args: argparse.Namespace) -> dict:
                   "No playback, network, microphone access, or audio routing changes."]
     }
     try:
-        run_stage([str(df_binary), "-D", "-o", str(stage_dir), str(source)],
+        padded_frames = pad_deepfilter_input(source, padded_wav, raw_metrics["frames"])
+        info["deepfilter_input"] = {"file": padded_wav.name,
+                                    "sha256": digest(padded_wav),
+                                    "frames": padded_frames,
+                                    "appended_silence_frames": padded_frames - raw_metrics["frames"]}
+        if digest(source) != raw_hash:
+            raise RuntimeError("RAW changed while building padded derivative")
+        run_stage([str(df_binary), "-D", "-o", str(stage_dir), str(padded_wav)],
                   outdir / "01-deepfilter.log", args.timeout_sec)
         candidates = sorted(p for p in stage_dir.rglob("*.wav") if p.is_file())
         if len(candidates) != 1:
@@ -240,11 +327,14 @@ def process(args: argparse.Namespace) -> dict:
         # Explicit conversion is logged, with no normalization or gain applied.
         run_stage([str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error",
                    "-n", "-i", str(candidates[0]), "-map", "0:a:0",
-                   "-ac", "1", "-ar", str(RATE), "-c:a", "pcm_s16le", str(df_wav)],
+                   "-ac", "1", "-ar", str(RATE), "-c:a", "pcm_s16le", str(full_wav)],
                   outdir / "01b-pcm16-conversion.log", args.timeout_sec)
+        info["deepfilter_alignment"] = crop_deepfilter_compensated(
+            full_wav, df_wav, raw_metrics["frames"], padded_frames)
         first_metrics = metrics(df_wav)
-        if abs(first_metrics["frames"] - raw_metrics["frames"]) > RATE // 100:
-            raise RuntimeError("DeepFilter unexpectedly changed audio duration by >10 ms")
+        if first_metrics["frames"] != raw_metrics["frames"]:
+            raise RuntimeError("DeepFilter compensated WAV not frame-exact")
+        print("DeepFilter -D delay:", info["deepfilter_alignment"]["inferred_delay_ms"], "ms; exact-length output.")
         if first_metrics["clipped_samples"]:
             raise RuntimeError("DeepFilter output clipped; refusing next stage")
         info["outputs"]["deepfilter"] = {"file": df_wav.name, "sha256": digest(df_wav),

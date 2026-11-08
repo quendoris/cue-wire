@@ -48,16 +48,42 @@ hash are recorded in `manifest.json`.
 Previously failed `clean-001` is evidence and must **not** be overwritten.
 After updating the branch, use `clean-002` and inspect its new manifest.
 
+## M4 R0 recovery after a sherpa NumPy import error
+
+An earlier version resolved the executable `.audit/voice-tools/sherpa/bin/python`
+through its symlink to the **base** uv Python 3.11. That bypassed
+`pyvenv.cfg` and produced `ModuleNotFoundError: No module named 'numpy'`.
+The fixed runner preserves the virtualenv's `bin/python` pathname.
+
+Verify which environment imports the modules, **without** global installation:
+
+```bash
+cd /data/cue-wire
+.audit/voice-tools/sherpa/bin/python -c 'import sys,numpy,soundfile,sherpa_onnx; print("venv:",sys.prefix); print("base:",sys.base_prefix); print("numpy:",numpy.__version__)'
+python3 -m unittest discover -s tests -p test_voice_m4_clean.py -v
+```
+
+The displayed prefix should refer to `.audit/voice-tools/sherpa`.
+If a direct `sherpa/bin/python` import *still* fails, inspect that
+environment separately; only then install the missing dependency
+into that isolated interpreter using `uv pip install --python
+.audit/voice-tools/sherpa/bin/python numpy soundfile sherpa-onnx`
+(explicit network/installation action).
+
+**Do not overwrite** the failed `clean-002` run. It contains the
+DeepFilter result and failure log, and is legitimate audit evidence.
+For an end-to-end rerun use a fresh directory `clean-003`.
+
 ## First M4 cleanup
 
 ```bash
 cd /data/cue-wire
 python3 tools/voice_m4_clean.py \
   --in .audit/voice-captures/M4-R0-ALSA-007/raw.wav \
-  --out .audit/voice-captures/M4-R0-ALSA-007/clean-002
+  --out .audit/voice-captures/M4-R0-ALSA-007/clean-003
 ```
 
-`clean-002/` **must not exist** before the run. To retry, use a new output folder such as `clean-003`, or inspect the failed logs without deleting/replacing prior evidence.
+`clean-003/` **must not exist** before the run. To retry, use a new output folder such as `clean-004`, or inspect the failed logs without deleting/replacing prior evidence.
 
 Artifacts are private and never uploaded automatically:
 
@@ -73,7 +99,7 @@ The first five seconds' RMS is reported as **time-window RMS**, not a measured n
 
 ```bash
 cd /data/cue-wire
-cd .audit/voice-captures/M4-R0-ALSA-007/clean-002
+cd .audit/voice-captures/M4-R0-ALSA-007/clean-003
 sha256sum -c SHA256SUMS
 pw-play ../raw.wav
 pw-play 01-deepfilter.wav

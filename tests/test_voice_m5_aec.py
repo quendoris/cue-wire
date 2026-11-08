@@ -21,6 +21,7 @@ import voice_m5_aec as aec
 import voice_m5_capture as capture
 import voice_m5_spectral as spectral
 import voice_m5_model_probe as model_probe
+import voice_m5_noise_probe as noise_probe
 
 RATE = aec.RATE
 
@@ -322,6 +323,59 @@ class M5Tests(unittest.TestCase):
                              (ref_file, mic_file, manifest_path)])
                 with self.assertRaises(FileExistsError):
                     model_probe.probe(capture_dir, dest)
+
+    def test_noise_probe_offline_sha_guard_and_windowed_levels(self):
+        """Compare captured silence and speaker-only with immutable WAV inputs."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            audit = root / ".audit"
+            silence_dir = audit / "voice-captures/M5-room-baseline-001"
+            music_dir = audit / "voice-aec/M5-006"
+            silence_dir.mkdir(parents=True)
+            music_dir.mkdir(parents=True)
+            x, y, _ = synthetic_pair(9)
+            mic_name = "alsa_input.usb-test-synthetic.microphone"
+            ref_file = music_dir / "reference-sent.wav"
+            mic_file = music_dir / "microphone-raw.wav"
+            silence_file = silence_dir / "raw.wav"
+            pcm16_file(ref_file, x)
+            pcm16_file(mic_file, y)
+            quiet = np.random.default_rng(77).normal(0, .00015, RATE * 8)
+            pcm16_file(silence_file, quiet)
+            baseline_manifest = {
+                "schema": "cuewire-M4-raw-capture-v2",
+                "status": "recorded_unprocessed_raw",
+                "mic_node_name": mic_name,
+                "wav": "raw.wav",
+                "wav_sha256": aec.digest(silence_file),
+            }
+            speaker_manifest = {
+                "schema": "cuewire-M5-paired-physical-capture-v1",
+                "status": "captured_for_offline_aec",
+                "mic_capture": {"mic_source_name": mic_name},
+                "reference": {"sha256": aec.digest(ref_file)},
+                "microphone": {"sha256": aec.digest(mic_file)},
+                "speaker_only_calibration_s": 5,
+            }
+            (silence_dir / "manifest.json").write_text(json.dumps(baseline_manifest))
+            (music_dir / "manifest.json").write_text(json.dumps(speaker_manifest))
+            originals = [aec.digest(p) for p in (silence_file, ref_file, mic_file)]
+            with mock.patch.object(noise_probe, "AUDIT", audit.resolve()):
+                out = audit / "voice-aec/M5-floor-probe-006"
+                report = noise_probe.analyze(silence_dir, music_dir, out)
+                self.assertEqual(report["status"],
+                                 "diagnostic_only_no_aec_model_selected")
+                self.assertEqual(report["baseline_time_windows"]["windows"], 14)
+                self.assertGreater(
+                    report["speaker_on_time_windows"]["windows"], 0)
+                self.assertTrue((out / "noise-probe.json").is_file())
+                self.assertTrue((out / "SHA256SUMS").is_file())
+                self.assertEqual(list(out.glob("*.wav")), [])
+                with self.assertRaises(FileExistsError):
+                    noise_probe.analyze(silence_dir, music_dir, out)
+                self.assertEqual(
+                    originals, [aec.digest(p) for p in
+                                (silence_file, ref_file, mic_file)])
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -264,6 +264,22 @@ def main():
             }
     (args.out/"manifest.json").write_text(json.dumps(
         state,indent=2,sort_keys=True,ensure_ascii=False)+"\n")
+    # Metrics use clean B0 for EVALUATION only. The independent DSP
+    # processors above never receive B0 while processing B1.
+    scores={"schema":"cuewire-studio-score-v1",
+            "reference_source":"B0" if "B0" in inputs else None,
+            "warning":"SI-SDR/correlation measure waveform similarity, NOT natural studio voice quality.",
+            "items":{}}
+    if "B0" in inputs:
+        from voice_bench_metrics import score
+        reference=read(inputs["B0"])
+        for name in state["outputs"]:
+            candidate=read(args.out/"results"/(name+".wav"))
+            scores["items"][name]=score(reference,candidate)
+    else:
+        scores["warning"]+=" No clean reference provided, so no SI-SDR."
+    (args.out/"scores.json").write_text(json.dumps(
+        scores,indent=2,sort_keys=True)+"\n")
     checks=[]
     for f in sorted(args.out.rglob("*")):
         if f.is_file() and f.name!="SHA256SUMS":

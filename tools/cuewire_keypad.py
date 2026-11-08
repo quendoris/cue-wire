@@ -58,7 +58,9 @@ def conflicts(data):
     if not isinstance(data,list):raise ValueError("Expected list of Hyprland bindings")
     symbols={"KP_"+str(n) for n in range(10)}
     symbols.update({"KP_DECIMAL","KP_DELETE","KP_ENTER","KP_ADD",
-                    "KP_SUBTRACT","KP_MULTIPLY","KP_DIVIDE"})
+                    "KP_SUBTRACT","KP_MULTIPLY","KP_DIVIDE",
+                    "KP_INSERT","KP_END","KP_DOWN","KP_NEXT","KP_LEFT",
+                    "KP_BEGIN","KP_RIGHT","KP_HOME","KP_UP","KP_PRIOR"})
     result=[]
     for row in data:
         if not isinstance(row,dict):continue

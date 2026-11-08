@@ -136,13 +136,17 @@ and single, double, hold_start/hold_end and multi-key chord gestures.
     python3 tools/cuewire_keypad.py check
     python3 tools/cuewire_keypad.py render
     python3 tools/cuewire_keypad.py render --device "SEPARATE_NUMPAD_DEVICE"
-    python3 tools/cuewire_keypad.py run --log-jsonl .audit/keypad/H2-001.jsonl
+    python3 tools/cuewire_keypad.py run --temporary-bindings --log-jsonl .audit/keypad/H2-001.jsonl
 
 The generated Lua uses code:NN physical keypad keys and
 hl.dsp.event messages to Hyprland socket2. No child process per
 keypress, no keyboard evdev privileges, no recording other keys and no
-audio controls. It is foreground-only; Ctrl+C stops. Bindings are NOT
-registered automatically. The optional --device allows physical
+audio controls. It is foreground-only; Ctrl+C normally removes its H2 bindings.
+Using the explicit --temporary-bindings flag temporarily registers
+Hyprland Lua binds for this terminal session via hyprctl eval; it does
+not edit configuration files. Without this flag it registers NO binds.
+SIGKILL cannot run cleanup; use python3 tools/cuewire_keypad.py restore
+to remove only the H2 named handles if the process is forcibly killed. The optional --device allows physical
 isolation of a **separate** keypad from the main keyboard. See
 [NumPad H2](docs/keypad-H2-event-adapter.md).
 

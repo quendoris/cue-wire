@@ -54,8 +54,10 @@ def main():
                    "--clean", str(clean), "--noisy", str(bad),
                    "--out", str(output), "--models", "identity",
                    "--chains", ""]
-        subprocess.run(command, check=True, timeout=60, stdout=subprocess.PIPE,
-                       stderr=subprocess.STDOUT, text=True)
+        result = subprocess.run(command, timeout=60, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True)
+        if result.returncode:
+            raise AssertionError(f"Benchmark CLI failed with {result.returncode}:\n{result.stdout}")
         import json
         manifest = json.loads((output/"manifest.json").read_text())
         scores = json.loads((output/"scores.json").read_text())

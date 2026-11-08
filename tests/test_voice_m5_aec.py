@@ -234,6 +234,14 @@ class M5Tests(unittest.TestCase):
         local = spectral.correlation_windows(x, y, lag)
         spectrum = spectral.spectrum_summary(x, y, lag)
         self.assertEqual(len(local), 4)
+        self.assertTrue(all("top_alternative_peaks" in w for w in local))
+        self.assertTrue(all(len(w["top_alternative_peaks"]) >= 1 for w in local))
+        self.assertTrue(all(len(w["top_alternative_peaks"]) <= 5 for w in local))
+        self.assertTrue(all(w["correlation_at_global_lag"] >= 0
+                            for w in local))
+        self.assertTrue(all(w["top_alternative_peaks"][0]
+                            ["normalized_correlation"] >= w["correlation_at_global_lag"] - 0.00001
+                            for w in local))
         self.assertLess(abs(lag - expected_lag), 20)
         self.assertTrue(all(v["normalized_correlation"] > .15 for v in local))
         self.assertEqual(len(spectrum["bands"]), 4)

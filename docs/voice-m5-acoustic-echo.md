@@ -70,6 +70,76 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-006 alternate-peak report: nearly periodic 8.1-ms ambiguity
+
+From the real `M5-spectral-peaks-006/spectral.json`, the original
+global lag remains **101.29167 ms**, with normalized correlation
+**0.117837** and source SHA256s unchanged from the original
+M5-006 reference and physical microphone WAVs.
+
+The top separated correlation peaks form a repeated pattern near
+**93.2 ms**, **101.3–101.5 ms**, and **109.4 ms** across all four
+speaker-only windows. Adjacent separations around **8.08 ms**
+correspond to a repetition frequency near **123.7 Hz**.
+This is compatible with a quasi-periodic musical component or
+harmonics: it is **not proof** of a 123.7-Hz acoustic oscillator,
+nor a measurement of speaker-to-mic room delay alone.
+
+| Reference window (s) | Highest peak (ms) | Best/second peak ratio |
+| --- | ---: | ---: |
+| 0.30–1.20 | 101.29167 | 1.38855 |
+| 1.35–2.25 | 101.54167 | 1.12484 |
+| 2.40–3.30 | **93.18750** | **1.04068** |
+| 3.40–4.30 | 101.52083 | 1.11896 |
+
+In the anomalous third window the best and second peaks
+have correlations **0.153677** (93.1875 ms) and **0.147670**
+(109.35417 ms), only 4.07% apart by score. The original global
+delay is still a local candidate with **0.137056** correlation.
+These competing peaks strongly support the **lag-estimation
+ambiguity** explanation of the apparent instantaneous ~8-ms jump;
+they do not support claiming steady clock drift from this report.
+
+**Important: the production AEC algorithm has always used ONE
+fixed global delay**, not independent per-window shifts. The
+ambiguous local maxima therefore do **not** in themselves
+explain the earlier weak **0.7574-dB held-out ERLE**; there may
+still be substantial signal-to-noise/model mismatch.
+
+### More discriminating on-the-same-audio diagnostic (v3)
+
+`tools/voice_m5_spectral.py` now additionally applies identical
+offline zero-phase Butterworth bandpass filters to reference and mic,
+then computes the four local correlations **separately by frequency**,
+in 70–180 Hz (contains the ~123.7-Hz candidate component),
+180–500 Hz, 500–1500 Hz, 1500–4000 Hz and 4000–8000 Hz.
+This may show whether the ~8-ms peak lattice disappears once
+the low-frequency periodic component is excluded.
+Low-energy bands are marked unreliable instead of inferring
+a meaningful delay.
+
+The bandpass results are exploratory; they are neither true
+clock drift measurements nor a revised acoustic filter.
+No sound is played, no voice is altered, and no audio WAV is generated.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_spectral.py \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-bandlag-006
+~~~
+
+Report: `.audit/voice-aec/M5-bandlag-006/spectral.json`;
+the `frequency_selected_lag_diagnostics` field holds
+each frequency band's four lag estimates. Keep previous
+`M5-spectral-006` and `M5-spectral-peaks-006` immutable.
+If the output folder already exists use a fresh ID.
+
 ## Actual M5-006 spectral.json review — low broadband coherence, one ambiguous lag
 
 The user provided the real `M5-spectral-006/spectral.json`.

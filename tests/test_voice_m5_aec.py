@@ -233,6 +233,16 @@ class M5Tests(unittest.TestCase):
         lag, correlation = aec.lag_estimate(x, y, 5)
         local = spectral.correlation_windows(x, y, lag)
         spectrum = spectral.spectrum_summary(x, y, lag)
+        band_lag = spectral.band_lag_windows(x, y, lag)
+        self.assertEqual(len(band_lag), 5)
+        self.assertTrue(any(v["status"] == "measured_not_validated"
+                            for v in band_lag))
+        for band in band_lag:
+            if band["status"] == "measured_not_validated":
+                self.assertEqual(len(band["local_windows"]), 4)
+                self.assertTrue(all(math.isfinite(w["best_lag_ms"])
+                                    and 0 <= w["global_lag_score"] <= 1.00001
+                                    for w in band["local_windows"]))
         self.assertEqual(len(local), 4)
         self.assertTrue(all("top_alternative_peaks" in w for w in local))
         self.assertTrue(all(len(w["top_alternative_peaks"]) >= 1 for w in local))
@@ -299,6 +309,10 @@ class M5Tests(unittest.TestCase):
                 spectral_report = spectral.analyze(capture_dir, spectral_dir)
                 self.assertEqual(spectral_report["status"],
                                  "diagnostic_only_not_aec_accepted")
+                self.assertEqual(spectral_report["schema"],
+                                 "cuewire-M5-spectral-diagnostics-v3")
+                self.assertEqual(len(spectral_report[
+                    "frequency_selected_lag_diagnostics"]), 5)
                 self.assertEqual(list(spectral_dir.glob("*.wav")), [])
                 self.assertTrue((spectral_dir / "spectral.json").exists())
                 self.assertTrue((spectral_dir / "SHA256SUMS").exists())

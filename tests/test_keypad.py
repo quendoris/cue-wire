@@ -69,7 +69,10 @@ def cases():
     starts=[x["keys"] for x in events if x["event"]=="chord_start"]
     # The original 10 ms pair is below 25 ms: do not falsely
     # confirm it before the real sustained triple-key chord.
-    assert starts==[["K7","K8","PLUS"]],starts
+    # The K7+PLUS pair lasted just 10ms before K8 joined, so it
+    # must NOT be confirmed at that point. However, after K8 releases,
+    # K7+PLUS remain held for 50ms, correctly forming a NEW pair.
+    assert starts==[["K7","K8","PLUS"],["K7","PLUS"]],starts
     assert not any(x["event"]=="single" for x in events)
     events.clear()
 

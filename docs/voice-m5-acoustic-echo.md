@@ -70,6 +70,86 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-006 FIR model ablation — all 15 candidates measured (2026-11-08)
+
+The user provided the real `M5-model-probe-006/model-probe.json` and
+its `SHA256SUMS`. The JSON's SHA256 was independently verified:
+`efd9900cafd299bc8d0189bb060ad9f0ad42e26a0f035802d6f9750780f53c52`.
+
+**Held-out (3.45–4.40 s) full-band ERLE, in dB:**
+
+| FIR (ms) | Ridge .005 | Ridge .02 | Ridge .10 |
+| --- | ---: | ---: | ---: |
+| 30 | 0.57304 | 0.57608 | 0.58573 |
+| 60 | 0.74869 | 0.75155 | 0.76239 |
+| 90 | 0.74740 | 0.75347 | 0.76980 |
+| 120 | 0.75180 | **0.75738** | **0.77396** |
+| 150 | 0.73879 | 0.74300 | 0.75638 |
+
+The 120-ms/.02 control reproduced the previous algorithm's
+training ERLE 0.7200 and held-out 0.7574 dB. The best *exploratory*
+held-out result is 120-ms/.10 at 0.77396 dB, only **+0.01658 dB**
+above the unchanged control, and **none** of the 15 exceeds the
+existing >=1.0 dB minimum gate. Choosing the maximum out of 15
+using this shared holdout would invalidate a claim of independent
+validation for that chosen setting.
+
+For the 120-ms/.02 control, band-pass held-out ERLE is:
+
+- 150–500 Hz: 0.9031 dB
+- 500–1500 Hz: 0.7692 dB
+- **1500–4000 Hz: 3.3701 dB** (~54.0% reduction in band energy)
+- 4000–8000 Hz: -0.0092 dB (no measurable improvement in this band)
+
+More FIR taps do not fix the overall model; 60–150 ms all cluster
+between approximately 0.739 and 0.774 dB with ridge 0.02–0.10.
+The fitted model captures speaker-related structure particularly
+in high-middle frequencies but does not provide reliable whole-band
+AEC. The frequency-specific ERLE is measured on the **speaker-only**
+calibration holdout, not on the user's later speech. Do not claim
+voice preservation or real-time processing success.
+
+### Next discriminating gate: silent speaker baseline
+
+Before making yet another music/AEC capture, collect **one short
+standalone physical microphone take with the speaker silent**, using
+the same working externally powered USB hub, microphone position,
+PipeWire source node and recording gain. This lets us estimate an
+ambient microphone RMS floor under similar conditions and compare it
+with the speaker-only portion of M5-006. A comparison across separate
+takes is only suggestive: room ambience, device state and sources may
+change. It cannot by itself isolate the true speaker leakage.
+
+Avoid playing audio through *any* nearby speaker during this baseline.
+Remain silent for the complete take, stop unrelated audio playback,
+and leave microphone and speaker stationary.
+
+~~~bash
+cd /data/cue-wire
+pactl list short sources
+python3 tools/voice_raw_capture.py record \
+  --mic 'alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback' \
+  --out .audit/voice-captures/M5-room-baseline-001 \
+  --max-seconds 12 \
+  --startup-check-sec 7
+~~~
+
+Let it run its 12-second cap with complete silence; no Ctrl+C
+required. The original `voice_raw_capture.py` writes
+`raw.wav` and a private, SHA256-audited `manifest.json` to a **new
+directory**. Its tool includes a cautious buffered-file readiness
+check at 7 seconds; if that fails, retain the aborted folder as
+evidence instead of reusing the name. The soundboard/virtual mic
+should not be running during this baseline.
+
+Share only its `manifest.json` first. A quiet mic WAV with finite
+nonzero RMS, sane duration and zero clipping gives a first noise
+floor estimate. Do not upload any raw private audio unless deeper
+waveform analysis is explicitly needed. Once the baseline is known,
+we can choose between (a) calibrating an independent low-noise test
+source/near-speech double-talk protocol or (b) investigating model
+mismatch despite a low noise floor.
+
 ## M5-006 v3 band-selected lag: stable high-mid band, weak AEC remains
 
 The user supplied the real `M5-bandlag-006/spectral.json` report, which

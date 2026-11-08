@@ -53,7 +53,7 @@ def main():
         command = [sys.executable, str(TOOLS/"voice_bench.py"),
                    "--clean", str(clean), "--noisy", str(bad),
                    "--out", str(output), "--models", "identity",
-                   "--chains", ""]
+                   "--chains", "identity+identity"]
         result = subprocess.run(command, timeout=60, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
         if result.returncode:
@@ -63,11 +63,31 @@ def main():
         scores = json.loads((output/"scores.json").read_text())
         assert manifest["jobs"]["identity"]["status"] == "ok",manifest["jobs"]
         assert scores["input_pair"]["reference_pair_verified_heuristically"]
-        assert len(scores["results"]) == 1
+        assert len(scores["results"]) == 2
+        assert manifest["jobs"]["identity__identity"]["status"] == "ok"
         assert scores["results"][0]["eligible_for_reference_ranking"]
         assert (output/"results"/"identity.wav").exists()
+        assert (output/"results"/"identity__identity.wav").exists()
+        assert (output/"results"/"identity.wav").read_bytes() == (output/"results"/"identity__identity.wav").read_bytes()
         assert (output/"SHA256SUMS").exists()
-    print("PASS: timing alignment, verified pairing, identity model, scoring, manifests and SHA256")
+        # Publisher must REFUSE public visibility without attempting an upload.
+        stub_bin = path/"fake-bin"
+        stub_bin.mkdir()
+        gh = stub_bin/"gh"
+        gh.write_text("#!/bin/sh\nif [ \"$1\" = repo ]; then echo PUBLIC; exit 0; fi\n"
+                      "echo 'UNEXPECTED RELEASE CALL' >&2; exit 99\n")
+        gh.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = str(stub_bin) + os.pathsep + env["PATH"]
+        publishing = subprocess.run(
+            ["bash", str(TOOLS/"voice_bench_publish.sh"), str(output),
+             "quendoris/cue-wire", "must-never-upload"],
+            capture_output=True, text=True, env=env, timeout=10
+        )
+        assert publishing.returncode != 0
+        assert "REFUSED" in publishing.stderr, publishing.stderr
+        assert "UNEXPECTED RELEASE CALL" not in publishing.stderr
+    print("PASS: reference alignment, 2-stage chain, scoring/checksums and private-release-only guard")
 
 
 if __name__ == "__main__":

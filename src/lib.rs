@@ -1,7 +1,7 @@
-pub mod mixer;
-
 //! Pure configuration, command generation and request validation.
 //! All effects are in main.rs; no shell or default-device changes.
+pub mod mixer;
+
 use std::collections::BTreeMap;
 use std::path::{Path,PathBuf};
 

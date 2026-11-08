@@ -258,6 +258,17 @@ class M5Tests(unittest.TestCase):
                 self.assertTrue(np.all(np.isfinite(data)))
                 with self.assertRaises(FileExistsError):
                     aec.analyze(capture_dir, output)
+                diagnostics_dir = audit / "voice-aec/M5-diagnostics-001"
+                diag = aec.diagnose(capture_dir, diagnostics_dir)
+                self.assertEqual(
+                    diag["status"], "diagnostic_only_not_accepted_for_voice")
+                self.assertIn("holdout_shift_oracle_grid", diag)
+                self.assertIn("passed_production_gate", diag["calibration"])
+                self.assertTrue((diagnostics_dir / "diagnostics.json").is_file())
+                self.assertTrue((diagnostics_dir / "SHA256SUMS").is_file())
+                self.assertEqual(list(diagnostics_dir.glob("*.wav")), [])
+                with self.assertRaises(FileExistsError):
+                    aec.diagnose(capture_dir, diagnostics_dir)
             manifest["reference"]["sha256"] = "WRONG"
             (capture_dir / "manifest.json").write_text(json.dumps(manifest))
             with mock.patch.object(aec, "AUDIT", audit.resolve()):

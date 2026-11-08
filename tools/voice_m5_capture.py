@@ -197,6 +197,8 @@ def experiment(args) -> None:
             "Digital reference is pre-sink audio, not sample-clock synchronized.",
             "Playback launches immediately after the selected recorder, with no readiness wait.",
             "If microphone capture fails, the player is stopped and this take is rejected.",
+            "Live WAV file size is diagnostic only; PipeWire can buffer data.",
+            "Valid full-length WAV plus measured audio are required after recorder close.",
             "The microphone backend is selected explicitly; no automatic fallback.",
             "PipeWire capture is a separate opt-in experiment and may fail on this mic.",
             "If sink effects, resampling, volume or mixing change, the acoustic model can drift.",
@@ -226,39 +228,39 @@ def experiment(args) -> None:
         print("Remain silent for the first", args.calibration_seconds,
               "seconds of playback.", flush=True)
         announcement = False
-        mic_confirmed = False
-        mic_confirmed_elapsed = None
+        observed_stream_bytes = False
+        buffered_notice = False
         while True:
             elapsed = time.monotonic() - play_started
-            # Check the selected microphone before declaring calibration
-            # successful. Do not allow music-only runs to pass as paired data.
+            # Detect a recorder process failure immediately, but do not
+            # mistake audio file write buffering for a broken capture.
+            # In particular pw-record/libsndfile may flush only at close.
             if record.poll() is not None:
                 raise RuntimeError(
                     "Microphone recorder exited (rc=" + str(record.returncode) +
                     ") during playback; " + recorder_log + ": " +
                     log_excerpt(out / recorder_log))
-            if not mic_confirmed and mic_file.is_file() and mic_file.stat().st_size > 9600:
-                mic_confirmed = True
-                mic_confirmed_elapsed = elapsed
-                report["mic_pcm_detected_elapsed_s"] = round(elapsed, 4)
-                print("M5: microphone PCM bytes confirmed (" + args.capture_backend + ").", flush=True)
-            if not mic_confirmed and elapsed >= 1.0:
-                raise RuntimeError(
-                    "Microphone has not written PCM after 1 second; "
-                    "stopping playback; " + recorder_log + ": " +
-                    log_excerpt(out / recorder_log))
+            if not observed_stream_bytes and mic_file.is_file() and mic_file.stat().st_size > 9600:
+                observed_stream_bytes = True
+                report["mic_bytes_observed_during_playback_at_s"] = round(elapsed, 4)
+                print("M5: capture file is growing; audio integrity will be checked after close.",
+                      flush=True)
+            if (not observed_stream_bytes and not buffered_notice and elapsed >= 1.0):
+                buffered_notice = True
+                print("M5: no incremental WAV bytes yet (possibly buffered); "
+                      "continuing and checking finalized WAV after playback.",
+                      flush=True)
             if play.poll() is not None:
                 break
             if not announcement and elapsed >= args.calibration_seconds:
-                if not mic_confirmed:
-                    raise RuntimeError("Calibration ended without microphone audio")
                 print("M5: CALIBRATION COMPLETE — NOW READ YOUR TEXT!", flush=True)
                 announcement = True
             if elapsed > args.seconds + 8:
                 raise RuntimeError("pw-play exceeded expected playback duration")
             time.sleep(0.04)
-        if not mic_confirmed or not announcement:
-            raise RuntimeError("Playback ended before valid paired calibration/reading")
+        report["capture_wav_bytes_observed_during_playback"] = observed_stream_bytes
+        if not announcement:
+            raise RuntimeError("Playback ended before 5-second calibration/reading prompt")
         report["player_returncode"] = play.returncode
         report["player_wall_seconds"] = round(time.monotonic() - play_started, 3)
         if play.returncode:
@@ -267,13 +269,24 @@ def experiment(args) -> None:
         # Let final reflections decay; then gracefully close and finalize WAV.
         time.sleep(0.5)
         terminate_group(record)
+        report["recorder_returncode_after_stop"] = record.returncode
         if not mic_file.is_file():
-            raise RuntimeError("ALSA produced no WAV")
+            raise RuntimeError("Recorder produced no WAV; " + recorder_log + ": " +
+                               log_excerpt(out / recorder_log))
+        finalized = verify_wav(mic_file)
         report["microphone"] = {"wav": mic_file.name,
                                 "sha256": sha256(mic_file),
-                                "measurements": verify_wav(mic_file)}
-        if report["microphone"]["measurements"]["duration_s"] < args.seconds - 1:
-            raise RuntimeError("ALSA recording suspiciously short")
+                                "measurements": finalized}
+        if finalized["duration_s"] < args.seconds - 1:
+            raise RuntimeError(
+                "Finalized microphone WAV is too short: " +
+                str(finalized["duration_s"]) + "s (requested " +
+                str(args.seconds) + "s); capture rejected. " +
+                recorder_log + ": " + log_excerpt(out / recorder_log))
+        if finalized["rms_dbfs"] < -85:
+            raise RuntimeError(
+                "Finalized microphone WAV is effectively silent (RMS " +
+                str(finalized["rms_dbfs"]) + " dBFS); no valid acoustic calibration")
         if sha256(ref) != report["reference"]["sha256"]:
             raise RuntimeError("Digital reference changed")
         report["status"] = "captured_for_offline_aec"

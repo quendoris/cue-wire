@@ -1,0 +1,67 @@
+name: Voice A-B-C listening files
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/pcm-mixer-playground
+    paths:
+      - .github/workflows/voice-ab-preview.yml
+      - tools/voice_ab_lab.py
+      - tools/voice_ab_requirements.txt
+      - examples/voice_restore.rs
+
+permissions:
+  contents: read
+
+jobs:
+  render-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepare isolated optional speech lab
+        run: |
+          python -m venv /tmp/cuewire-voice-ab-venv
+          /tmp/cuewire-voice-ab-venv/bin/python -m pip install \
+            -r tools/voice_ab_requirements.txt
+      - name: Render reproducible, non-personal 3-second source
+        run: |
+          cargo run --locked --offline \
+            --example voice_restore -- \
+            --out /tmp/cuewire-synthetic-voice --seconds 3
+      - name: Generate three A-B-C WAVs
+        run: |
+          /tmp/cuewire-voice-ab-venv/bin/python tools/voice_ab_lab.py \
+            --input /tmp/cuewire-synthetic-voice/voice_before.wav \
+            --out build/voice-ab-preview
+          cp -- /tmp/cuewire-synthetic-voice/voice_before.wav \
+            build/voice-ab-preview/voice_before.wav
+          (cd build/voice-ab-preview && sha256sum \
+            voice_before.wav voice_band_only_v2.wav \
+            voice_mild_v2.wav voice_focus_v2.wav > SHA256SUMS)
+      - name: Verify WAV lengths, format and hashes
+        run: |
+          (cd build/voice-ab-preview && sha256sum --check SHA256SUMS)
+          python - <<'PY'
+          import wave
+          from pathlib import Path
+          root = Path("build/voice-ab-preview")
+          for name in ("voice_before.wav", "voice_band_only_v2.wav",
+                       "voice_mild_v2.wav", "voice_focus_v2.wav"):
+              with wave.open(str(root/name), "rb") as f:
+                  assert (f.getnchannels(), f.getframerate(), f.getsampwidth(),
+                          f.getnframes()) == (1, 48000, 2, 144000), name
+          print("PASS: 4 × 3 seconds, mono PCM16, 48 kHz; all SHA-256 match")
+          PY
+      - name: Attach downloadable audio files to this workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuewire-voice-ab-preview
+          path: build/voice-ab-preview/
+          retention-days: 30
+          if-no-files-found: error

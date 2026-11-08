@@ -22,6 +22,7 @@ import voice_m5_capture as capture
 import voice_m5_spectral as spectral
 import voice_m5_model_probe as model_probe
 import voice_m5_noise_probe as noise_probe
+import voice_m5_aba as aba
 
 RATE = aec.RATE
 
@@ -376,6 +377,29 @@ class M5Tests(unittest.TestCase):
                 self.assertEqual(
                     originals, [aec.digest(p) for p in
                                 (silence_file, ref_file, mic_file)])
+
+    def test_continuous_aba_phase_metrics_are_consistent(self):
+        """A/B/A uses one fixed mic gain and separate interior windows."""
+        rng = np.random.default_rng(293)
+        pre, on, post = 8, 20, 8
+        seconds = pre + on + post
+        signal_data = rng.normal(0, 0.0008, seconds * RATE)
+        idx = np.arange(on * RATE)
+        signal_data[pre * RATE:(pre + on) * RATE] += (
+            .006 * np.sin(2 * np.pi * 1000. * idx / RATE))
+        stats = aba.summarize_phases(signal_data, pre, on, post)
+        self.assertEqual(set(stats["windows"]), {
+            "before_speaker_on", "speaker_on", "after_speaker_off"})
+        self.assertGreater(stats["on_minus_off_rms_db"], 10.0)
+        self.assertLess(abs(stats["pre_post_median_rms_delta_db"]), 1.0)
+        self.assertTrue(0.0 < stats["conditional_off_power_fraction_if_stationary"] < 1.0)
+        self.assertEqual(stats["windows"]["before_speaker_on"]["windows"], 8)
+        self.assertEqual(stats["windows"]["speaker_on"]["windows"], 24)
+        self.assertEqual(stats["windows"]["after_speaker_off"]["windows"], 8)
+        with self.assertRaises(ValueError):
+            aba.summarize_phases(np.zeros(RATE * 6), 8, 20, 8)
+        with self.assertRaises(ValueError):
+            aba.summarize_phases(signal_data, 3, 20, 8)
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

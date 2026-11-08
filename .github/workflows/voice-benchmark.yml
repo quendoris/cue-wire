@@ -23,6 +23,7 @@ on:
       - tools/voice_bench_studio.py
       - tools/voice_m1_freeze.py
       - tools/voice_master_lab.py
+      - tools/voice_master_listen.py
       - tests/test_voice_master_lab.py
       - docs/voice-studio-M3.md
       - tests/test_voice_bench_studio.py
@@ -56,7 +57,8 @@ jobs:
             tools/voice_bench_rnnoise_lib.py tools/voice_bench_sherpa.py \
             tools/voice_bench_metricgan.py tools/voice_bench_audiosr.py \
             tools/voice_bench_studio.py tools/voice_m1_freeze.py \
-            tools/voice_master_lab.py tests/test_voice_master_lab.py \
+            tools/voice_master_lab.py tools/voice_master_listen.py \
+            tests/test_voice_master_lab.py \
             tests/test_voice_bench.py tests/test_voice_bench_studio.py
           bash -n tools/voice_bench_publish.sh tools/voice_bench_install.sh tools/voice_bench_env.sh tools/voice_bench_extra_install.sh
           bash tools/voice_bench_install.sh --help
@@ -68,6 +70,7 @@ jobs:
           python tools/voice_bench_audiosr.py --help
           python tools/voice_m1_freeze.py --help
           python tools/voice_master_lab.py --help
+          python tools/voice_master_listen.py --help
       - name: Reference alignment, identity baseline, manifest/checksum test
         run: |
           python tests/test_voice_bench.py

@@ -107,3 +107,58 @@ Then run manually:
 DO NOT OPEN answer_key.json until after rating. The two prior
 references are only opaque anchors; their old identity remains masked.
 Do not let a gain-normalization difference determine the winner.
+
+
+## Next phase: preserve clean voices, then test gentle studio processing
+
+The 56 MB RNNoise hang was a mirror/connection failure, NOT a maximum
+model-size limitation. Model selection must be driven by audio quality,
+license, runtime and reproducibility, not mere download size. Large and
+full-band models (MossFormer2, Resemble, VoiceFixer, DPDFNet8) remain
+high-priority experiments.
+
+On the next blind listening batch, the user rated 01 as sounding like
+the unnoised original, 04 as notably reducing background noise, and
+14 as similarly strong. These are subjective evaluations. The actual
+algorithm identities are intentionally not unblinded, and track 01
+cannot be certified as literally the clean reference without checking
+its input hashes.
+
+For a SEPARATE studio-stage preview using the already listened-to
+blind 04 and 14, install no new neural networks. Run the deterministic
+and intentionally conservative EQ/compression sandbox:
+
+    ~/.venvs/cuewire-voice-lab/bin/python tools/voice_bench_studio.py \
+      --input 04=/data/cue-wire/voice-audition-005/track_04.wav \
+      --input 14=/data/cue-wire/voice-audition-005/track_14.wav \
+      --clean /data/cue-wire/test.wav \
+      --noisy /data/cue-wire/voice_before.wav \
+      --out /data/cue-wire/bench-studio-001
+
+This yields twelve WAVs: unprocessed controls and five gentle tonal/
+dynamics changes per source. Neither the clean reference nor an
+external model label influences the processing settings. There is NO
+noise bed, gate, voice synthesis, or system audio configuration change.
+The strongest EQ band is only +1 dB; max gain reduction is 2 dB.
+
+Blind the studio output as well:
+
+    ~/.venvs/cuewire-voice-lab/bin/python tools/voice_bench_listen.py \
+      /data/cue-wire/bench-studio-001 \
+      --out /data/cue-wire/voice-audition-studio-001 \
+      --seed 20261108
+
+    pw-play /data/cue-wire/voice-audition-studio-001/reference_clean.wav
+    for f in /data/cue-wire/voice-audition-studio-001/track_*.wav; do
+      echo "$f"; pw-play "$f"
+    done
+
+Leave answer_key.json closed while listening. If no processed variant
+beats its unmodified control, do NOT merge studio processing into the
+runtime. Audition, source fidelity, and absence of metallic artifacts
+matter more than a numerical SI-SDR gain. This offline stage does not
+imply studio-quality restoration has been achieved.
+
+The studio benchmark includes a manifest, SHA256SUMS and scoring files,
+and can be uploaded to the separate PRIVATE benchmark repository using
+the existing explicit confirmation script after checking the contents.

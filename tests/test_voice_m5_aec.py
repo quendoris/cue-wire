@@ -94,6 +94,38 @@ class M5Tests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "explicit"):
                 capture.checked_speaker("auto")
 
+    def test_paired_start_has_no_three_second_alsa_wait(self):
+        """Recorder and player are spawned back-to-back, regardless of PCM readiness."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            events = []
+            recorder = mock.Mock()
+            player = mock.Mock()
+            def fake_spawn(argv, log):
+                events.append((argv[0], log.name))
+                return recorder if argv[0] == "arecord" else player
+            with mock.patch.object(capture, "spawn", side_effect=fake_spawn):
+                got = capture.start_paired_streams(["arecord", "-D", "hw:0,0"],
+                                                   ["pw-play", "--target", "speaker"],
+                                                   root)
+            self.assertEqual(got, (recorder, player))
+            self.assertEqual(events, [("arecord", "arecord.log"),
+                                      ("pw-play", "pw-play.log")])
+            recorder.poll.assert_not_called()
+
+    def test_paired_start_terminates_recorder_on_player_spawn_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            recorder = mock.Mock()
+            def fake_spawn(argv, log):
+                if argv[0] == "arecord":
+                    return recorder
+                raise OSError("speaker unavailable")
+            with mock.patch.object(capture, "spawn", side_effect=fake_spawn), \
+                 mock.patch.object(capture, "terminate_group") as stop:
+                with self.assertRaisesRegex(OSError, "speaker unavailable"):
+                    capture.start_paired_streams(["arecord"], ["pw-play"], Path(temp))
+                stop.assert_called_once_with(recorder)
+
     def test_cli_import_help_offline(self):
         for script in ("voice_m5_capture.py", "voice_m5_aec.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],

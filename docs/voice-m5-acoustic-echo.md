@@ -132,7 +132,7 @@ disabling PipeWire services.
 
 ~~~bash
 cd /data/cue-wire
-python3 -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover -s tests -p test_voice_m5_aec.py -v
 
 python3 tools/voice_m5_capture.py \
   --music '/data/oae-research/ACDC_-_Thunderstruck_(Official_Video).wav' \
@@ -169,7 +169,7 @@ This is not a promise that PipeWire capture will work. It is a
 controlled attempt to isolate whether direct-ALSA read failures can be
 bypassed while keeping the microphone identity explicit.
 
-## Step 2: record speaker plus physical mic
+## Legacy ALSA-only recording example (not recommended while EIO persists)
 
 ~~~bash
 cd /data/cue-wire
@@ -182,10 +182,10 @@ python3 tools/voice_m5_capture.py \
   --seconds 20 \
   --calibration-seconds 5 \
   --volume 0.30 \
-  --out .audit/voice-aec/M5-002
+  --out .audit/voice-aec/M5-005
 ~~~
 
-The program verifies physical ALSA card identity, physical sink, known reference file, and microphone capture bytes before playing anything. It records the mic through arecord and sends the reference to the explicit speaker via pw-play; it does NOT change system defaults, routes, WirePlumber or create monitor streams.
+This example deliberately selects the direct ALSA backend. Run it only after independently fixing the confirmed `pcm_read` EIO condition. For the immediate follow-up use the explicit PipeWire M5-004 instructions above. The program verifies physical ALSA card identity, physical sink and the known reference file before trying the streams. It records the mic through arecord and sends the reference to the explicit speaker via pw-play; it does NOT change system defaults, routes, WirePlumber or create monitor streams.
 
 During the first five seconds of playback: **do not speak**. When the terminal prints CALIBRATION COMPLETE — NOW READ YOUR TEXT!, start reading while the music continues:
 
@@ -193,9 +193,9 @@ During the first five seconds of playback: **do not speak**. When the terminal p
 
 The playback finishes after ~20 seconds; the capture stops automatically. Results:
 
-- .audit/voice-aec/M5-002/reference-sent.wav — exact prepared digital signal sent to the output stream
-- .audit/voice-aec/M5-002/microphone-raw.wav — unprocessed real microphone capture
-- .audit/voice-aec/M5-002/manifest.json — SHA256, devices and timing metadata
+- .audit/voice-aec/M5-005/reference-sent.wav — exact prepared digital signal sent to the output stream
+- .audit/voice-aec/M5-005/microphone-raw.wav — unprocessed real microphone capture
+- .audit/voice-aec/M5-005/manifest.json — SHA256, devices and timing metadata
 - local logs of ALSA, playback, and reference preparation
 
 If interrupted, process children are terminated and prior evidence is kept. Every attempt uses a **new** output directory.
@@ -208,25 +208,25 @@ Use the dedicated voice-lab Python environment with NumPy/SciPy:
 ~/.venvs/cuewire-voice-lab/bin/python -c 'import numpy, scipy; print(numpy.__version__, scipy.__version__)'
 
 ~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aec.py \
-  --capture .audit/voice-aec/M5-002 \
-  --out .audit/voice-aec/M5-analysis-001
+  --capture .audit/voice-aec/M5-004 \
+  --out .audit/voice-aec/M5-analysis-004
 ~~~
 
 The analyzer estimates unknown mic-to-digital offset by FFT correlation, fits a regularized acoustic FIR on speaker-only training seconds, reports ERLE on a **separate held-out speaker-only interval**, then freezes the FIR for the entire double-talk interval. If correlation/validation fail, it does not create subtraction WAVs.
 
 Outputs after accepted engineering preflight:
-- M5-analysis-001/aec-candidate-float32.wav — experimental subtraction
-- M5-analysis-001/speaker-echo-estimate-float32.wav — predicted speaker leakage
-- M5-analysis-001/manifest.json and SHA256SUMS
+- M5-analysis-004/aec-candidate-float32.wav — experimental subtraction
+- M5-analysis-004/speaker-echo-estimate-float32.wav — predicted speaker leakage
+- M5-analysis-004/manifest.json and SHA256SUMS
 
 The candidate is not automatically endorsed as usable voice: listen during simultaneous music and local speech for consonant loss and artifacts. Do not start DeepFilterNet/DPDF processing in front of this calibration, because that changes the physical echo waveform we are trying to identify.
 
 ## Step 4: check and listen
 
 ~~~bash
-cd /data/cue-wire/.audit/voice-aec/M5-analysis-001
+cd /data/cue-wire/.audit/voice-aec/M5-analysis-004
 sha256sum -c SHA256SUMS
-pw-play ../M5-002/microphone-raw.wav
+pw-play ../M5-004/microphone-raw.wav
 pw-play aec-candidate-float32.wav
 ~~~
 

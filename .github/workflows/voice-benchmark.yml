@@ -41,7 +41,7 @@ jobs:
           sudo apt-get install -y ffmpeg
       - name: Install reference scoring dependencies (no ML models)
         run: |
-          python -m pip install --disable-pip-version-check numpy==2.3.5 scipy==1.17.0
+          python -m pip install --disable-pip-version-check numpy==2.3.5 scipy==1.17.0 soundfile==0.13.1
       - name: Compile Python files and check shell syntax
         run: |
           python -m py_compile tools/voice_bench.py \

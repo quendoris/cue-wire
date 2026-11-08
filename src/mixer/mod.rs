@@ -4,6 +4,9 @@ pub mod sources;
 pub mod dynamics;
 pub mod music;
 pub mod wav;
+pub mod fft;
+pub mod voice_wav;
+pub mod voice;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Gain(f32);

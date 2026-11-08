@@ -27,6 +27,13 @@ jobs:
         run: |
           cargo run --locked --offline --example dynamics_preview -- --out /tmp/cuewire-dynamics-preview --section-seconds 3
           python3 tests/dynamics_preview.py /tmp/cuewire-dynamics-preview 3
+      - name: Generate and audit deterministic noisy-voice restoration
+        run: |
+          cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-voice-preview --seconds 3
+          python3 tests/audit_voice_preview.py /tmp/cuewire-voice-preview
+          cp /tmp/cuewire-voice-preview/voice_after.wav /tmp/cuewire-voice-first.wav
+          cargo run --locked --offline --example voice_restore -- --out /tmp/cuewire-voice-preview --seconds 3
+          cmp /tmp/cuewire-voice-first.wav /tmp/cuewire-voice-preview/voice_after.wav
       - name: Fake PipeWire end-to-end process and cleanup smoke
         run: python3 tests/fake_runtime.py target/debug/cuewire
       - name: Show CLI and command validation

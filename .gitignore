@@ -5,3 +5,7 @@
 *.swp
 *.tmp
 .DS_Store
+/voice-preview/
+/voice-fixture/
+/voice-run/
+/voice-tuned/

@@ -108,3 +108,19 @@ existing foreground PipeWire runtime or default audio routing.
     pw-play mixer-preview/mix.wav
 
 See [mixer playground design](docs/mixer-playground.md) for safety and DSP contracts.
+
+## Offline voice restoration lab (not yet live)
+
+An opt-in, deterministic voice enhancement candidate lives in
+[src/mixer/voice.rs](src/mixer/voice.rs). It does not modify audio devices
+or the live Ctrl+C / ctl lifecycle. To compare a deliberately degraded
+vocal-like fixture to its processed output:
+
+    cargo run --locked --offline --example voice_restore -- --out voice-preview
+    pw-play voice-preview/voice_before.wav
+    pw-play voice-preview/voice_after.wav
+
+For real recordings and a deterministic real-speech damage fixture, see
+[voice restoration playground](docs/voice-restoration.md). This is a
+limited DSP experiment, NOT certified full studio restoration or
+separation of vocals from full-band music.

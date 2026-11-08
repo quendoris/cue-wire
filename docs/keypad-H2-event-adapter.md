@@ -421,3 +421,50 @@ The auditor now reports micro-chord durations and exits code 3
 if raw press/release integrity fails under --require-balanced.
 The transparent flag remains opt-in until fullscreen/game and
 modifier-held behavior has been independently tested on hardware.
+
+
+## H2.4: isolated transparent H2-005 passes, held K1 is deliberate
+
+Operator clarification: the earlier long K1 press was INTENTIONAL.
+It was used as a modifier while other NumPad buttons were tapped.
+Do not classify long K1+other combinations as phantom chords solely
+because K1 was held for longer than a nominal single-press timeout.
+
+Private H2-005 transparent run (only aggregate metrics recorded here):
+
+- 57 JSONL records over 24.648 seconds.
+- Raw key down = 19 and up = 19, no missing releases or duplicate down.
+- Three single, four double, one hold_start and one hold_end.
+- Isolated K1 hold measured 1780 ms; hold_start emitted after 553 ms.
+- Four K1+K2 chords with overlap durations 127, 154, 182, 1374 ms.
+- No 0-5 ms micro-chords or unclosed buttons in this recording.
+- Eleven short K1 presses grouped as 3 singles + 4 doubles;
+  their precise grouping depends on the 290ms double-press window.
+
+The trace confirms robust event transport for this specific run
+but does not establish behavior across NumLock modes or fullscreen
+games. A long-lived modifier key should be treated as a supported
+interaction pattern, NOT automatically marked as input loss.
+
+### Gesture engine adjustment following H2-005
+
+The H2 state machine now requires a default **25 ms verified
+simultaneous overlap** (CLI `--chord-ms`, allowed 5..250 ms) before
+emitting a chord_start. The 0-5ms artifacts of H2-004 will not
+become action-capable chords. A confirmed K1+K2 chord is still
+recognized for quick genuine overlaps of 127+ ms as observed in H2-005.
+
+If K1 triggers hold_start and then participates in chords,
+its eventual release now emits the matching hold_end with
+`participated_in_chord: true`. This repairs the previous bug where
+a chord could swallow hold_end, leaving downstream actions stuck.
+
+The new synthetic regression tests cover: arbitrary short overlaps
+which must not become chords; repeated K2 taps while K1 remains
+held as a modifier; and the hold_start -> chord -> hold_end lifecycle.
+No audio or action callbacks are connected to H2 yet.
+
+Next integration gate: evaluate event quality on NumLock changes
+and fullscreen games. Then design an independent mode-aware
+action dispatcher with explicit combinations and no privilege
+to start external programs until configured.

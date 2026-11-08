@@ -83,7 +83,7 @@ def keyword(key,phase,owner,game=False):
     code=core.KEYS[key]
     # "i": ignore currently held modifiers; "r": release only
     # "p": bypass inhibitor, explicit opt-in for fullscreen applications.
-    suffix="i"+("r" if phase=="up" else "")+("p" if game else "")
+    suffix=("r" if phase=="up" else "")+"i"+("p" if game else "")
     runctl("keyword","bind"+suffix,
            f", code:{code}, exec, {key_arg(key,phase,owner)}")
 

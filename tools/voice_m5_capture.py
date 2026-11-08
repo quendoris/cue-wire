@@ -84,6 +84,31 @@ def stop_children() -> None:
         terminate_group(process)
 
 
+def start_paired_streams(record_cmd: list[str], playback_cmd: list[str],
+                         out: Path):
+    """Attempt playback immediately after launching the microphone process.
+
+    Do not wait 3 seconds for ALSA readiness; failure is detected in the
+    concurrent monitoring loop, and playback is stopped on any failure.
+    """
+    recorder = spawn(record_cmd, out / "arecord.log")
+    try:
+        player = spawn(playback_cmd, out / "pw-play.log")
+    except BaseException:
+        terminate_group(recorder)
+        raise
+    return recorder, player
+
+
+def log_excerpt(path: Path, limit: int = 1400) -> str:
+    if not path.is_file():
+        return "<no log file>"
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[-limit:]
+    except OSError as exc:
+        return f"<log unreadable: {type(exc).__name__}>"
+
+
 def prepare_reference(source: Path, output: Path, seconds: int) -> dict:
     checked_program("ffmpeg")
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
@@ -138,7 +163,9 @@ def experiment(args) -> None:
         "notes": [
             "First calibration interval requires NO local voice, other sounds or movement.",
             "Start reading when instructed, while the music continues playing.",
-            "The digital reference is pre-sink audio, NOT a time-synchronized monitor.",
+            "Digital reference is pre-sink audio, not sample-clock synchronized.",
+            "Playback launches immediately after the ALSA process, with no 3-second wait.",
+            "If microphone capture fails, the player is stopped and this take is rejected.",
             "If sink effects, resampling, volume or mixing change, the acoustic model can drift.",
             "No audio routing, defaults, or virtual mic changes were made.",
             "This first pilot intentionally plays one known source; other system audio invalidates the reference."
@@ -152,40 +179,56 @@ def experiment(args) -> None:
         print("Speaker-only calibration: first", args.calibration_seconds,
               "seconds, then READ TEST TEXT while music continues.", flush=True)
         print("Your voice will NOT be played into the headphones.", flush=True)
-        record = spawn(["arecord", "-D", args.mic, "-f", "S16_LE",
-                        "-c", "1", "-r", str(RATE), "-t", "wav",
-                        "-d", str(args.seconds + 4), str(mic_file)],
-                       out / "arecord.log")
-        # Do not play until at least some PCM bytes prove the physical capture started.
-        deadline = time.monotonic() + 3
-        while time.monotonic() < deadline:
-            if record.poll() is not None:
-                raise RuntimeError("ALSA recorder exited before speaker playback")
-            if mic_file.is_file() and mic_file.stat().st_size > 9600:
-                break
-            time.sleep(0.05)
-        else:
-            raise RuntimeError("ALSA recorder not writing; speaker playback NOT started")
-
-        play = spawn(["pw-play", "--target", args.speaker, "--volume",
-                      str(args.volume), str(ref)], out / "pw-play.log")
+        record_cmd = ["arecord", "-D", args.mic, "-f", "S16_LE",
+                      "-c", "1", "-r", str(RATE), "-t", "wav",
+                      "-d", str(args.seconds + 4), str(mic_file)]
+        playback_cmd = ["pw-play", "--target", args.speaker, "--volume",
+                        str(args.volume), str(ref)]
+        # Both start back-to-back: no 3-second wait for the microphone.
+        # An ALSA error is reported while playback is already attempted,
+        # and will immediately stop the player through finally.
+        record, play = start_paired_streams(record_cmd, playback_cmd, out)
         play_started = time.monotonic()
-        report["playback_started_utc_approx"] = datetime.now(timezone.utc).isoformat()
-        print("M5 PLAY STARTED. Please remain silent for", args.calibration_seconds,
-              "seconds.", flush=True)
+        report["playback_launch_utc_approx"] = datetime.now(timezone.utc).isoformat()
+        report["playback_start_policy"] = "launch_immediately_after_recorder_no_readiness_wait"
+        print("M5: PLAYBACK LAUNCHED on", args.speaker,
+              "; verifying concurrent ALSA recording.", flush=True)
+        print("Remain silent for the first", args.calibration_seconds,
+              "seconds of playback.", flush=True)
         announcement = False
+        mic_confirmed = False
+        mic_confirmed_elapsed = None
         while True:
             elapsed = time.monotonic() - play_started
-            if not announcement and elapsed >= args.calibration_seconds:
-                print("M5: CALIBRATION COMPLETE — NOW READ YOUR TEXT!", flush=True)
-                announcement = True
+            # Check the physical microphone before declaring calibration
+            # successful. Do not allow music-only runs to pass as paired data.
+            if record.poll() is not None:
+                raise RuntimeError(
+                    "ALSA recorder exited (rc=" + str(record.returncode) +
+                    ") during playback; arecord.log: " +
+                    log_excerpt(out / "arecord.log"))
+            if not mic_confirmed and mic_file.is_file() and mic_file.stat().st_size > 9600:
+                mic_confirmed = True
+                mic_confirmed_elapsed = elapsed
+                report["mic_pcm_detected_elapsed_s"] = round(elapsed, 4)
+                print("M5: microphone PCM bytes confirmed.", flush=True)
+            if not mic_confirmed and elapsed >= 1.0:
+                raise RuntimeError(
+                    "ALSA has not written microphone PCM after 1 second; "
+                    "stopping playback; arecord.log: " +
+                    log_excerpt(out / "arecord.log"))
             if play.poll() is not None:
                 break
-            if record.poll() is not None:
-                raise RuntimeError("ALSA capture stopped before end of playback")
+            if not announcement and elapsed >= args.calibration_seconds:
+                if not mic_confirmed:
+                    raise RuntimeError("Calibration ended without microphone audio")
+                print("M5: CALIBRATION COMPLETE — NOW READ YOUR TEXT!", flush=True)
+                announcement = True
             if elapsed > args.seconds + 8:
                 raise RuntimeError("pw-play exceeded expected playback duration")
-            time.sleep(0.07)
+            time.sleep(0.04)
+        if not mic_confirmed or not announcement:
+            raise RuntimeError("Playback ended before valid paired calibration/reading")
         report["player_returncode"] = play.returncode
         report["player_wall_seconds"] = round(time.monotonic() - play_started, 3)
         if play.returncode:
@@ -210,6 +253,8 @@ def experiment(args) -> None:
     except BaseException as exc:
         report["status"] = "failed_or_interrupted"
         report["error"] = type(exc).__name__ + ": " + str(exc)
+        report["arecord_log_tail"] = log_excerpt(out / "arecord.log")
+        report["pw_play_log_tail"] = log_excerpt(out / "pw-play.log")
         raise
     finally:
         stop_children()

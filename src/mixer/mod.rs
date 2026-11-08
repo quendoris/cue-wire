@@ -1,6 +1,8 @@
 //! Side-effect-free mono PCM mixing core.
 //! No PipeWire clients, threads, allocations or device/default changes are created here.
 pub mod sources;
+pub mod dynamics;
+pub mod music;
 pub mod wav;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -70,6 +70,87 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-006 v3 band-selected lag: stable high-mid band, weak AEC remains
+
+The user supplied the real `M5-bandlag-006/spectral.json` report, which
+matches the existing reference/mic/capture SHA256s and identifies schema
+`cuewire-M5-spectral-diagnostics-v3`.
+
+Measured best lag (ms) for four windows (0.30–1.20 / 1.35–2.25 /
+2.40–3.30 / 3.40–4.30 s):
+
+| Hz | Four lag estimates (ms) | Max-min (ms) |
+| --- | --- | ---: |
+| 70–180 | 102.125 / 105.458 / 95.375 / 109.146 | 13.771 |
+| 180–500 | 110.813 / 106.063 / 110.667 / 104.583 | 6.229 |
+| 500–1500 | 102.396 / 108.813 / 108.813 / 108.792 | 6.417 |
+| **1500–4000** | **101.333 / 101.313 / 101.542 / 101.292** | **0.250** |
+| 4000–8000 | 100.938 / 100.521 / 100.521 / 100.917 | 0.417 |
+
+At 1500–4000 Hz the normalized correlation scores are
+0.304735 / 0.350095 / 0.318457 / 0.367615. This band preserves
+a near-101.3ms peak on all four windows, *including* the third window
+where broadband correlation selected the 93.1875ms musical peak.
+Thus this high-mid band is a useful candidate for **robust initial
+lag detection**, subject to more independent recordings and speaker
+excitation testing. It is not a certified sample-accurate DAC latency
+or a guaranteed echo path.
+
+The 4000–8000Hz band also has comparatively small lag variation,
+but its best normalized correlations are only ~0.078–0.099,
+making its apparent stability less trustworthy.
+Below 1500Hz the strongest band-limited peaks are highly ambiguous.
+
+**Critical distinction:** the M5 frozen AEC model uses the
+global **101.2917ms** delay already, which is close to the reliable
+1500–4000Hz lag. Therefore the broadband musical
+correlation ambiguities alone cannot explain the poor
+**0.7574dB held-out ERLE**. Fitting the linear acoustic path is
+the next bottleneck to investigate, and the mic may also contain
+substantial background unrelated to the played speaker.
+
+### M5-006 FIR ablation: diagnostic model comparison, NO voice WAV
+
+New tool: `tools/voice_m5_model_probe.py`. It reads the already
+captured M5-006 pair and fits **15 independent fixed linear filters**
+on the original speaker-only *training* section (0.25–3.30s):
+
+- FIR lengths 30, 60, 90, 120, 150 ms
+- Wiener spectral ridge factors 0.005, 0.02, 0.10
+- same global delay, 8192 FFT size, **training-only** fitted gain
+- records overall and band-specific ERLE on the held-out
+  3.45–4.40s section
+- the **120ms / 0.02** candidate is intentionally equivalent
+  to the current AEC model, as a control
+- no WAV is written; no devices/sinks/streams/configs are changed
+
+This grid is *exploratory*. Comparing 15 candidates on one hold-out
+makes that hold-out a **model-selection set**. Even if a candidate
+scores well, it is NOT independently validated after selection.
+Do not change the original ERLE gate or apply a selected model
+to the near-end voice without a **new independent speaker-only
+recording** with a genuinely unused validation interval.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_model_probe.py \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-model-probe-006
+
+cd .audit/voice-aec/M5-model-probe-006
+sha256sum -c SHA256SUMS
+~~~
+
+The only report files are `model-probe.json` and `SHA256SUMS`.
+No new speaker playback and no microphone recording are needed.
+Keep all prior M5 data immutable. Review the full train/holdout
+matrix, not only the best value, before deciding whether a new
+controlled calibration is worth running.
+
 ## M5-006 alternate-peak report: nearly periodic 8.1-ms ambiguity
 
 From the real `M5-spectral-peaks-006/spectral.json`, the original

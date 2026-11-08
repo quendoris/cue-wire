@@ -22,6 +22,9 @@ on:
       - tests/test_voice_bench.py
       - tools/voice_bench_studio.py
       - tools/voice_m1_freeze.py
+      - tools/voice_m1_compare.py
+      - tools/voice_m1_publish_report.py
+      - tests/test_voice_m1_audit.py
       - tools/voice_master_lab.py
       - tools/voice_master_listen.py
       - tests/test_voice_master_lab.py
@@ -58,7 +61,8 @@ jobs:
             tools/voice_bench_metricgan.py tools/voice_bench_audiosr.py \
             tools/voice_bench_studio.py tools/voice_m1_freeze.py \
             tools/voice_master_lab.py tools/voice_master_listen.py \
-            tests/test_voice_master_lab.py \
+            tools/voice_m1_compare.py tools/voice_m1_publish_report.py \
+            tests/test_voice_m1_audit.py tests/test_voice_master_lab.py \
             tests/test_voice_bench.py tests/test_voice_bench_studio.py
           bash -n tools/voice_bench_publish.sh tools/voice_bench_install.sh tools/voice_bench_env.sh tools/voice_bench_extra_install.sh
           bash tools/voice_bench_install.sh --help
@@ -69,6 +73,8 @@ jobs:
           python tools/voice_bench_metricgan.py --help
           python tools/voice_bench_audiosr.py --help
           python tools/voice_m1_freeze.py --help
+          python tools/voice_m1_compare.py --help
+          python tools/voice_m1_publish_report.py --help
           python tools/voice_master_lab.py --help
           python tools/voice_master_listen.py --help
       - name: Reference alignment, identity baseline, manifest/checksum test
@@ -76,6 +82,7 @@ jobs:
           python tests/test_voice_bench.py
           python tests/test_voice_bench_studio.py
           python tests/test_voice_master_lab.py
+          python tests/test_voice_m1_audit.py
       - name: Confirm no private recordings enter Git history
         run: |
           if git ls-files | grep -E '(^|/)(test|voice_before|voice_after|clean)\.wav$|(^|/)bench-run-[^/]+/'; then

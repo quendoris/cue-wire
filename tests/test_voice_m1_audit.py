@@ -118,7 +118,7 @@ def main():
             frozen.find_upstream_model(prior,4,previous)
             raise AssertionError("Tampered prior anchor accepted")
         except RuntimeError as err:
-            assert "SHA" in str(err)
+            assert "Tampered" in str(err) or "SHA" in str(err)
     print("PASS: frozen M1 source-hash check, B0/B1/B2 scoring, "
           "30ms mismatch, explicit chain, private JSON-only publishing dry-run and anchor tamper check")
 

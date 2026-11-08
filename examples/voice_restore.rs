@@ -40,7 +40,7 @@ fn synth_voicelike(seconds:u32)->Vec<f32> {
         let intra=(t%0.65)/0.65;
         let envelope=if intra<0.07 {intra/0.07}
             else if intra>0.76 {(1.0-intra)/0.24} else {1.0};
-        let silence=if syllable%7==6 {0.0} else {1.0};
+        let silence=if syllable%7==6 || t<0.65 {0.0} else {1.0};
         let f0=112.0+8.0*(2.0*PI*0.37*t).sin();
         let (f1,f2,f3)=vowels[syllable%4];
         let mut signal=0.0_f32;

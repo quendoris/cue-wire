@@ -26,7 +26,7 @@ def main():
     report=json.loads((root/"report.json").read_text())
     assert report["algorithm"]=="cuewire-voice-offline-v0.1"
     assert report["sample_rate"]==48000
-    assert report["noise_profile_frames"]>0 or report["profile_frames"]>0
+    assert report["profile_frames"]>0
     n=report["frames"]
     assert 0<n<=48000*60*10
     check_wav(root/"voice_before.wav",n)

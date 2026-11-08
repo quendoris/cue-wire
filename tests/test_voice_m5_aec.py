@@ -23,6 +23,7 @@ import voice_m5_spectral as spectral
 import voice_m5_model_probe as model_probe
 import voice_m5_noise_probe as noise_probe
 import voice_m5_aba as aba
+import voice_m5_aba_spectrum as aba_spectrum
 
 RATE = aec.RATE
 
@@ -400,6 +401,35 @@ class M5Tests(unittest.TestCase):
             aba.summarize_phases(np.zeros(RATE * 6), 8, 20, 8)
         with self.assertRaises(ValueError):
             aba.summarize_phases(signal_data, 3, 20, 8)
+
+    def test_aba_spectral_analysis_identifies_stationary_hum(self):
+        """Synthetic stable low-frequency noise and extra 2kHz speaker."""
+        rng = np.random.default_rng(900)
+        data = rng.normal(0, 0.00025, 36 * RATE)
+        time_axis = np.arange(len(data)) / RATE
+        data += .0008 * np.sin(2 * np.pi * 50 * time_axis)
+        on_start, on_end = 8 * RATE, 28 * RATE
+        data[on_start:on_end] += .004 * np.sin(
+            2 * np.pi * 2000 * time_axis[on_start:on_end])
+        windows = {
+            "before_speaker_on": {"approx_wav_position_s": [2., 6.]},
+            "speaker_on": {"approx_wav_position_s": [12., 24.]},
+            "after_speaker_off": {"approx_wav_position_s": [30., 34.]},
+        }
+        observed = aba_spectrum.inspect_samples(data, windows)
+        by_band = {
+            tuple(row["band_hz"]): row for row in observed["bands"]}
+        self.assertLess(abs(by_band[(20, 70)]["on_minus_mean_off_db"]), 0.3)
+        self.assertGreater(by_band[(1500, 4000)]["on_minus_mean_off_db"], 10)
+        self.assertGreater(observed["on_minus_off_db"], 5)
+        self.assertAlmostEqual(
+            observed["phase_levels"]["before_speaker_on"][
+                "dominant_low_frequency_lines"][0]["peak_frequency_hz"],
+            50.0, delta=1.0)
+        self.assertTrue(all(
+            0 <= row["fraction_of_off_total_power"] <= 1
+            for row in observed["bands"]))
+        self.assertEqual(len(observed["top_quarter_second_transients"]), 8)
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -112,7 +112,7 @@ def pad_deepfilter_input(source: Path, target: Path, original_frames: int,
                         raise RuntimeError("RAW truncated during padding")
                     copied += len(block) // 2
                     dst.writeframesraw(block)
-                dst.writeframesraw(b"\x00" * (2 * (padded_frames - original_frames)))
+                dst.writeframesraw(bytes(2 * (padded_frames - original_frames)))
     return padded_frames
 
 

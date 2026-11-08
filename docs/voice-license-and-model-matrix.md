@@ -34,9 +34,10 @@ From /data/cue-wire, use:
     bash tools/voice_bench_install.sh --help
     bash tools/voice_bench_install.sh --check
 
-Every --install command downloads/executess third-party code locally under
-.audit/voice-tools, without sudo, systemd services, audio routing changes,
-or installing to system Python. RNNoise requires the autotools C compiler
+Each --install command creates its own executable/venv under .audit/voice-tools,
+without sudo, systemd services, audio routing changes, or changes to system
+Python. Third-party build tools and uv may additionally use normal user-level
+download caches (e.g. ~/.cache/uv), so .audit is NOT the only disk location. RNNoise requires the autotools C compiler
 toolchain; its autogen.sh also downloads a model.
 
     bash tools/voice_bench_install.sh --install rnnoise
@@ -56,8 +57,10 @@ Use local model paths in THIS terminal ONLY:
 
     source tools/voice_bench_env.sh
 
-The existing standalone DeepFilterNet binary and any existing
-CUEWIRE_BENCH_DEEPFILTER override are preserved.
+The existing standalone DeepFilterNet v0.5.6 musl binary at
+.audit/voice-tools/deep-filter-0.5.6-x86_64-unknown-linux-musl
+is detected automatically. Any explicitly provided
+CUEWIRE_BENCH_DEEPFILTER override is preserved.
 
 ## Model variants
 

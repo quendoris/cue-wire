@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # SOURCE only: exports paths for the current shell, no persistent settings.
 _cue_base="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/.audit/voice-tools"
+if [[ -x "$_cue_base/deep-filter-0.5.6-x86_64-unknown-linux-musl" && -z "$(printenv CUEWIRE_BENCH_DEEPFILTER)" ]]; then
+  export CUEWIRE_BENCH_DEEPFILTER="$_cue_base/deep-filter-0.5.6-x86_64-unknown-linux-musl"
+fi
 if [[ -x "$_cue_base/rnnoise/examples/rnnoise_demo" && -z "$(printenv CUEWIRE_BENCH_RNNOISE)" ]]; then
   export CUEWIRE_BENCH_RNNOISE="$_cue_base/rnnoise/examples/rnnoise_demo"
 fi

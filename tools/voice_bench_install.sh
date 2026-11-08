@@ -22,6 +22,9 @@ TXT
 }
 if [[ "$#" == 1 && "$1" == --help ]]; then usage; exit 0; fi
 if [[ "$#" == 1 && "$1" == --check ]]; then
+  if [[ -x "$root/deep-filter-0.5.6-x86_64-unknown-linux-musl" ]]; then
+    printf 'OK      %s\n' "$root/deep-filter-0.5.6-x86_64-unknown-linux-musl"
+  fi
   for file in "$root/rnnoise/examples/rnnoise_demo" \
     "$root/clearvoice/bin/python" "$root/resemble/bin/resemble-enhance" \
     "$root/voicefixer/bin/voicefixer" "$root/separator/bin/audio-separator"; do

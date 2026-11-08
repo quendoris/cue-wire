@@ -269,3 +269,61 @@ Once listening is comfortable, inspect M4 movements for level
 consistency. Make R1 from the untouched R0 and compare at matched
 playback levels. Do not reuse the blind-audition 4.724 multiplier
 without reference-specific peak headroom checks.
+
+
+## M4 listen-v3: +2 dB past fixed-gain ceiling, with transient protection
+
+The operator confirmed that 58.250021-second R0 has whole-file RMS
+-38.075 dBFS, peak -12.133 dBFS, 0 clipped samples. The speaker
+hardware volume and system sink volume are separate from recording
+level; normal music playback is comfortable, so do not change defaults.
+
+The attempted listen-gain-v2.wav used -1 dBFS sample-peak ceiling;
+it sounded better but the utility raised RuntimeError AFTER writing
+its WAV, due to a floating/integer PCM16 ceiling mismatch. The v2
+file is useful for subjective comparison, but not an audited output
+because its accompanying manifest was not written. It is NOT
+deleted or overwritten. The original tool now reserves two integer
+sample values before its ceiling calculation, with a regression test.
+
+At peak -12.133 dBFS, pure fixed gain up to -1 dBFS permits only
+about +11.133 dB. Another +2 dB would raise the input peak to
+approximately +1 dBFS and necessarily clip without dynamic control.
+
+An experimental offline audition-only limiter now generates a
+fresh, private derivative. It uses a reverse lookahead attenuation
+envelope (default attack 10ms) and forward release (100ms), with
+conservative PCM16 integer sample-peak verification. This is a
+measured TWO-PASS GAIN CONTROL stage, not plain normalization, AEC,
+noise suppression, true-peak mastering, or a studio compressor.
+
+    cd /data/cue-wire
+    git switch feature/pcm-mixer-playground
+    git pull --ff-only
+
+    python3 tools/voice_listen_limited.py \
+      --in .audit/voice-captures/M4-R0-ALSA-007/raw.wav \
+      --out .audit/voice-captures/M4-R0-ALSA-007/listen-limited-v3.wav \
+      --extra-db 2 \
+      --peak-ceiling-dbfs -1
+
+Then, only after the recording has stopped:
+
+    pw-play .audit/voice-captures/M4-R0-ALSA-007/listen-limited-v3.wav
+
+The tool will print raw/current RMS+peak, pre-gain, maximum applied
+transient attenuation and resulting levels. It creates a fresh
+listen-limited-v3.json with byte-level original/output SHA256.
+No file is overwritten, and there is no system audio configuration
+change or playback during rendering.
+
+An EXTRA +2dB is the requested pre-gain above the maximum
+peak-safe fixed gain, not an unconditional guarantee that every
+sample of the resulting file is 2 dB louder. Some transients must
+be attenuated. Check naturalness, plosives, quiet-room noise and
+pumping before promoting any limiter to a studio-stage candidate.
+
+If this is comfortable, stop increasing loudness directly on raw
+recordings. Next reconstruct cleaned R1 with the frozen M1 chain
+and only then evaluate compression, EQ and consistent voice LUFS
+under controlled, separately named variants. Always retain RAW R0.

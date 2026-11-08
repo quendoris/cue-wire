@@ -70,6 +70,117 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## Actual M5 noise-probe result and one-session ABA control (2026-11-08)
+
+The uploaded `M5-noise-probe-006/noise-probe.json` was independently
+SHA256 verified against the supplied `SHA256SUMS`:
+`035f056fc7e2f2d9e06838abe49aa804c2a8bc85f48963d091748b6967214b83`.
+All the source hashes in this report match the previous
+quiet-room M5 baseline and M5-006 paired capture manifests.
+
+**Observed half-second RMS measurements (two independent takes):**
+
+| Metric | Speaker OFF, baseline | Speaker ON, M5-006 calibration |
+| --- | ---: | ---: |
+| Windows | 21 | 8 |
+| p10 | -60.38802 dBFS | -58.19258 dBFS |
+| median | **-60.13671 dBFS** | **-57.78384 dBFS** |
+| p90 | -59.74011 dBFS | -57.55171 dBFS |
+| Window-power RMS | -59.84946 dBFS | -57.84339 dBFS |
+| Lowest window | -60.60255 dBFS | -58.21556 dBFS |
+| Highest window | -57.62427 dBFS | -57.48116 dBFS |
+
+The baseline windows are relatively steady: 19/21
+fall between -60.60255 and -59.74011 dBFS. Two windows,
+indices 16 and 18 (0-based), rise to -57.62427 and
+-57.83797 dBFS. These could be transient events, not
+necessarily a stable elevated background.
+
+The on/off median delta is +2.35217 dB, comparing
+mean window powers yields +2.00607 dB, while
+comparing speaker-only full-window to the full baseline WAV
+yields +1.71714 dB (the tool's `difference_rms_db`).
+The last value is not a contradiction: the whole quiet-room
+WAV includes the start and end portions omitted by the
+half-second windowed report, and the baseline contains
+short level excursions.
+
+The report's `conditional_background_power_fraction=0.673421`
+uses the **full baseline RMS** (not the window medians).
+The mean-window-power ratio implies about **0.6301** and
+the ratio of median-window powers about **0.5818**.
+These remain **conditional comparisons across non-simultaneous
+recordings**, NOT a measurement of the true echo fraction
+or a proven ceiling on achievable AEC.
+
+The original AEC held-out ERLE remains **0.7574 dB**
+and remains rejected; the baseline report provides no
+independent evidence that near-end speech would survive.
+
+### New controlled experiment: physical OFF → ON → OFF in ONE take
+
+New CLI: `tools/voice_m5_aba.py`, which records the physical
+USB microphone in one uninterrupted `pw-record` session
+while the real analogue speaker:
+
+1. is quiet for **8 seconds** (operator also quiet);
+2. plays the **already verified local 20-second M5-006 digital
+   reference** via `pw-play`, volume 0.30, on an explicitly
+   selected physical sink;
+3. returns to quiet for **8 seconds**.
+
+The microphone and physical speaker remain stationary.
+The tool uses known working process ownership (child process groups
+and Linux parent-death signal) so Super+C or ordinary
+interruption leaves **no owned playback or recorder processes**.
+No system defaults, new virtual endpoints, settings, services,
+automations or monitoring path are changed. A user should not
+have another audio player running during this test.
+
+The program writes only a NEW private
+`.audit/voice-aec/M5-ABA-001` directory with the unprocessed
+microphone WAV, recorder/player logs, manifest and SHA256SUMS.
+It summarizes **interior** half-second windows in each phase,
+avoiding approximate unsynchronized phase boundaries by at least
+2–4 seconds. These offsets are approximate because the two
+processes do not share hardware sample clocks. The result can
+identify whether the background before and after is similar and
+whether the speaker has a reproducible RMS effect in the
+same take, but firmware AGC or changes in ambient noise
+could still confound attribution.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aba.py \
+  --capture .audit/voice-aec/M5-006 \
+  --source 'alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback' \
+  --speaker 'alsa_output.pci-0000_00_1f.3.analog-stereo' \
+  --pre-seconds 8 \
+  --post-seconds 8 \
+  --volume 0.30 \
+  --out .audit/voice-aec/M5-ABA-001
+~~~
+
+One complete capture will last approximately **36 seconds**,
+not counting process startup/finalization. The user does not
+read text and must remain silent throughout. The script fails
+closed on a short capture, an early process exit, invalid WAV,
+clipping or changed source hash. Never overwrite an existing take.
+New code is not accepted until the local tests pass.
+
+**Next review:** user shares only
+`M5-ABA-001/manifest.json` and the console test summary,
+not private raw WAV. If the preceding and trailing quiet
+levels match closely, the on/off comparison becomes materially
+stronger than two recordings made at different times. This
+still does not certify speaker echo reduction or speaker-to-mic
+phase response; AEC acceptance remains a separate step.
+
 ## M5 real quiet-room baseline — 2026-11-08
 
 The user supplied `M5-room-baseline-001/manifest.json` for the

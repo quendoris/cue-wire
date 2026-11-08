@@ -11,3 +11,12 @@
 /voice-tuned/
 /voice-lab-ab/
 /voice-ab-preview/
+
+# Real microphone recordings and local reference-based benchmarks
+/test.wav
+/voice_before.wav
+/voice_after.wav
+/clean.wav
+/bench-*/
+/voice-bench-*/
+/voice-bench-results/

@@ -182,10 +182,18 @@ def private_paths(source: Path, output: Path) -> tuple[Path, Path]:
 
 
 def executable(path: str) -> Path:
+    """Validate a binary without dereferencing virtualenv interpreter symlinks.
+
+    Python venv/uv environments intentionally expose bin/python as a symlink.
+    Replacing it with its resolved base interpreter skips pyvenv.cfg and
+    breaks imports from the environment (numpy, sherpa_onnx, soundfile).
+    """
     candidate = shutil.which(path) if "/" not in path else os.path.expanduser(path)
     if not candidate or not Path(candidate).is_file() or not os.access(candidate, os.X_OK):
         raise FileNotFoundError(f"Missing executable: {path}")
-    return Path(candidate).resolve(strict=True)
+    # abspath normalizes relative paths but unlike realpath()/resolve()
+    # preserves symlink identity needed for Python virtual environments.
+    return Path(os.path.abspath(candidate))
 
 
 def parent_death_guard(parent_pid: int) -> None:

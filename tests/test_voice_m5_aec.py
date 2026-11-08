@@ -306,9 +306,9 @@ class M5Tests(unittest.TestCase):
             }
             manifest_path.write_text(json.dumps(manifest))
             hashes = [aec.digest(p) for p in (ref_file, mic_file, manifest_path)]
-            with mock.patch.object(model_probe, "AUDIT", audit.resolve()), \\
-                 mock.patch.object(model_probe, "LENGTH_MS", (120,)), \\
-                 mock.patch.object(model_probe, "RIDGE_FACTORS", (0.02,)):
+            with (mock.patch.object(model_probe, "AUDIT", audit.resolve()),
+                  mock.patch.object(model_probe, "LENGTH_MS", (120,)),
+                  mock.patch.object(model_probe, "RIDGE_FACTORS", (0.02,))):
                 dest = audit / "voice-aec/M5-model-001"
                 report = model_probe.probe(capture_dir, dest)
                 self.assertEqual(report["status"],

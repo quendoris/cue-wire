@@ -59,6 +59,12 @@ jobs:
           bash -n tools/cuewire_scope.sh
           python3 -m py_compile tools/cuewire_hotkeys.py tests/test_hotkeys.py
           python3 tests/test_hotkeys.py
+      - name: H2 physical NumPad gesture interpreter and mock Hyprland IPC
+        run: |
+          python3 -m py_compile tools/cuewire_keypad.py tests/test_keypad.py
+          python3 tests/test_keypad.py
+          python3 tools/cuewire_keypad.py render > /tmp/cuewire-keypad-preview.lua
+          test "$(grep -c 'hl.bind(' /tmp/cuewire-keypad-preview.lua)" -eq 32
       - name: Fake PipeWire end-to-end process and cleanup smoke
         run: python3 tests/fake_runtime.py target/debug/cuewire
       - name: Show CLI and command validation

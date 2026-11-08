@@ -146,7 +146,10 @@ python3 tools/voice_m4_refine.py \
 
 A new opt-in offline experiment identifies how an **explicit digital reference**
 sounds when emitted by one real speaker and recorded through the user's
-physical ALSA microphone. First 5 seconds speaker only (including
+explicitly chosen physical microphone (ALSA hw: or PipeWire alsa_input.*).
+After the M5-001..003 ALSA pcm_read EIO failures the pilot adds an
+opt-in, explicit PipeWire capture backend, with no automatic fallback.
+First 5 seconds speaker only (including
 pre-recorded vocals), then operator reads a passage while music continues.
 After recording, a separate offline analyzer finds clock offset, trains
 a frozen linear FIR from speaker-only samples and validates held-out

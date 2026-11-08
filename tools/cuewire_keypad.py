@@ -169,8 +169,8 @@ def listen(engine,path,on_connect=None):
         sock.settimeout(2)
         sock.connect(str(path))
         sock.setblocking(False)
-        engine.log("system","connected",[],source="hyprland_socket2")
         if on_connect is not None:on_connect()
+        engine.log("system","connected",[],source="hyprland_socket2")
         while True:
             engine.tick(int((time.monotonic()-start)*1000))
             ready,_,_=select.select([sock],[],[],.025)
@@ -240,6 +240,32 @@ def hyprland_eval(source):
                            (proc.stderr or proc.stdout)[-600:])
 
 
+def config_provider():
+    # Provider detection is read-only. Do not assume the Lua config engine:
+    # hybrid Hyprland releases also support hyprlang at runtime.
+    proc=subprocess.run(["hyprctl","eval","do end"],
+                        text=True,capture_output=True,timeout=5)
+    message=(proc.stdout+" "+proc.stderr).lower()
+    if proc.returncode==0 and proc.stdout.strip()=="ok":
+        return "lua"
+    if "eval is only supported with the lua config manager" in message:
+        return "legacy"
+    raise RuntimeError("Could not safely determine Hyprland config provider: "+
+                       message[-400:])
+
+
+def exec_legacy(args):
+    path=Path(__file__).with_name("cuewire_keypad_legacy.py")
+    argv=[sys.executable,str(path),args.mode]
+    if args.mode=="run":
+        argv.extend(["--long-ms",str(args.long_ms),
+                     "--double-ms",str(args.double_ms)])
+        if args.log_jsonl:argv.extend(["--log-jsonl",str(args.log_jsonl)])
+        if args.game:argv.append("--game")
+        if args.device:argv.extend(["--device",args.device])
+    os.execv(sys.executable,argv)
+
+
 def ensure_no_key_conflicts():
     proc=subprocess.run(["hyprctl","-j","binds"],capture_output=True,
                         text=True,timeout=5)
@@ -277,6 +303,8 @@ def main():
         print(render(args.device,args.game),end="")
         return
     if args.mode=="restore":
+        if config_provider()=="legacy":
+            exec_legacy(args)
         hyprland_eval(deactivate_lua())
         print("Removed CueWire H2 temporary Lua handles (if present).")
         return
@@ -293,10 +321,20 @@ def main():
             raise SystemExit("Conflict: NumPad is already bound; no changes made")
         print("PASS: no conflicting NumPad bindings; no changes made")
         return
+    # Provider dispatch occurs before creating any log file.
+    # A failed hyprctl eval/legacy registration leaves no empty JSONL.
+    if args.mode=="run" and args.temporary_bindings:
+        if config_provider()=="legacy":
+            exec_legacy(args)
     fp=None
-    if args.log_jsonl:
-        args.log_jsonl.parent.mkdir(parents=True,exist_ok=True)
-        fp=args.log_jsonl.open("x",encoding="utf-8",buffering=1)
+    if args.log_jsonl and args.log_jsonl.exists():
+        raise RuntimeError("Existing log (never overwritten): "+
+                           str(args.log_jsonl)+". Choose a NEW filename.")
+    def open_log():
+        nonlocal fp
+        if args.log_jsonl and fp is None:
+            args.log_jsonl.parent.mkdir(parents=True,exist_ok=True)
+            fp=args.log_jsonl.open("x",encoding="utf-8",buffering=1)
     def emit(obj):
         line=json.dumps(obj,sort_keys=True,ensure_ascii=False,separators=(",",":"))
         print(line,flush=True)
@@ -309,12 +347,14 @@ def main():
             hyprland_eval(activate_lua(args.device,args.game,owner))
             print("H2 temporary binds registered for this terminal session.",
                   file=sys.stderr)
+        open_log()
     def terminate(_sig,_frame):
         raise KeyboardInterrupt
     if args.mode=="run":
         signal.signal(signal.SIGTERM,terminate)
     try:
         if args.mode=="simulate":
+            open_log()
             simulate(engine,json.loads(args.script.read_text()))
         else:
             print("CueWire H2 log-only foreground; Ctrl+C to stop",file=sys.stderr)

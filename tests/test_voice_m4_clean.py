@@ -48,6 +48,46 @@ class CleanTests(unittest.TestCase):
             self.m.process(argparse.Namespace(source=self.raw, out=self.out, timeout_sec=60))
         self.assertFalse(self.out.exists())
 
+    def test_rust_D_compensated_delay_with_silent_tail(self):
+        """Synthetic streaming delay: the -D output is shorter than model input."""
+        extra = self.m.pad_deepfilter_input(self.raw, self.root / '.audit/padded.wav',
+                                            original_frames=48000)
+        with wave.open(str(self.root / '.audit/padded.wav'), 'rb') as w:
+            src_pcm = w.readframes(w.getnframes())
+        self.assertEqual(len(src_pcm), extra * 2)
+        self.assertEqual(src_pcm[48000 * 2:], b"\\x00" * (extra - 48000) * 2)
+        # The synthesised processor has 1440 samples (30ms) of latency.
+        # Rust -D discards the first 1440 frames of its *delayed* output.
+        delay = 1440
+        simulated = (b"\\x00" * (delay * 2) + src_pcm)[:extra * 2]
+        compensated = simulated[delay * 2:]
+        full = self.root / '.audit/deepfilter-full.wav'
+        with wave.open(str(full), 'wb') as w:
+            w.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
+            w.writeframes(compensated)
+        final = self.root / '.audit/cropped.wav'
+        report = self.m.crop_deepfilter_compensated(
+            full, final, original_frames=48000, padded_frames=extra)
+        self.assertEqual(report['inferred_delay_frames'], delay)
+        self.assertEqual(report['kept_frames'], 48000)
+        with wave.open(str(final), 'rb') as w:
+            output_pcm = w.readframes(w.getnframes())
+        with wave.open(str(self.raw), 'rb') as w:
+            raw_pcm = w.readframes(w.getnframes())
+        self.assertEqual(output_pcm, raw_pcm)
+
+    def test_reject_unexplained_long_delay(self):
+        padded = self.m.pad_deepfilter_input(self.raw, self.root / '.audit/padded.wav',
+                                             original_frames=48000)
+        output = self.root / '.audit/bad.wav'
+        with wave.open(str(output), 'wb') as w:
+            w.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
+            w.writeframes(b"\\x00" * ((padded - 6000) * 2))
+        with self.assertRaisesRegex(RuntimeError, 'Unexpected DeepFilter delay'):
+            self.m.crop_deepfilter_compensated(
+                output, self.root / '.audit/should-not-exist.wav',
+                original_frames=48000, padded_frames=padded)
+
     def test_mocked_two_model_chain(self):
         fake = self.root / '.audit/fake-deepfilter'
         fake.write_text('#!/usr/bin/env python3\nimport shutil,sys,pathlib\n'

@@ -70,6 +70,50 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## Follow-up M5-006 spectral audit (no new recording)
+
+The standalone `tools/voice_m5_spectral.py` provides additional
+calibration-only **numerical diagnostics**, distinct from both the
+regular AEC subtraction and the M5 shift/gain oracle audit.
+It reads the same verified M5-006 reference and mic WAVs, and:
+
+- estimates local delay in four ~0.9-s speaker-only windows, searching
+  only +/-10 ms around the original global peak lag;
+- computes magnitude-squared reference/mic coherence by frequency
+  (150–500, 500–1500, 1500–4000, 4000–8000 Hz) over 0.30–4.35 s of
+  the speaker-only calibration;
+- saves only `spectral.json` and `SHA256SUMS` in a NEW private
+  diagnostics directory; never emits audio or adjusts the AEC filter;
+- cannot certify true speaker-to-mic energy fraction, absolute
+  alignment, or preservation of the user's voice.
+
+Run in the dedicated scientific Python venv (NumPy/SciPy already needed
+by existing M5 AEC):
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_spectral.py \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-spectral-006
+~~~
+
+Read `M5-spectral-006/spectral.json` after verifying its
+`SHA256SUMS`. **Band coherence** is a normalized relationship
+statistic and does not directly imply AEC ERLE. A high-coherence
+frequency band can still have insufficient overall energy; a low
+coherence band can be dominated by background, nonlinear speaker
+distortion, unmodeled reflections, or weak excitation in the reference.
+
+Local lag differences are exploratory: musical periodicity and
+short-window noise can make apparent lag jump. Only a stable,
+consistent pattern would motivate clock-drift study; do not update
+the production filter using these exploratory measurements alone.
+All earlier M4 and M5 recordings remain unchanged.
+
 ## M5-006 numerical diagnosis — verified report 2026-11-08
 
 The independently generated private `M5-diagnostics-006/diagnostics.json`

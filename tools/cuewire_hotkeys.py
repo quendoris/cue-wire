@@ -143,7 +143,8 @@ def main():
         plans=commands(exe,scoped)
         result=render_lua(plans) if args.format=="lua" else render_legacy(plans)
         print(result,end="")
-    print("CueWire did not modify keyboard bindings, input devices or services.")
+    if args.command=="check":
+        print("CueWire did not modify keyboard bindings, input devices or services.")
 
 
 if __name__=="__main__":

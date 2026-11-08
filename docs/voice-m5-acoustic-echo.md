@@ -70,6 +70,94 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 real quiet-room baseline — 2026-11-08
+
+The user supplied `M5-room-baseline-001/manifest.json` for the
+separately powered-hub USB microphone, physical PipeWire source
+`alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback`.
+
+The new room capture is **valid**:
+
+- Schema `cuewire-M4-raw-capture-v2`;
+  status `recorded_unprocessed_raw`, stop reason `maximum_duration_reached`
+- PCM16 mono, 48,000 Hz, **573,440 frames**, **11.946667 s**
+- **RMS -59.563 dBFS**, peak **-29.624 dBFS**,
+  **0 clipped samples**
+- Recorder stopped by our existing lifecycle procedure
+  (`pw-record` code 1 after forced/controlled stop), but the
+  finalized WAV was parsed and passed integrity checks
+- WAV SHA256 recorded by the local recorder:
+  `845718e232570f6938848a06a7a8d9896d9f748e003d76a883a1ca68dc65449f`
+- No audio processing, playback, route changes or virtual microphone.
+  The baseline manifest alone does **not** allow independent
+  rehashing/inspection of the RAW WAV from outside the user's machine.
+
+Compare to the **previous** M5-006 speaker-only held-out
+microphone segment (3.45–4.40 s in reference time):
+**-57.516 dBFS RMS**. That is **+2.047 dB** above the
+separately measured silent-room baseline. If microphone
+gain/background conditions were identical and independent during
+both takes, the hypothetical stationary noise component would
+represent `10^(-2.047/10)=0.6242` (**62.4%** of speaker-on
+mic power) and added uncorrelated speaker/other signal could
+account for up to **37.6%**. In that strongly conditional
+simple-noise model, the whole-band cancellation ceiling would
+be about **2.05 dB** for those comparison levels.
+
+**Do NOT promote the 2.05-dB figure to a measured physical upper
+bound**; quiet and speaker-only sections were **not taken
+simultaneously** and no independent proof of stationary noise,
+gain or recording electronics exists. AEC's earlier 0.7574-dB
+heldout improvement remains the real result on M5-006. Band-only
+3.37-dB improvement does not contradict a lower full-band
+noise-limited bound because band-specific noise powers differ.
+
+The room baseline's peak -29.624 dBFS is ~29.94 dB above
+its overall RMS. This may be a transient or an intermittent
+event rather than typical room hiss; a single global RMS
+and peak cannot identify the origin. Local, non-overwriting
+windowed analysis is needed.
+
+### Next gate — two immutable WAV pairs, no additional recording
+
+New `tools/voice_m5_noise_probe.py` compares the separately
+recorded quiet-room baseline and the established M5-006 speaker-only
+calibration period, calculating **half-second RMS power windows**,
+10th / 50th / 90th percentiles and their variability. Only the
+first 4.4 seconds of M5-006 are used; user voice is excluded.
+All three WAV files are SHA256-verified against their *respective*
+original capture manifests, and an entirely new private report
+directory is used.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_noise_probe.py \
+  --baseline .audit/voice-captures/M5-room-baseline-001 \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-noise-probe-006
+
+cd .audit/voice-aec/M5-noise-probe-006
+sha256sum -c SHA256SUMS
+~~~
+
+Output: `noise-probe.json` and `SHA256SUMS`, no WAV.
+The new test in `test_voice_m5_aec.py` checks source
+immutability, JSON-only output and refusal to overwrite existing
+diagnostics. New code/test must be run locally before acceptance.
+
+If background is stable in short windows, the next *independent*
+experiment should record a **single continuous mic session**
+with explicit silent-speaker -> speaker-only -> silent-speaker
+phases at fixed device position and gain, and an acoustically
+matched digital reference. Avoid concluding anything about
+the original source of the microphone's noise from
+these two non-simultaneous captures alone.
+
 ## M5-006 FIR model ablation — all 15 candidates measured (2026-11-08)
 
 The user provided the real `M5-model-probe-006/model-probe.json` and

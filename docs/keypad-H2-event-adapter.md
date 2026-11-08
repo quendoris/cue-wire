@@ -296,3 +296,70 @@ External Hyprland release-bind regressions have also been reported
 (not proof that this same issue affected the current session):
 https://github.com/hyprwm/Hyprland/discussions/16275
 https://github.com/hyprwm/Hyprland/discussions/16878
+
+
+## H2.2: real-log integrity audit and follow-up (November 2026)
+
+The privately provided H2-002.jsonl contains 181 events over 24.562 s,
+including all 16 physical keypad names. It has 54 raw down events,
+37 raw up, 11 repeated downs while believed already pressed, and 6
+unresolved buttons at shutdown (DOT, K0, K3, K6, SLASH, STAR).
+28 of 35 chord_start events reference at least one key held for over
+two seconds according to the received stream. These chords are NOT
+proven physically genuine. **Release/event fidelity FAILED**:
+do not attach audio, macros, or emergency actions to these gestures.
+
+The original user keystroke log is private and must not be copied
+into the public CueWire repo. Audit locally, using the existing
+offline, read-only health script:
+
+    python3 tools/cuewire_keypad_audit.py .audit/keypad/H2-002.jsonl \
+      --out .audit/keypad/H2-002-health.json
+
+The trace cannot distinguish actually held buttons from lost UP
+events. It also cannot determine whether Hyprland keybind dispatch,
+the one-shot helper or the underlying keyboard caused the loss.
+Never invent UP after a timeout or accept phantom chords as commands.
+
+### H2-003: controlled baseline
+
+    cd /data/cue-wire
+    git switch feature/pcm-mixer-playground
+    git pull --ff-only
+    hyprctl version
+    python3 tools/cuewire_keypad.py check
+    python3 tools/cuewire_keypad.py run --temporary-bindings \
+      --log-jsonl .audit/keypad/H2-003.jsonl
+
+Press K1 alone five times (around 0.5 s apart); make three pairs of
+short K1 double taps (~0.1 s intra-pair); hold K1 for one second and
+release; test K1+K2 releasing K1 first; test K1+K2 releasing K2 first;
+finally press number-row 1 (which must NOT appear in the H2 log).
+End with Ctrl+C. Run:
+
+    python3 tools/cuewire_keypad_audit.py .audit/keypad/H2-003.jsonl
+
+Minimum acceptance: zero unresolved presses, no orphan releases,
+and clear single/double/hold/chord events for each corresponding
+controlled action. Any unexpected ambiguity is a failed gate.
+
+### H2-004: optional transparent-bind A/B test
+
+Only if the baseline still drops release events, repeat the SAME
+sequence with explicitly opted-in legacy transparent bindings:
+
+    python3 tools/cuewire_keypad.py run --temporary-bindings \
+      --legacy-transparent \
+      --log-jsonl .audit/keypad/H2-004-transparent.jsonl
+
+This produces hyprlang bindit / bindrit (the transparent t flag
+prevents shadowing by other binds). It is an EXPERIMENT, NOT an
+established fix. It may change interaction with other shortcuts.
+It is not enabled by default. The Lua provider does not support
+this flag in CueWire. No desktop config or audio settings are edited.
+
+If both fail, investigate an event transport with reliable physical
+key-up/down rather than using timing heuristics. Hyprland release
+events have version-dependent reports:
+https://github.com/hyprwm/Hyprland/discussions/16275
+https://github.com/hyprwm/Hyprland/discussions/16878

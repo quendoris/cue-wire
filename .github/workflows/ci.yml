@@ -63,6 +63,7 @@ jobs:
         run: |
           python3 -m py_compile tools/cuewire_keypad.py tests/test_keypad.py
           python3 tests/test_keypad.py
+          python3 tests/test_keypad_legacy.py
           python3 tools/cuewire_keypad.py render > /tmp/cuewire-keypad-preview.lua
           test "$(grep -c 'hl.bind(' /tmp/cuewire-keypad-preview.lua)" -eq 32
       - name: Fake PipeWire end-to-end process and cleanup smoke

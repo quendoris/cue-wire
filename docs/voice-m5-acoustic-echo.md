@@ -70,6 +70,72 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 upstream USB / ALSA log diagnosis (2026-11-08)
+
+Subsequent diagnostics from the actual Arch host:
+
+- `pactl get-source-mute`: `Mute: no`; `get-source-volume`:
+  **100%, 0.00 dB**. Neither mute nor zero source volume explains the
+  silent capture.
+- WirePlumber reports **`spa.alsa: poll fd error/hangup (card removed?)`**
+  on at least two occasions. This describes a failed ALSA poll
+  descriptor but does not by itself prove a physical unplug.
+- The kernel log explicitly enumerates **`Anlya.cn MICAudio-97i`**
+  on **USB path `3-3.1.4`**, behind a hub. Enumerated USB nodes can
+  still fail to stream captured audio.
+- Kernel `bogus dB values (-12800/-12700), disabling dB reporting`
+  belongs to the USB audio mixer range sanity check. The kernel handles
+  bad device-supplied mixer units; this line does not establish
+  streaming failure.
+- **Do not misattribute `usblp0: nonzero read bulk status ... -71` to
+  the microphone.** That line names the USB printer interface.
+  `-71` is USB EPROTO, but the named endpoint matters.
+- The user's earlier M4 physical ALSA RAW capture succeeded, whereas
+  current direct ALSA capture returns EIO and the PipeWire mic stream
+  is physically linked but writes zero frames. A source/USB/ALSA
+  failure is plausible; exact root cause is not established.
+
+**Next diagnostic is read-only and isolated to the USB microphone:**
+
+~~~bash
+echo '=== USB TREE ==='
+lsusb -t
+echo '=== CURRENT SOUND CARDS ==='
+cat /proc/asound/cards
+arecord -l
+echo '=== MIC USB SYSFS ==='
+for key in idVendor idProduct manufacturer product serial speed; do
+  file="/sys/bus/usb/devices/3-3.1.4/$key"
+  if test -r "$file"; then printf '%s: ' "$key"; cat "$file"; fi
+done
+for key in control runtime_status; do
+  file="/sys/bus/usb/devices/3-3.1.4/power/$key"
+  if test -r "$file"; then printf 'power/%s: ' "$key"; cat "$file"; fi
+done
+echo '=== TARGETED KERNEL EVENTS ==='
+journalctl -k -b --no-pager | grep -Ei \
+  '3-3\.1\.4|MICAudio|snd.usb.audio|usb.*disconnect|usb.*reset' | tail -n 65
+~~~
+
+These commands do **not** change drivers, PipeWire, sysfs or system
+settings. The sysfs path can change after USB re-enumeration; if files
+are absent, consult `lsusb -t` again and do not write to sysfs.
+
+Only after preserving the read-only evidence, consider a controlled
+physical replug of **just the microphone** (with no recording in
+progress), ideally testing a direct motherboard USB port rather than
+the intervening hub. Re-check its new source/card identifiers and
+perform a new 5-second mic-only test **before** another 20-second
+speaker/music AEC calibration. Never indiscriminately reset a common
+USB hub, which could disrupt keyboard, mouse, printer, storage and
+other peripherals.
+
+Reference context: Linux kernel USB error codes document -EPROTO
+(-71) as possibly including bad signalling, no response, or device
+disconnect, and caution that the host controller often cannot
+disambiguate these causes. Kernel ALSA USB mixer code explicitly
+detects implausible dB ranges.
+
 ## M5 standalone capture diagnostic: live graph linked, zero frames
 
 After M5-005, a standalone explicit capture targeted the correct

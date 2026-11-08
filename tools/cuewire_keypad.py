@@ -262,6 +262,7 @@ def exec_legacy(args):
                      "--double-ms",str(args.double_ms)])
         if args.log_jsonl:argv.extend(["--log-jsonl",str(args.log_jsonl)])
         if args.game:argv.append("--game")
+        if args.legacy_transparent:argv.append("--transparent")
         if args.device:argv.extend(["--device",args.device])
     os.execv(sys.executable,argv)
 
@@ -291,6 +292,8 @@ def main():
     run.add_argument("--device",help="Optional exact NumPad device name")
     run.add_argument("--game",action="store_true",
                      help="Optionally bypass focused game shortcut inhibition")
+    run.add_argument("--legacy-transparent",action="store_true",
+                     help="EXPERIMENT: use transparent hyprlang press/release binds; no Lua support")
     sub.add_parser("restore",help="Remove only H2 temporary Lua handles after a crash")
     sim=sub.add_parser("simulate")
     sim.add_argument("script",type=Path)
@@ -323,9 +326,14 @@ def main():
         return
     # Provider dispatch occurs before creating any log file.
     # A failed hyprctl eval/legacy registration leaves no empty JSONL.
+    if args.mode=="run" and args.legacy_transparent and not args.temporary_bindings:
+        ap.error("--legacy-transparent requires --temporary-bindings")
     if args.mode=="run" and args.temporary_bindings:
-        if config_provider()=="legacy":
+        provider=config_provider()
+        if provider=="legacy":
             exec_legacy(args)
+        if args.legacy_transparent:
+            ap.error("--legacy-transparent is supported only in hyprlang")
     fp=None
     if args.log_jsonl and args.log_jsonl.exists():
         raise RuntimeError("Existing log (never overwritten): "+

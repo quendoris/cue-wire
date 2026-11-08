@@ -79,11 +79,11 @@ def key_arg(key,phase,owner):
                     (sys.executable,str(helper),key,phase,owner))
 
 
-def keyword(key,phase,owner,game=False):
+def keyword(key,phase,owner,game=False,transparent=False):
     code=core.KEYS[key]
     # "i": ignore currently held modifiers; "r": release only
     # "p": bypass inhibitor, explicit opt-in for fullscreen applications.
-    suffix=("r" if phase=="up" else "")+"i"+("p" if game else "")
+    suffix=("r" if phase=="up" else "")+"i"+("p" if game else "")+("t" if transparent else "")
     runctl("keyword","bind"+suffix,
            f", code:{code}, exec, {key_arg(key,phase,owner)}")
 
@@ -175,7 +175,7 @@ def listen_dgram(engine,server,owner,open_log):
             engine.input(key,phase,int((time.monotonic()-started)*1000))
 
 
-def begin_session(logfile,long_ms,double_ms,game=False,device=None):
+def begin_session(logfile,long_ms,double_ms,game=False,device=None,transparent=False):
     if device:
         raise RuntimeError(
             "--device is NOT supported with hyprlang legacy binds. "
@@ -200,7 +200,7 @@ def begin_session(logfile,long_ms,double_ms,game=False,device=None):
             attached=True
             for key in core.KEYS:
                 for phase in ("down","up"):
-                    keyword(key,phase,owner,game)
+                    keyword(key,phase,owner,game,transparent)
             all_registered=True
             # Confirm the compositor really registered the expected
             # 32 binds before creating a log or claiming readiness.
@@ -270,13 +270,15 @@ def main():
     p.add_argument("--long-ms",type=int,default=core.LONG_MS)
     p.add_argument("--double-ms",type=int,default=core.DOUBLE_MS)
     p.add_argument("--game",action="store_true")
+    p.add_argument("--transparent",action="store_true",
+                   help="EXPERIMENTAL transparent press+release binds to probe key shadowing")
     p.add_argument("--device")
     args=p.parse_args()
     if args.mode=="restore":
         restore()
     else:
         begin_session(args.log_jsonl,args.long_ms,args.double_ms,
-                      game=args.game,device=args.device)
+                      game=args.game,device=args.device,transparent=args.transparent)
 
 
 if __name__=="__main__":

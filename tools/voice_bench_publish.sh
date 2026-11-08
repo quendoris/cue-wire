@@ -37,7 +37,14 @@ tar -C "$run_dir" -czf "$archive" .
 printf '\n=== ПОДТВЕРЖДЕНИЕ ПУБЛИКАЦИИ ===\n'
 printf 'Репозиторий: %s (проверен как PRIVATE).\n' "$repo"
 printf 'Тег релиза: %s\n' "$tag"
-printf 'Архив содержит ЧИСТУЮ и ЗАШУМЛЁННУЮ записи голоса, результаты моделей, логи и метрики.\n'
+if grep -Eq '"schema": "cuewire-studio-master-v1"' "$run_dir/manifest.json"; then
+  printf 'Архив содержит ЛИЧНЫЕ записи B0 (чистый оригинал) и B1 (очищенный голос) в контрольных WAV, их студийные варианты и метрики.\n'
+  printf 'Сырой зашумлённый B2 для этого типа эксперимента НЕ включён.\n'
+  release_notes='Private STUDIO M3 voice mastering: independent B0/B1 controls, WAV profiles and non-audio metrics. See manifest.json, scores.json and SHA256SUMS.'
+else
+  printf 'Архив содержит исходные голосовые записи, обработанные WAV, логи и метрики.\n'
+  release_notes='Private voice restoration benchmark. Audio, metrics, logs, SHA256SUMS and manifest.'
+fi
 printf 'Сейчас ничего ещё не отправлено.\n'
 printf 'Чтобы РАЗРЕШИТЬ загрузку, введи точно английское слово UPLOAD (заглавными буквами) и нажми Enter.\n'
 printf 'Это не выбор SSH/HTTPS. Любой другой ответ, включая пустой ввод, ОТМЕНИТ загрузку.\n'
@@ -49,6 +56,6 @@ fi
 printf 'Подтверждено: отправка архива в закрытый GitHub Release...\n'
 gh release create "$tag" "$archive#cuewire-voice-benchmark.tar.gz" \
   --repo "$repo" --title "CueWire voice benchmark $tag" \
-  --notes "Private reference/noisy voice recordings and model outputs. See scores.json, manifest.json and SHA256SUMS." \
+  --notes "$release_notes" \
   --latest=false
 gh release view "$tag" --repo "$repo" --json url --jq '.url'

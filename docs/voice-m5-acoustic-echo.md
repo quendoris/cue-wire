@@ -70,6 +70,70 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 hardware recovery: alternate powered hub (2026-11-08)
+
+The user could not connect the microphone directly to the laptop because
+its onboard USB ports were already occupied. Two external hubs were
+available: an inexpensive hub and a higher-quality, separately powered hub.
+
+Moving **only** the MICAudio-97i microphone to the other, separately
+powered hub restored recording through the existing PipeWire
+`pw-record` path. The completed `mic-isolated-002.wav` contains
+**181,248 frames at 48,000 Hz = 3.776 seconds**, rather than zero
+frames. This is an observed **real-hardware capture**, not a synthetic
+unit test. The source remains unprocessed RAW; recording quality,
+peak/RMS and the full 20-second stability have not yet been audited.
+
+The evidence strongly suggests that USB-path conditions affect the
+fault, but does **not** isolate the cause to hub power quality.
+Unplug/replug also resets USB device state; alternative explanations
+include cable/connector integrity, topology, driver state, and
+firmware reinitialization. Keep the working device on the current
+hub for the next experiment and do not disturb other devices.
+
+**Next gate before AEC M5-006:** re-inspect the physical microphone
+source after re-enumeration. The source name/ALSA card index may have
+changed; never assume the old name is still valid.
+
+~~~bash
+cd /data/cue-wire
+pactl list short sources
+arecord -l
+lsusb -t
+~~~
+
+The historical sink was
+`alsa_output.pci-0000_00_1f.3.analog-stereo`.
+If it remains present and the physical mic source is still exactly
+`alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback`,
+run fresh **M5-006** (not any prior directory):
+
+~~~bash
+python3 tools/voice_m5_capture.py \
+  --music '/data/oae-research/ACDC_-_Thunderstruck_(Official_Video).wav' \
+  --speaker 'alsa_output.pci-0000_00_1f.3.analog-stereo' \
+  --capture-backend pipewire \
+  --source 'alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback' \
+  --seconds 20 --calibration-seconds 5 --volume 0.30 \
+  --out .audit/voice-aec/M5-006
+~~~
+
+Check for an explicit capture PASS and a finalized full-length microphone
+WAV before any analysis. On successful capture:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aec.py \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-analysis-006
+~~~
+
+A successful 3.776-second isolated take makes a paired experiment
+reasonable, but does not itself demonstrate that the 5-second acoustic
+calibration or 20-second simultaneous capture will succeed. Keep the
+five-second speaker-only period free from local speech; read after
+the console prompt. The resulting AEC WAV remains experimental until
+verified against the microphone RAW by listening and measurement.
+
 ## USB topology finding: microphone behind cascaded hubs
 
 The read-only check confirms the following **observed, current** device

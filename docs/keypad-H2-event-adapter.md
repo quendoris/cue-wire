@@ -363,3 +363,61 @@ key-up/down rather than using timing heuristics. Hyprland release
 events have version-dependent reports:
 https://github.com/hyprwm/Hyprland/discussions/16275
 https://github.com/hyprwm/Hyprland/discussions/16878
+
+
+## H2.3: real H2-003 vs H2-004-transparent result
+
+Both private JSONL logs were audited; the raw keyboard histories stay local.
+
+| Metric | Ordinary hyprlang H2-003 | Transparent H2-004 |
+|---|---:|---:|
+| Duration | 21.901 s | 15.342 s |
+| JSONL records | 218 | 344 |
+| Physical NumPad key IDs observed | 12 | 12 |
+| Raw DOWN | 73 | 105 |
+| Raw UP | 32 | 105 |
+| Repeated DOWN without an UP | 34 | 0 |
+| Orphan UP | 0 | 0 |
+| Unclosed at shutdown | 7 | 0 |
+| Recognized singles | 0 | 4 |
+| Recognized doubles | 0 | 4 |
+| Recognized holds | 0 | 0 |
+| Chord starts | 38 | 62 |
+| Maximum chord size | 10 | 4 |
+| Chord intervals <= 5 ms | 4 | 22 |
+
+Seven unresolved H2-003 keys: DOT, K3, K5, K7, K8, K9 and PLUS.
+All 105 H2-004 presses had matched releases; no duplicates or orphans.
+This is strong comparative evidence for the legacy transparent
+binding option, but the sequences and durations were not identical,
+so it is not a strict controlled causal proof.
+
+IMPORTANT: 22 out of 62 transparent chord intervals were <=5 ms.
+Even when raw key events balance, short positive overlap can be
+genuine or caused by separate one-shot helper scheduling. The
+gesture engine currently emits chord_start on ANY overlap.
+Do not attach irreversible application actions to such chords
+without confirmation of minimum overlap duration and game testing.
+
+One K1 physical press lasted approximately 1295 ms but coincided
+with other key presses, and no individual hold_start was recognized.
+This is consistent with the existing chord suppression policy; test
+an isolated one-second K1 hold before declaring long-press success.
+
+Next H2-005 isolated acceptance: use the transparent mode, press K1
+five times individually with >400 ms gaps; do three double taps
+(100 ms between each pair and >500 ms between pairs); hold K1 ALONE
+for one second; hold K1+K2 for >200 ms and release in both orders;
+verify top-row 1 does not register. Produce a NEW file:
+
+    python3 tools/cuewire_keypad.py run --temporary-bindings \
+      --legacy-transparent \
+      --log-jsonl .audit/keypad/H2-005-transparent.jsonl
+
+    python3 tools/cuewire_keypad_audit.py \
+      .audit/keypad/H2-005-transparent.jsonl --require-balanced
+
+The auditor now reports micro-chord durations and exits code 3
+if raw press/release integrity fails under --require-balanced.
+The transparent flag remains opt-in until fullscreen/game and
+modifier-held behavior has been independently tested on hardware.

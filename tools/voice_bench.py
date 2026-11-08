@@ -19,6 +19,8 @@ import time
 import wave
 from pathlib import Path
 
+import numpy as np
+
 from voice_bench_metrics import collect, measure_speech_file
 
 RATE = 48000
@@ -104,6 +106,56 @@ def canonicalize(source, target, outdir, name, timeout):
         assert (f.getframerate(), f.getnchannels(), f.getsampwidth()) == (RATE, 1, 2)
         if f.getnframes() < RATE or f.getnframes() > RATE * 180:
             raise RuntimeError("Input length outside 1..180 seconds")
+
+
+def _pcm16(path):
+    with wave.open(str(path), "rb") as audio:
+        fmt = (audio.getframerate(), audio.getnchannels(), audio.getsampwidth(),
+               audio.getcomptype())
+        if fmt != (RATE, 1, 2, "NONE"):
+            raise RuntimeError(f"Expected mono PCM16/48k: {path}: {fmt}")
+        samples = np.frombuffer(audio.readframes(audio.getnframes()),
+                                dtype="<i2").copy()
+    return samples
+
+
+def _save_pcm16(path, samples):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(RATE)
+        audio.writeframes(np.asarray(samples, dtype="<i2").tobytes())
+
+
+def reflect_context(source, dest, frames):
+    """Add genuine preceding/following context without using CLEAN reference.
+
+    Non-causal offline experiment. Real-time capture would require a
+    different latency-aware design. Padding is not information recovery.
+    """
+    raw = _pcm16(source)
+    if not 0 < frames < len(raw):
+        raise RuntimeError(f"Invalid reflection padding: {frames} for {len(raw)} frames")
+    padded = np.pad(raw, (frames, frames), mode="reflect")
+    _save_pcm16(dest, padded)
+    return int(len(raw))
+
+
+def crop_context(source, dest, frames, expected_length):
+    """Return the original region from a model's padded output.
+
+    Explicit failure rather than silently zero-padding, loop-padding or
+    concealing a model that removed too many samples.
+    """
+    raw = _pcm16(source)
+    if len(raw) < frames + expected_length:
+        raise RuntimeError(
+            f"Cannot safely crop model output {len(raw)} frames: "
+            f"need >= {frames + expected_length} (context {frames}, "
+            f"original {expected_length})")
+    _save_pcm16(dest, raw[frames:frames + expected_length])
+    return int(len(raw))
 
 
 def select_one(directory, kind="any"):
@@ -263,9 +315,13 @@ def main():
     parser.add_argument("--chains", default=DEFAULT_CHAINS)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--timeout-sec", type=int, default=1200)
+    parser.add_argument("--context-pad-ms", type=int, default=0,
+                        help="OFFLINE reflect context on each model stage (0=disabled, 50..1000 ms)")
     parser.add_argument("--force-unverified-pair", action="store_true")
     parser.add_argument("--weights", nargs="*", type=Path, default=[])
     args = parser.parse_args()
+    if args.context_pad_ms != 0 and not 50 <= args.context_pad_ms <= 1000:
+        parser.error("--context-pad-ms must be 0 or 50..1000")
     if not 20 <= args.timeout_sec <= 10800:
         parser.error("timeout must be in 20..10800 seconds")
     if not args.clean.is_file() or not args.noisy.is_file():
@@ -287,7 +343,8 @@ def main():
     state = {
         "schema": "cuewire-voice-benchmark-v1", "repo_commit": get_sha(),
         "platform": platform.platform(), "python": sys.version,
-        "device_request": args.device, "models_requested": singles,
+        "device_request": args.device, "context_pad_ms": args.context_pad_ms,
+        "models_requested": singles,
         "chains_requested": chains, "timeout_sec": args.timeout_sec,
         "input_files": {
             "clean": {"filename": args.clean.name, "sha256": shasum(args.clean)},
@@ -322,7 +379,9 @@ def main():
     def run_chain(name, parts):
         start_time = time.perf_counter()
         src = normalized
-        item = {"status": "running", "steps": parts, "input_sha256": shasum(src)}
+        item = {"status": "running", "steps": parts,
+                "context_pad_ms": args.context_pad_ms,
+                "stage_details": [], "input_sha256": shasum(src)}
         state["jobs"][name] = item
         record(work, state)
         try:
@@ -332,8 +391,32 @@ def main():
                 else:
                     destination = work/"scratch"/(name+f"-stage{i+1}.wav")
                 stage_dir = work/"scratch"/(name+f"-{i+1}-{model}")
-                process_stage(model, src, destination, stage_dir,
-                              work, args.timeout_sec, args.device)
+                if args.context_pad_ms and model != "identity":
+                    context_frames = args.context_pad_ms * RATE // 1000
+                    pad_in = work/"scratch"/(name + f"-stage{i+1}-pad-in.wav")
+                    pad_out = work/"scratch"/(name + f"-stage{i+1}-pad-out.wav")
+                    original_frames = reflect_context(src, pad_in, context_frames)
+                    process_stage(model, pad_in, pad_out, stage_dir,
+                                  work, args.timeout_sec, args.device)
+                    raw_model_frames = crop_context(
+                        pad_out, destination, context_frames, original_frames)
+                    item["stage_details"].append({
+                        "model": model, "pad_frames_each_side": context_frames,
+                        "original_frames": original_frames,
+                        "raw_model_output_frames": raw_model_frames,
+                        "cropped_frames": original_frames,
+                        "strategy": "reflect_context_then_crop"
+                    })
+                else:
+                    process_stage(model, src, destination, stage_dir,
+                                  work, args.timeout_sec, args.device)
+                    with wave.open(str(destination), "rb") as stage_audio:
+                        stage_frames = stage_audio.getnframes()
+                    item["stage_details"].append({
+                        "model": model,
+                        "model_output_frames": stage_frames,
+                        "strategy": "none"
+                    })
                 src = destination
             with wave.open(str(destination), "rb") as f:
                 count = f.getnframes()

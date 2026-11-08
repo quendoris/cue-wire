@@ -74,8 +74,6 @@ def verify_wav(path):
         if (meta["channels"],meta["rate"],meta["sample_width_bytes"],
                 meta["compression"])!=(CHANNELS,RATE,WIDTH,"NONE"):
             raise RuntimeError("Recorded WAV is not 48kHz mono PCM16: "+str(meta))
-        if meta["frames"]<RATE:
-            raise RuntimeError("Recording too short (<1 second) or empty")
         max_abs=0
         clipped=0
         square_sum=0
@@ -96,10 +94,12 @@ def verify_wav(path):
             seen+=len(samples)
         if seen!=meta["frames"]:
             raise RuntimeError("WAV payload truncated or header inconsistent")
-    rms=math.sqrt(square_sum/seen)/32768
+    rms=(math.sqrt(square_sum/seen)/32768) if seen else None
     meta.update({
-        "peak_dbfs":round(20*math.log10(max(max_abs/32768,1e-12)),3),
-        "rms_dbfs":round(20*math.log10(max(rms,1e-12)),3),
+        "peak_dbfs":round(20*math.log10(max(max_abs/32768,1e-12)),3)
+                      if seen else None,
+        "rms_dbfs":round(20*math.log10(max(rms,1e-12)),3)
+                     if rms is not None else None,
         "clipped_samples":clipped
     })
     return meta
@@ -129,6 +129,14 @@ def terminate_group(process):
             continue
 
 
+def recorder_stderr_excerpt(path):
+    """Bounded error excerpt: don't upload the actual stderr automatically."""
+    if not path.exists():
+        return "<pw-record log missing>"
+    text=path.read_text(encoding="utf-8",errors="replace")
+    return text[-3500:] if text.strip() else "<pw-record produced no stderr>"
+
+
 def record(args):
     if not sys.platform.startswith("linux"):
         raise RuntimeError("Linux-only parent-death lifecycle guard required")
@@ -149,12 +157,17 @@ def record(args):
         str(wav),
     ]
     start=datetime.now(timezone.utc).isoformat()
+    beginning=time.monotonic()
     parent=os.getpid()
     process=None
     reason="unexpected"
+    startup_checked=False
     print("CueWire M4 RAW capture:",args.mic,flush=True)
     print("Recording into new private file:",wav,flush=True)
     print("No output monitoring, denoising, AEC or audio system changes.",flush=True)
+    print("Recorder readiness is checked after",args.startup_check_sec,
+          "seconds using the actual file size (even silence creates PCM frames).",
+          flush=True)
     print("Start with 5 seconds of silence. Stop with Ctrl+C; hard cap:",
           args.max_seconds,"s",flush=True)
     try:
@@ -165,6 +178,24 @@ def record(args):
                     preexec_fn=lambda:child_ownership(parent))
             deadline=time.monotonic()+args.max_seconds
             while process.poll() is None:
+                elapsed=time.monotonic()-beginning
+                if not startup_checked and elapsed>=args.startup_check_sec:
+                    startup_checked=True
+                    try: size=wav.stat().st_size
+                    except FileNotFoundError: size=0
+                    # 0.5 s PCM16 48k mono is 48000 bytes. The file header
+                    # may be unfinalized during capture, so use byte progress
+                    # ONLY as a liveness probe, never parse the live WAV.
+                    if size<48000:
+                        reason="no_audio_bytes_after_startup"
+                        print("ERROR: pw-record has not written even 0.5 s "
+                              "of 48k mono PCM after "+
+                              str(args.startup_check_sec)+" seconds. "
+                              "Stopping before you read the full script.",
+                              file=sys.stderr,flush=True)
+                        break
+                    print("READY: pw-record has written audio data; "
+                          "continue the capture.",flush=True)
                 if time.monotonic()>=deadline:
                     reason="maximum_duration_reached"
                     break
@@ -177,14 +208,39 @@ def record(args):
     finally:
         if process:
             terminate_group(process)
-    if not wav.exists():
-        raise RuntimeError("Recorder created no WAV; see "+str(stderr))
-    meta=verify_wav(wav)
-    if process and reason=="recorder_exited" and process.returncode!=0:
-        raise RuntimeError("Recorder exited unexpectedly. "+str(stderr))
+
+    exit_code=process.returncode if process else None
+    error_excerpt=recorder_stderr_excerpt(stderr)
+    size=wav.stat().st_size if wav.exists() else 0
+    meta=None
+    wav_error=None
+    if wav.exists():
+        try:
+            meta=verify_wav(wav)
+        except (RuntimeError,EOFError,ValueError, OSError, wave.Error) as exc:
+            wav_error=str(exc)
+    else:
+        wav_error="pw-record created no WAV file"
+    # A valid header with no PCM data is NOT a good recording.
+    frames=meta["frames"] if meta else 0
+    success=(meta is not None and frames>=RATE and
+             reason!="no_audio_bytes_after_startup" and
+             not (reason=="recorder_exited" and exit_code!=0))
+    diagnostics={
+        "recorder_returncode":exit_code,
+        "recorder_elapsed_wall_sec":round(time.monotonic()-beginning,3),
+        "recorded_file_bytes":size,
+        "failure_description":(
+            "Not enough PCM frames; source may not have connected or recorder failed."
+            if frames<RATE else
+            "Recorder failure or streaming startup did not pass readiness."
+            if not success else None),
+        "wav_parse_error":wav_error,
+        "stderr_excerpt":error_excerpt if not success else None
+    }
     manifest={
-        "schema":"cuewire-M4-raw-capture-v1",
-        "status":"recorded_unprocessed_raw",
+        "schema":"cuewire-M4-raw-capture-v2",
+        "status":"recorded_unprocessed_raw" if success else "rejected_incomplete_capture",
         "mic_node_name":args.mic,
         "mic_pactl_state_at_start":device.get("state"),
         "mic_pactl_sample_spec_at_start":device.get("sample_spec"),
@@ -192,31 +248,42 @@ def record(args):
         "stop_reason":reason,
         "recorder":"pw-record",
         "recorder_command":command[:-1]+["raw.wav"],
-        "wav":"raw.wav","wav_sha256":sha256(wav),
+        "wav":"raw.wav" if wav.exists() else None,
+        "wav_sha256":sha256(wav) if wav.exists() else None,
         "measurements":meta,
+        "diagnostics":diagnostics,
         "explicit_processing":{
             "denoise":False,"aec":False,"eq":False,"compression":False,
             "manual_gain_normalization":False,"playback":False,
             "virtual_microphone":False
         },
         "limits":[
-            "WAV is the direct software-captured source, not proof the USB mic has no internal DSP.",
-            "Physical mic and PipeWire graph may have prior gain, AGC or processing.",
-            "A saved sample format cannot prove the ADC's physical bit depth.",
-            "No model checkpoint or studio processing was invoked."
+            "Software RAW does not prove the USB microphone firmware lacks DSP.",
+            "A sample format cannot certify actual hardware ADC bit depth.",
+            "No auto source switch; a disconnected mic will fail the capture.",
+            "No audio data or microphone logs were uploaded."
         ]
     }
-    (out/"manifest.json").write_text(json.dumps(
-        manifest,ensure_ascii=False,indent=2,sort_keys=True)+"\n",
-        encoding="utf-8")
+    manifest_path=out/"manifest.json"
+    manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,
+                          indent=2,sort_keys=True)+"\n",encoding="utf-8")
+    if not success:
+        print("REJECTED: incomplete microphone capture, source WAV preserved.",
+              file=sys.stderr)
+        print("Stop reason:",reason,"; frames:",frames,
+              "; file bytes:",size,"; recorder exit code:",exit_code,
+              file=sys.stderr)
+        print("pw-record stderr (last lines):\n"+error_excerpt,
+              file=sys.stderr)
+        print("Diagnostic manifest:",manifest_path,file=sys.stderr)
+        raise SystemExit(3)
     print("PASS: RAW WAV kept unchanged; no stage processing or upload.")
     print("Length:",meta["duration_s"],"seconds; peak:",meta["peak_dbfs"],
           "dBFS; RMS:",meta["rms_dbfs"],"dBFS; clipped samples:",
           meta["clipped_samples"])
     print("SHA-256:",manifest["wav_sha256"])
-    print("Manifest:",out/"manifest.json")
+    print("Manifest:",manifest_path)
     print("Clipping note: clipped_samples should be zero on a good take.")
-
 
 def main():
     os.umask(0o077)
@@ -228,6 +295,8 @@ def main():
     rec.add_argument("--out",required=True,type=Path,
                      help="NEW folder inside local .audit/voice-captures/")
     rec.add_argument("--max-seconds",type=int,default=150)
+    rec.add_argument("--startup-check-sec",type=int,default=7,
+                     help="Fail early if less than 0.5 second of audio was written after N seconds")
     args=p.parse_args()
     if args.command=="inspect":
         print(json.dumps({"physical_sources":[x for x in get_sources()
@@ -236,6 +305,8 @@ def main():
     else:
         if not 10<=args.max_seconds<=300:
             p.error("Max duration must be 10..300 seconds")
+        if not 3<=args.startup_check_sec<=20 or args.startup_check_sec>=args.max_seconds:
+            p.error("startup-check-sec must be 3..20 and less than max-seconds")
         record(args)
 
 

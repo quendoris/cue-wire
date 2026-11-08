@@ -174,10 +174,12 @@ def experiment(args) -> None:
     if not original.is_file() or original.stat().st_size < 1000:
         raise ValueError("Music source missing/empty")
     out = private_output(args.out)
-    out.mkdir(mode=0o700)
     ref = out / "reference-sent.wav"
     mic_file = out / "microphone-raw.wav"
+    # Validate the capture device and explicit backend BEFORE creating a
+    # run directory; invalid mic sources must not consume M5-00N names.
     recorder_cmd, recorder_log, mic_info = build_mic_recorder(args, mic_file)
+    out.mkdir(mode=0o700)
     report = {
         "schema": "cuewire-M5-paired-physical-capture-v1",
         "status": "running",
@@ -193,7 +195,7 @@ def experiment(args) -> None:
             "First calibration interval requires NO local voice, other sounds or movement.",
             "Start reading when instructed, while the music continues playing.",
             "Digital reference is pre-sink audio, not sample-clock synchronized.",
-            "Playback launches immediately after the ALSA process, with no 3-second wait.",
+            "Playback launches immediately after the selected recorder, with no readiness wait.",
             "If microphone capture fails, the player is stopped and this take is rejected.",
             "The microphone backend is selected explicitly; no automatic fallback.",
             "PipeWire capture is a separate opt-in experiment and may fail on this mic.",

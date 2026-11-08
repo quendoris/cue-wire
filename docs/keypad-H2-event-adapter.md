@@ -149,6 +149,55 @@ they are owned and maintained by the user. Running H2 itself
 makes no persistent keyboard configuration change. Super+C remains
 an unrelated H1 emergency-control experiment, never registered by H2.
 
+## Preferred opt-in TEMPORARY mode (no configuration-file edits)
+
+On current Lua-based Hyprland, the adapter can perform a **read-only
+conflict preflight**, connect its foreground event listener, then
+register all 32 required press/release binds using ONE
+hyprctl eval invocation. Returned binding handles are retained in
+a uniquely namespaced Lua table. On Ctrl+C or SIGTERM, the adapter
+removes ONLY those 32 handles using handle:remove() (not an
+indiscriminate hl.unbind). It never edits hyprland.lua/hyprland.conf
+and never installs an autostart/daemon.
+
+This *temporarily mutates the running compositor's bindings*, but
+only after the operator deliberately requests --temporary-bindings.
+If binds conflict with existing NumPad shortcuts, activation refuses
+to proceed. This does not take over Super+C or ordinary key rows.
+
+Start (new file path per run):
+
+    cd /data/cue-wire
+    python3 tools/cuewire_keypad.py check
+    python3 tools/cuewire_keypad.py run --temporary-bindings \
+      --log-jsonl /data/cue-wire/.audit/keypad/H2-temporary-001.jsonl
+
+For a physically separate USB keypad, identify the name first:
+
+    hyprctl -j devices
+    python3 tools/cuewire_keypad.py run \
+      --temporary-bindings --device "EXACT_KEYPAD_DEVICE_NAME" \
+      --log-jsonl /data/cue-wire/.audit/keypad/H2-device-001.jsonl
+
+If a game inhibits binds, --game enables the more intrusive
+dont_inhibit option, but only when explicitly requested.
+
+If SIGKILL occurs, Python finally does NOT execute. The Lua binds
+may therefore survive until the compositor reloads. The rescue
+command removes ONLY the H2 namespaced handle table:
+
+    python3 tools/cuewire_keypad.py restore
+
+There is NO claim of automatic SIGKILL cleanup. Before treating this
+as production, test Hyprland eval/handle removal on the real machine
+and ensure the emergency control scope has an OUTSIDE parent that
+cleans ephemeral bindings after an emergency cgroup termination.
+
+IMPORTANT: Unlike the manual Lua example earlier in this document,
+the preferred temporary mode does **not** require copying binds to
+the persistent desktop configuration. Never install both variants
+at the same time.
+
 ## Next gate
 
 Do not assign any audio commands until the real key event log

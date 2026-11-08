@@ -36,6 +36,40 @@ From the inspect report take **the exact speaker output_sinks node.name**. The h
 
 Choose an FFmpeg-readable local WAV/FLAC/MP3 song with other people's voices, at least 20 seconds in length. The code generates and plays an explicit mono 48-kHz PCM16 reference so the samples are known exactly.
 
+## Playback startup policy (revision M5-002)
+
+The original M5-001 attempt rejected the microphone **before** any sound
+played because `arecord` exited during a three-second ALSA readiness
+wait. That wait has been removed: after verifying devices and preparing
+the known PCM reference, CueWire now launches physical microphone capture
+and **immediately launches the speaker playback process**, back-to-back.
+The first five seconds are timed from the player launch, not from the
+shell command or FFmpeg preprocessing.
+
+There is no guarantee that the physical DAC produces its first sample
+at that exact moment; Pulse/PipeWire buffering and device latency remain
+part of the later alignment estimate. Starting playback without waiting
+also means the microphone *might* start too late or fail. The capture
+checks for microphone PCM bytes within one second and aborts the playback
+on any recorder error. Such a failed attempt is not used as an AEC
+reference or calibration.
+
+The previous `M5-001` directory is immutable failure evidence. Inspect
+the actual cause before assuming the startup order alone was responsible:
+
+~~~bash
+cd /data/cue-wire
+tail -n 35 .audit/voice-aec/M5-001/arecord.log
+~~~
+
+An error such as `Device or resource busy` could indicate an
+exclusive ALSA-hardware conflict. Do not kill or disable PipeWire
+services to work around it; identify the actual holder and decide
+separately whether capture should use the PipeWire physical-source node.
+The new capture prints the end of `arecord.log` on failure.
+
+For this changed behavior, use **M5-002**, never overwrite M5-001.
+
 ## Step 2: record speaker plus physical mic
 
 ~~~bash
@@ -49,7 +83,7 @@ python3 tools/voice_m5_capture.py \
   --seconds 20 \
   --calibration-seconds 5 \
   --volume 0.30 \
-  --out .audit/voice-aec/M5-001
+  --out .audit/voice-aec/M5-002
 ~~~
 
 The program verifies physical ALSA card identity, physical sink, known reference file, and microphone capture bytes before playing anything. It records the mic through arecord and sends the reference to the explicit speaker via pw-play; it does NOT change system defaults, routes, WirePlumber or create monitor streams.
@@ -60,9 +94,9 @@ During the first five seconds of playback: **do not speak**. When the terminal p
 
 The playback finishes after ~20 seconds; the capture stops automatically. Results:
 
-- .audit/voice-aec/M5-001/reference-sent.wav — exact prepared digital signal sent to the output stream
-- .audit/voice-aec/M5-001/microphone-raw.wav — unprocessed real microphone capture
-- .audit/voice-aec/M5-001/manifest.json — SHA256, devices and timing metadata
+- .audit/voice-aec/M5-002/reference-sent.wav — exact prepared digital signal sent to the output stream
+- .audit/voice-aec/M5-002/microphone-raw.wav — unprocessed real microphone capture
+- .audit/voice-aec/M5-002/manifest.json — SHA256, devices and timing metadata
 - local logs of ALSA, playback, and reference preparation
 
 If interrupted, process children are terminated and prior evidence is kept. Every attempt uses a **new** output directory.
@@ -75,7 +109,7 @@ Use the dedicated voice-lab Python environment with NumPy/SciPy:
 ~/.venvs/cuewire-voice-lab/bin/python -c 'import numpy, scipy; print(numpy.__version__, scipy.__version__)'
 
 ~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aec.py \
-  --capture .audit/voice-aec/M5-001 \
+  --capture .audit/voice-aec/M5-002 \
   --out .audit/voice-aec/M5-analysis-001
 ~~~
 
@@ -93,7 +127,7 @@ The candidate is not automatically endorsed as usable voice: listen during simul
 ~~~bash
 cd /data/cue-wire/.audit/voice-aec/M5-analysis-001
 sha256sum -c SHA256SUMS
-pw-play ../M5-001/microphone-raw.wav
+pw-play ../M5-002/microphone-raw.wav
 pw-play aec-candidate-float32.wav
 ~~~
 

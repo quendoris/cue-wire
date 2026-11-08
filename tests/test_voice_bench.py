@@ -117,6 +117,34 @@ else:
         assert run_variant.returncode == 0, run_variant.stdout + run_variant.stderr
         manifest_2=json.loads((path/"variant-run"/"manifest.json").read_text())
         assert all(x["status"]=="ok" for x in manifest_2["jobs"].values()), manifest_2["jobs"]
+        # A failing external model may write a partial WAV before raising.
+        # Such a WAV must never enter scores.csv or listening comparison.
+        broken=path/"broken-deepfilter"
+        broken.write_text("""#!/usr/bin/env python3
+import sys,shutil
+from pathlib import Path
+args=sys.argv[1:]
+d=Path(args[args.index("-o")+1])
+d.mkdir(parents=True,exist_ok=True)
+shutil.copyfile(args[-1], d/"partial.wav")
+sys.exit(17)
+""")
+        broken.chmod(0o755)
+        broken_env=os.environ.copy()
+        broken_env["CUEWIRE_BENCH_DEEPFILTER"]=str(broken)
+        failrun=path/"failed-model-run"
+        bad_result=subprocess.run(
+            [sys.executable,str(TOOLS/"voice_bench.py"),
+             "--clean",str(clean),"--noisy",str(bad),
+             "--out",str(failrun),"--models","identity,deepfilter",
+             "--chains",""],
+            capture_output=True,text=True,env=broken_env,timeout=60)
+        assert bad_result.returncode==0, bad_result.stdout+bad_result.stderr
+        failure=json.loads((failrun/"manifest.json").read_text())
+        assert failure["jobs"]["deepfilter"]["status"]=="failed",failure
+        assert not (failrun/"results"/"deepfilter.wav").exists()
+        scored=json.loads((failrun/"scores.json").read_text())
+        assert [x["name"] for x in scored["results"]]==["identity"]
         # Model cards only, not inference: adapter must expose 3 supported names.
         adapter_help = subprocess.run(
             [sys.executable, str(TOOLS/"voice_bench_clearvoice.py"), "--help"],

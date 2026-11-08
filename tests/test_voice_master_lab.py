@@ -60,6 +60,25 @@ def main():
             if not name.endswith("__control"):
                 assert row["estimated_true_peak_dbfs"]<=-1.49,(name,row)
             assert row["rms_dbfs"]>-100,name
+        # Listening must remain separated by original source and verify
+        # source/output hashes, never mix B0 (clean) with B1 (restored).
+        listening=base/"master-listening"
+        listen=subprocess.run([
+            sys.executable,str(TOOLS/"voice_master_listen.py"),
+            str(out),"--out",str(listening),"--seed","88"],
+            capture_output=True,text=True,timeout=50)
+        assert listen.returncode==0,listen.stdout+listen.stderr
+        for label in ("B0","B1"):
+            key=json.loads((listening/label/"answer_key.json").read_text())
+            assert key["source_id"]==label
+            assert len(key["tracks"])==8
+            assert len(list((listening/label).glob("track_*.wav")))==8
+            assert key["source_sha256"]==meta["inputs"][label]["source_sha256"]
+        repeat_listening=subprocess.run([
+            sys.executable,str(TOOLS/"voice_master_listen.py"),
+            str(out),"--out",str(listening)],
+            capture_output=True,text=True,timeout=10)
+        assert repeat_listening.returncode!=0
         result=subprocess.run(["sha256sum","-c","SHA256SUMS"],cwd=out,
                              capture_output=True,text=True,timeout=15)
         assert result.returncode==0,result.stdout+result.stderr

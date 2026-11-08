@@ -15,6 +15,8 @@ spectral gate cannot reliably solve all three.
 | VoiceFixer | Archival speech noise/echo/bandwidth/clipping correction | Offline quality baseline; can synthesize artifacts. |
 | RNNoise (xiph) | Small real-time speech noise model | Lightweight streaming baseline. BSD-3 code; pretrained weight terms need checking. |
 | Demucs (Meta) | Music separation, including vocals | For rock/music source separation first, NOT for ordinary mic noise. Archived project; MIT code. |
+| python-audio-separator (Nomad Karaoke) | Headless CLI, UVR / RoFormer / MDX / Demucs models | Preferred practical terminal interface for strong rock-vocals extraction before speech enhancement; model files download explicitly during first run. |
+| OpenMIRLab MelBand-RoFormer-Infer | Local infer-only separation, explicit model load/release session | Interesting for our no-daemon lifecycle contract; code MIT, verify checkpoint terms individually. |
 | Facebook Speech Denoiser | Research causal Demucs speech denoising | Historical baseline only; archived, CC-BY-NC 4.0. |
 
 References:
@@ -26,6 +28,8 @@ References:
 - https://github.com/haoheliu/voicefixer
 - https://github.com/xiph/rnnoise
 - https://github.com/facebookresearch/demucs
+- https://github.com/nomadkaraoke/python-audio-separator
+- https://github.com/openmirlab/melband-roformer-infer
 - https://github.com/facebookresearch/denoiser
 
 ## Reproducible evaluation
@@ -56,10 +60,20 @@ DeepFilterNet also supports a standalone 48-kHz WAV CLI:
 
     deep-filter --out-dir df-results input.wav
 
-For rock/singing, test Demucs vocal extraction first, then enhancement.
+For rock/singing, test a RoFormer vocal-extraction model through
+python-audio-separator first; keep Demucs as an independent baseline.
+Then test speech/vocal enhancement on the separated stem.
 For clean microphone speech, do not add music separation at all.
 Noise-bed is an optional aesthetic mask, not speech reconstruction.
 
 Models may have different checkpoint distribution rights than source
 licenses. In particular, DeepFilterNet checkpoint redistribution
 scope remains the subject of a 2026 public clarification request.
+
+Example OPTIONAL CLI invocation (check model license and version first):
+
+    audio-separator --list_models
+    audio-separator input.wav --model_filename model_bs_roformer_ep_317_sdr_12.9755.ckpt
+
+The audio-separator model is downloaded on first use; keep this strictly
+outside CueWire startup and record the downloaded checkpoint SHA-256.

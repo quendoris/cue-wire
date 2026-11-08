@@ -70,6 +70,70 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-006 first REAL AEC failure: independent hold-out 0.76 dB
+
+Using the successful, real M5-006 WAV pair, the original
+`voice_m5_aec.py` fitted its acoustic model, but held-out
+speaker-only ERLE was **0.76 dB**, strictly below the unchanged
+**1.0 dB** minimum. The algorithm correctly **rejected** the model;
+no speech-subtraction candidate was generated.
+The `pw-record.log` output supplied for the attempt contained the
+command argv but did not identify an additional runtime fault.
+This is now a *model-validation* failure, **not** an audio-capture
+failure.
+
+Do **not** lower the ERLE threshold or call 0.76 dB adequate
+cancellation. Even passing 1 dB would only clear an initial minimal
+engineering gate, not prove that the voice remains natural.
+
+### Offline diagnostics without changing the acceptance gate
+
+A new opt-in `--diagnose` mode runs numerical analysis only.
+It uses the immutable, verified M5-006 microphone/reference WAVs,
+performs the same lag estimate and filter fit, and reports:
+
+- normalized reference/mic cross-correlation and the candidate
+  acoustic lag (milliseconds)
+- training and held-out ERLE with the frozen fitted filter
+- microphone/echo-prediction RMS on the held-out section
+- a **diagnostic-only**, small temporal offset sweep
+  (-10..+10 ms) with the existing gain
+- an **oracle** gain for each shift, optimized on the held-out
+  section, included solely to help identify whether a level mismatch
+  could explain weak suppression
+
+The oracle values are *not* independent test results and **must never
+be applied** to the voice or promoted into production. If the
+calibration window was contaminated with near-end speech, the
+numbers cannot certify the echo model. No WAV, new recording,
+audio playback, routing changes or hardware access occurs.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python tools/voice_m5_aec.py \
+  --diagnose \
+  --capture .audit/voice-aec/M5-006 \
+  --out .audit/voice-aec/M5-diagnostics-006
+~~~
+
+The resulting private `M5-diagnostics-006/diagnostics.json` and
+`SHA256SUMS` record numerical evidence only. Do not rerun into
+an existing directory; use a fresh identifier instead. Share the
+printed summary or JSON for review (no need to upload private audio).
+
+Next research decision: if a tiny delay shift markedly improves the
+independent *fixed-gain* ERLE, investigate clock/synchronization;
+if only the hold-out oracle gain helps, test a revised gain/path model
+on **a new independent capture**; if neither helps, investigate acoustic
+nonlinearity, room instability and limitations of the 120-ms
+Wiener-filtered impulse response. These are hypotheses, not conclusions
+from the current 0.76 dB alone.
+
 ## M5-006 actual paired capture results — FIRST SUCCESSFUL REAL TAKE
 
 The first *real*, successfully completed paired speaker + physical

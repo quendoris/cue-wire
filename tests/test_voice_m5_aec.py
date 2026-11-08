@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+from types import SimpleNamespace
 from pathlib import Path
 import subprocess
 import sys
@@ -125,6 +126,49 @@ class M5Tests(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "speaker unavailable"):
                     capture.start_paired_streams(["arecord"], ["pw-play"], Path(temp))
                 stop.assert_called_once_with(recorder)
+
+    def test_pipewire_capture_explicit_physical_node_without_alsa(self):
+        args = SimpleNamespace(capture_backend="pipewire",
+                               source="alsa_input.usb-MICAudio97i.mono-fallback",
+                               mic="hw:0,0", expect_card_id="MICAudio97i",
+                               seconds=20)
+        chosen = {"name": args.source, "id": 42,
+                  "sample_spec": "s16le 1ch 48000Hz"}
+        with mock.patch.object(capture, "choose_source", return_value=chosen) as get, \
+             mock.patch.object(capture, "physical_card") as alsa_verify, \
+             mock.patch.object(capture, "checked_program", return_value="/usr/bin/pw-record"):
+            cmd, log_name, info = capture.build_mic_recorder(
+                args, Path("/tmp/private.wav"))
+        get.assert_called_once_with(args.source)
+        alsa_verify.assert_not_called()
+        self.assertEqual(cmd[0], "pw-record")
+        self.assertIn("--target=" + args.source, cmd)
+        self.assertIn("--rate=48000", cmd)
+        self.assertIn("--channels=1", cmd)
+        self.assertIn("--format=s16", cmd)
+        self.assertEqual(log_name, "pw-record.log")
+        self.assertEqual(info["backend"], "pipewire")
+
+    def test_reject_monitor_and_implicit_pipewire_fallback(self):
+        args = SimpleNamespace(capture_backend="pipewire", source=None,
+                               mic="hw:0,0", expect_card_id="MICAudio97i", seconds=20)
+        with self.assertRaisesRegex(ValueError, "requires --source"):
+            capture.build_mic_recorder(args, Path("/tmp/private.wav"))
+        for invalid in ("alsa_output.fake.monitor", "cuewire.virtual_mic", "auto"):
+            args.source = invalid
+            with self.assertRaisesRegex(ValueError, "physical alsa_input"):
+                capture.build_mic_recorder(args, Path("/tmp/private.wav"))
+
+    def test_alsa_backend_remains_explicit_option(self):
+        args = SimpleNamespace(capture_backend="alsa", source=None,
+                               mic="hw:0,0", expect_card_id="MICAudio97i", seconds=20)
+        card = {"arecord_listing": "expected ALSA card"}
+        with mock.patch.object(capture, "physical_card", return_value=card):
+            cmd, name, info = capture.build_mic_recorder(
+                args, Path("/tmp/private.wav"))
+        self.assertEqual(cmd[0], "arecord")
+        self.assertEqual(name, "arecord.log")
+        self.assertEqual(info["backend"], "alsa")
 
     def test_cli_import_help_offline(self):
         for script in ("voice_m5_capture.py", "voice_m5_aec.py"):

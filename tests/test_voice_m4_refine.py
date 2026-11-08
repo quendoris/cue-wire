@@ -8,6 +8,7 @@ from array import array
 import importlib.util
 import json
 import math
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -71,6 +72,15 @@ class RefinementTests(unittest.TestCase):
         self.auditor = mock.patch.object(refine, "AUDIT", self.audit.resolve())
         self.auditor.start()
         self.addCleanup(self.auditor.stop)
+
+    def test_real_cli_help_entrypoint(self):
+        """The actual process must enter main() without NameError."""
+        process = subprocess.run(
+            [sys.executable, str(TOOLS / "voice_m4_refine.py"), "--help"],
+            capture_output=True, text=True, timeout=10, check=False)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertIn("--sample-peak-ceiling-dbfs", process.stdout)
+        self.assertNotIn("Traceback", process.stderr)
 
     def test_curve_continuity_and_limit(self):
         p = refine.PROFILES["dense"]

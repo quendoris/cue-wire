@@ -27,22 +27,43 @@ bash tools/voice_bench_extra_install.sh --download sherpa-models
 
 These commands may download external dependencies; the cleanup script never installs/downloads anything. If the deep-filter binary has a different location, export `CUEWIRE_BENCH_DEEPFILTER=/absolute/path/to/deep-filter` for the current shell. Do not point to the Python `deepFilter` CLI: this pipeline uses the Rust executable matching existing CueWire benchmarks.
 
+## DeepFilterNet compensated-length correction (v2)
+
+The Rust CLI's `-D` / `--compensate-delay` slices the known STFT and
+model lookahead latency from the **beginning** of its produced buffer; the
+Rust CLI does *not* automatically extend the ending. Passing unpadded RAW
+to `deep-filter -D` therefore produces a shortened WAV (often about 30 ms).
+The original CueWire v1 correctly failed closed on a >10 ms change, but did
+not prepare a padded model input.
+
+CueWire v2 makes a *private temporary derivative* of RAW with at least 250 ms
+of trailing zero-valued PCM16 frames, rounded to 480-frame STFT hops, **before**
+running DeepFilterNet. It then converts model output to PCM16 and keeps exactly
+the first `raw_frames` compensated samples. This discards only the deliberately
+added artificial tail. It does **not** invent audio samples or discard speech
+to conceal a model failure. A model-reported delay outside 0..100 ms still
+stops the run. The measured delay, input/output frames, and the padded input
+hash are recorded in `manifest.json`.
+
+Previously failed `clean-001` is evidence and must **not** be overwritten.
+After updating the branch, use `clean-002` and inspect its new manifest.
+
 ## First M4 cleanup
 
 ```bash
 cd /data/cue-wire
 python3 tools/voice_m4_clean.py \
   --in .audit/voice-captures/M4-R0-ALSA-007/raw.wav \
-  --out .audit/voice-captures/M4-R0-ALSA-007/clean-001
+  --out .audit/voice-captures/M4-R0-ALSA-007/clean-002
 ```
 
-`clean-001/` **must not exist** before the run. To retry, use a new output folder such as `clean-002`, or inspect the failed logs without deleting/replacing prior evidence.
+`clean-002/` **must not exist** before the run. To retry, use a new output folder such as `clean-003`, or inspect the failed logs without deleting/replacing prior evidence.
 
 Artifacts are private and never uploaded automatically:
 
-- `01-deepfilter.wav`: first stage;
+- `01-deepfilter.wav`: first stage (exact RAW length, model latency compensated);
 - `02-dpdfnet2-soft.wav`: second stage;
-- `01-deepfilter.log`, `01b-pcm16-conversion.log`, `02-dpdfnet2-soft.log`;
+- `01-deepfilter.log`, `01b-pcm16-conversion.log`, `02-dpdfnet2-soft.log`;\n- `deepfilter-padded-input.wav`, `deepfilter-compensated-full.wav`: private, auditable intermediate WAVs;
 - `manifest.json`: input hash, stage hashes, metrics, pinned model hash;
 - `SHA256SUMS`: both produced WAVs.
 
@@ -52,7 +73,7 @@ The first five seconds' RMS is reported as **time-window RMS**, not a measured n
 
 ```bash
 cd /data/cue-wire
-cd .audit/voice-captures/M4-R0-ALSA-007/clean-001
+cd .audit/voice-captures/M4-R0-ALSA-007/clean-002
 sha256sum -c SHA256SUMS
 pw-play ../raw.wav
 pw-play 01-deepfilter.wav

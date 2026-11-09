@@ -70,6 +70,99 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 frozen-FIR heldout: ACTUAL recorded evidence (2026-11-09)
+
+The user supplied the real `M5-frozen-aec-heldout-001/frozen-aec-heldout.json`
+plus its `SHA256SUMS`. The report's SHA256 **was independently computed
+from the uploaded bytes and matched**:
+`5b9981132551d569e3cc8c9264fcf734997d98fe5f11631e2ff141e8cd86dfe6`.
+Input manifest and audio SHA256s match the previous M5-006
+reference and M5-ABA-001 physical microphone.
+
+**Actual fixed model and disjoint time windows:**
+
+- Alignment reference time **1.0–3.7 s**, 1500–4000 Hz;
+  estimated reference-origin/mic offset **8315.27083 ms**
+  (~281.37083 ms after *software playback launch*, not
+  literal acoustic propagation time).
+- Fixed FIR: **5760 taps/120 ms**, regularization **0.02**,
+  spectral estimate 8192 FFT, coefficient gain **1.1173878**
+  from **training only**.
+- Training time **3.0–9.0 s**, total ERLE **+1.11885 dB**
+  (in-sample, optimistic).
+- Held-out evaluation time **10.0–16.0 s**, total ERLE
+  **+1.18578 dB**. Original microphone RMS **-58.30545 dBFS**,
+  predicted echo RMS **-62.95045 dBFS**,
+  residual RMS **-59.49123 dBFS**.
+- The held-out total power is reduced by
+  `1 - 10^(-1.18578/10) = 0.2389346`, **23.9%**.
+- Same-session speaker-OFF baseline around
+  **-59.8607 dBFS**; evaluated residual is about
+  **+0.37 dB** above this earlier OFF power estimate.
+  This comparison does not certify complete removal of
+  actual loudspeaker echo.
+
+**Heldout spectral evidence** (magnitude-squared coherence
+weighted by the ORIGINAL mic PSD for both before and after):
+
+| Frequency | Coherence before | Coherence after | ERLE |
+| --- | ---: | ---: | ---: |
+| 70–180 Hz | 0.103679 | 0.050759 | +1.49397 dB |
+| 180–500 Hz | 0.177296 | 0.051445 | +0.91970 dB |
+| 500–1500 Hz | 0.417548 | 0.160470 | +2.28760 dB |
+| **1500–4000 Hz** | **0.553982** | **0.385542** | **+3.26274 dB** |
+| 4000–8000 Hz | 0.114123 | **0.130685** | **-0.24140 dB** |
+| 8000–16000 Hz | 0.069379 | **0.160249** | **-0.82629 dB** |
+
+Thus, frozen subtraction **materially reduces microphone
+correlation with the digital reference** and total power
+in the useful 500–4000 Hz region. Above 4 kHz the
+held-out residual power and coherence **increase**.
+This is a failure mode, not something to suppress from
+the report. The higher-band energy is small in absolute
+terms, but quality and speech preservation have NOT
+been assessed by listening or clean speech truth.
+
+The existing minimal `>=1 dB` *speaker-only heldout
+engineering gate* **PASSES** on this particular A/B/A
+test (1.18578 dB), whereas the original M5-006 failed
+at 0.7574 dB. **Neither result approves a voice
+pipeline, music/game routing, or production AEC.**
+This pass must not silently override high-frequency
+regressions. The `speaker_off_control.echo_prediction_off_max_abs=0`
+is true **by construction** because the reference model is zero
+during OFF; it is not a clean-voice preservation test.
+
+**Audit independence limitation:** 10–16s did not influence
+the current FIR fit, but its spectral coherence was
+already inspected earlier in M5-reference-coherence-002.
+Thus this is a heldout evaluation from *model training*,
+not a genuinely blind independent validation of the
+entire iterative research project.
+
+### Next quality gate: controlled double talk (not yet validated)
+
+A suitable future test needs a *new* raw capture that
+preserves (a) a clean speaker-only calibration and a
+separate heldout speaker-only validation period before
+(b) the operator talks while the same reference continues.
+Keep the mic/speaker/volume and processing chain fixed.
+A fresh recording avoids relying on the same inspected
+heldout interval repeatedly. No model may update during
+speech, and no cleanup output may feed a speaker or game.
+
+For double talk, full-band ERLE alone is a poor metric:
+explicitly report per-band reference-coherence improvement,
+especially the **negative 4–16kHz bands** here, plus
+voice audibility, preservation (using a valid reference or
+careful listening), no accidental output monitoring,
+and no background services. A clean speech-only control
+may be useful, but separate spoken takes are not
+sample-exact ground truth and cannot certify distortion
+numerically on their own.
+
+The accepted M4 `LEVEL-001` voice master stays unchanged.
+
 ## M5 new frozen FIR holdout: source-code readiness (not yet measured on real PCM)
 
 New `tools/voice_m5_frozen_heldout.py` runs the first controlled

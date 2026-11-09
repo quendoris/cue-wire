@@ -794,7 +794,9 @@ class M5Tests(unittest.TestCase):
         lag = round((8.0+.14)*RATE)
         mic = rng.normal(0, .0008, 36*RATE)
         mic[lag:lag+len(x)] += .19*x
-        voice = rng.normal(0, .006, 8*RATE)
+        # Authentic M4 ALSA capture protocol: 5s silent lead-in.
+        voice = rng.normal(0, .006, 15*RATE)
+        voice[:6*RATE] *= .02
         with tempfile.TemporaryDirectory() as root:
             audit = Path(root)/".audit"
             ref_dir = audit/"voice-aec/M5-006"
@@ -834,11 +836,18 @@ class M5Tests(unittest.TestCase):
             am_path = aba_dir/"manifest.json"
             am_path.write_text(json.dumps(am))
             vm = {
-                "schema": "cuewire-M4-raw-capture-v2",
+                "schema": "cuewire-M4-raw-alsa-v1",
                 "status": "recorded_unprocessed_raw",
-                "wav": "raw.wav",
-                "mic_node_name": "alsa_input.usb-test",
-                "wav_sha256": aec.digest(voice_path),
+                "source": "physical_alsa_hw",
+                "device": "hw:1,0",
+                "card_id": "MICAudio97i",
+                "raw_wav": "raw.wav",
+                "raw_sha256": aec.digest(voice_path),
+                "processing": {
+                    "aec": False, "denoise": False, "eq": False,
+                    "compression": False, "virtual_mic": False,
+                    "normalization": False, "monitoring": False
+                },
             }
             vm_path = m4_dir/"manifest.json"
             vm_path.write_text(json.dumps(vm))
@@ -857,6 +866,11 @@ class M5Tests(unittest.TestCase):
                     report["voice_preservation_validated_under_real_acoustics"])
                 self.assertGreater(
                     report["speaker_only_heldout_erle_db"], 1.0)
+                self.assertEqual(report["voice_source_capture_schema"],
+                                 "cuewire-M4-raw-alsa-v1")
+                self.assertEqual(report["voice_source_capture_backend"],
+                                 "physical_alsa_hw")
+                self.assertEqual(report["voice_excerpt_start_s"], 6.0)
                 self.assertTrue((out/"known-stem.json").exists())
                 self.assertTrue((out/"SHA256SUMS").exists())
                 self.assertEqual(list(out.glob("*.wav")), [])
@@ -869,6 +883,62 @@ class M5Tests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "SHA256"):
                     known_stem.analyze(
                         aba_dir, m4_dir, audit/"voice-aec/M5-known-stem-002")
+
+    def test_known_voice_m4_manifest_schema_strict_and_long_alsa_excerpt(self):
+        """Real M4 ALSA v1 and later PipeWire v2 have different SHA keys."""
+        alsa = {
+            "schema": "cuewire-M4-raw-alsa-v1",
+            "status": "recorded_unprocessed_raw",
+            "source": "physical_alsa_hw",
+            "device": "hw:2,0",
+            "card_id": "MICAudio97i",
+            "raw_wav": "raw.wav",
+            "raw_sha256": "a"*64,
+            "processing": {
+                "aec": False, "denoise": False, "eq": False,
+                "compression": False, "virtual_mic": False,
+                "normalization": False, "monitoring": False,
+            },
+            "measurements": {"rate": 48000, "channels": 1,
+                             "sample_width_bytes": 2, "clipped_samples": 0}
+        }
+        h, schema, kind = known_stem.validate_m4_voice_manifest(alsa)
+        self.assertEqual((h, schema, kind),
+                         ("a"*64, "cuewire-M4-raw-alsa-v1",
+                          "physical_alsa_hw"))
+        bad = dict(alsa, raw_sha256="wrong-hash")
+        with self.assertRaisesRegex(ValueError, "SHA256"):
+            known_stem.validate_m4_voice_manifest(bad)
+        bad = dict(alsa, source="not-physical")
+        with self.assertRaisesRegex(ValueError, "physical"):
+            known_stem.validate_m4_voice_manifest(bad)
+        bad = dict(alsa, processing={**alsa["processing"], "aec": True})
+        with self.assertRaisesRegex(ValueError, "unprocessed"):
+            known_stem.validate_m4_voice_manifest(bad)
+        pw = {
+            "schema": "cuewire-M4-raw-capture-v2",
+            "status": "recorded_unprocessed_raw",
+            "mic_node_name": "alsa_input.usb-MICAudio97i",
+            "wav": "raw.wav",
+            "wav_sha256": "b"*64,
+            "explicit_processing": {
+                "aec": False, "denoise": False, "eq": False,
+                "compression": False, "manual_gain_normalization": False,
+                "playback": False, "virtual_microphone": False,
+            }
+        }
+        self.assertEqual(known_stem.validate_m4_voice_manifest(pw),
+                         ("b"*64, "cuewire-M4-raw-capture-v2",
+                          "physical_pipewire"))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/"long-alsa.wav"
+            rng = np.random.default_rng(70001)
+            pcm16_file(path, rng.normal(0, .005, 52*RATE))
+            excerpt = known_stem.read_voice_excerpt(path, 6.0)
+            self.assertEqual(len(excerpt), 6*RATE)
+            self.assertGreater(aec.rms(excerpt), .003)
+            with self.assertRaisesRegex(ValueError, "too short"):
+                known_stem.read_voice_excerpt(path, 50.0)
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

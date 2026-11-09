@@ -231,7 +231,8 @@ class M5Tests(unittest.TestCase):
 
     def test_cli_import_help_offline(self):
         for script in ("voice_m5_capture.py", "voice_m5_aec.py",
-                       "voice_m5_frozen_heldout.py"):
+                       "voice_m5_frozen_heldout.py",
+                       "voice_m5_guarded_fir.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)

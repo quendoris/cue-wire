@@ -391,6 +391,87 @@ No clean voice preservation was measured.
 Old prospective 0.67881dB FAIL, M4 LEVEL-001,
 source WAVs and fixed M5 FIR remain unchanged.
 
+## Next diagnostic: spectral fingerprint of OFF-only 8–16kHz bursts (2026-11-09)
+
+The prior SHA256-verified \`off-floor-windows.json\` established
+that most of the remarkable 11–13dB changes in the OFF
+phase-mean highband floor come from short windows of elevated
+8–16kHz energy. This finding was observed before the
+next fingerprint analysis was designed; therefore
+**the new experiment is exploratory and post-hoc**.
+
+The tool \`tools/voice_m5_off_spectral_fingerprint.py\`
+uses the exact same two SHA256-pinned original
+\`M5-level-015-001\` and \`M5-level-030-001\` physical
+mic WAVs and the existing verified source-reference metadata.
+It scans ALL 40 original **0.5-second speaker-OFF windows**
+(2–7s and 30–35s for each recording), not just the loud ones.
+For each it computes:
+
+- Welch 4096-frame power spectrum with 50% overlap
+  from 48kHz mono PCM;
+- 8–16kHz total spectral band power, split into
+  8–10, 10–12, 12–14 and 14–16kHz fractions;
+- highest PSD bin frequency;
+- spectral flatness (geometric/arithmetical PSD average),
+  normalized entropy, and the spectral power fraction
+  in the 1% largest frequency bins;
+- an after-the-fact >6dB-above-same-phase-median
+  indicator, consistent with the prior window report.
+
+**Interpretation:** a stable narrow spectral peak
+in several bursts would motivate investigation of
+a periodic/tonal interference source. Broadly spread
+bursts or dissimilar fingerprints would motivate
+a different follow-up. Neither signature alone
+proves electronic artifact, USB dropout, AGC,
+microphone hardware problem or a genuine audible
+acoustic sound. Frequency-window resolution and
+spectral leakage remain limitations.
+
+The earlier \`off-floor-windows.json\` used an
+offline Butterworth bandpass plus 0.5s RMS.
+This new tool uses Welch spectral integration,
+so its exact dB levels and which marginal
+windows exceed the 6dB rule may differ slightly.
+The important comparison is spectral shape
+between elevated and ordinary windows.
+
+The algorithm has two new synthetic regression tests:
+a known **11kHz tone vs broadband noise** fingerprint,
+and a 40-window end-to-end source-integrity check
+that rejects any altered existing WAV or output directory.
+There are now **41 M5 test methods**. No local
+run is yet claimed.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_off_spectral_fingerprint.py \
+  --low-capture .audit/voice-aec/M5-level-015-001 \
+  --high-capture .audit/voice-aec/M5-level-030-001 \
+  --out .audit/voice-aec/M5-off-spectral-fingerprint-001
+
+cd /data/cue-wire/.audit/voice-aec/M5-off-spectral-fingerprint-001
+sha256sum -c SHA256SUMS
+~~~
+
+The output is only \`off-spectral-fingerprint.json\`
+and \`SHA256SUMS\`. It NEVER opens audio devices,
+plays music, records new microphone sound,
+writes audio, retimes or changes AEC models,
+enables the virtual microphone, or alters
+the system sink. If the output folder exists,
+use a new identifier instead of overwriting.
+
+The prospective **0.67881dB FAIL** and
+the accepted M4 LEVEL-001 voice remain immutable.
+
 ## Future: true near-end speech criterion
 
 Only after we understand the absolute residual vs

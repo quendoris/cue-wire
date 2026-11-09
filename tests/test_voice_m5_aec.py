@@ -31,6 +31,7 @@ import voice_m5_guarded_fir as guarded_fir
 import voice_m5_known_stem as known_stem
 import voice_m5_lag_postmortem as lag_postmortem
 import voice_m5_early_cross_take as cross_take
+import voice_m5_playback_coherence as playback_coherence
 
 RATE = aec.RATE
 
@@ -238,7 +239,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_guarded_fir.py",
                        "voice_m5_known_stem.py",
                        "voice_m5_lag_postmortem.py",
-                       "voice_m5_early_cross_take.py"):
+                       "voice_m5_early_cross_take.py",
+                       "voice_m5_playback_coherence.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -1164,6 +1166,121 @@ class M5Tests(unittest.TestCase):
                     cross_take.compare(
                         first, second,
                         audit/"voice-aec/M5-cross-take-calibration-002")
+
+    def test_playback_coherence_proxy_tracks_nominal_amplitude(self):
+        """Reference-linked power proxy rises ~6dB for doubled echo amp."""
+        rng = np.random.default_rng(901441)
+        x = rng.normal(0, .07, 5*RATE)
+        noise = rng.normal(0, .0015, 5*RATE)
+        low = .08*x+noise
+        high = .16*x+noise
+        l = playback_coherence.inspect_spectral_window(x, low)
+        h = playback_coherence.inspect_spectral_window(x, high)
+        ll = next(b for b in l["bands"] if b["band_hz"] == [1500, 4000])
+        hh = next(b for b in h["bands"] if b["band_hz"] == [1500, 4000])
+        gain = (
+            hh["linear_reference_linked_power_proxy_dbfs"] -
+            ll["linear_reference_linked_power_proxy_dbfs"])
+        self.assertGreater(gain, 5.5)
+        self.assertLess(gain, 6.5)
+        self.assertGreater(
+            hh["mic_psd_weighted_magnitude_squared_coherence"], .75)
+        self.assertEqual(len(l["bands"]), len(playback_coherence.BANDS))
+        with self.assertRaisesRegex(ValueError, "equal-length"):
+            playback_coherence.inspect_spectral_window(x, low[:-1])
+
+    def test_playback_coherence_full_sha_pinned_numeric_only(self):
+        """Prior two music volumes, no device opens or source mutation."""
+        rng = np.random.default_rng(901442)
+        music = rng.normal(0, .06, 20*RATE)
+        delay = round(8.20*RATE)
+        m_low = rng.normal(0, .0007, 36*RATE)
+        m_high = rng.normal(0, .0007, 36*RATE)
+        m_low[delay:delay+len(music)] += .08*music
+        m_high[delay:delay+len(music)] += .16*music
+        with tempfile.TemporaryDirectory() as root:
+            audit = Path(root)/".audit"
+            digital = audit/"voice-aec/M5-006"
+            low = audit/"voice-aec/M5-level-015-001"
+            high = audit/"voice-aec/M5-level-030-001"
+            for directory in (digital, low, high):
+                directory.mkdir(parents=True)
+            ref_path = digital/"reference-sent.wav"
+            pcm16_file(ref_path, music)
+            digital_manifest = digital/"manifest.json"
+            digital_manifest.write_text('{"source":"test"}')
+            for path, data, volume in (
+                    (low, m_low, .15), (high, m_high, .30)):
+                wav = path/"microphone-aba-raw.wav"
+                pcm16_file(wav, data)
+                manifest = {
+                    "schema": "cuewire-M5-continuous-ABA-control-v1",
+                    "status": "captured_aba_for_noise_diagnostics",
+                    "source_mic_sample_spec": "s16le 1ch 48000Hz",
+                    "source_mic_name": "alsa_input.usb-test",
+                    "speaker_sink_name": "alsa_output.pci-test",
+                    "speaker_play_volume": volume,
+                    "reference_source_capture": str(digital),
+                    "reference_source_manifest_sha256":
+                        aec.digest(digital_manifest),
+                    "reference_wav_sha256": aec.digest(ref_path),
+                    "reference_duration_s": 20.0,
+                    "requested_speaker_off_before_s": 8,
+                    "requested_speaker_off_after_s": 8,
+                    "microphone": {"sha256": aec.digest(wav)},
+                    "playback_start_after_recorder_launch_s": 8.0,
+                    "phase_analysis": {
+                        "windows": {
+                            "before_speaker_on":
+                                {"segment_rms_dbfs": -60.},
+                            "after_speaker_off":
+                                {"segment_rms_dbfs": -60.},
+                            "speaker_on": {
+                                "segment_rms_dbfs": -50.}
+                        }
+                    }
+                }
+                (path/"manifest.json").write_text(json.dumps(manifest))
+            old_paths = [ref_path, digital_manifest,
+                         low/"microphone-aba-raw.wav", low/"manifest.json",
+                         high/"microphone-aba-raw.wav", high/"manifest.json"]
+            old_hashes = [aec.digest(p) for p in old_paths]
+            with (mock.patch.object(playback_coherence, "AUDIT", audit.resolve()),
+                  mock.patch.object(playback_coherence, "LOW_MANIFEST_SHA",
+                                    aec.digest(low/"manifest.json")),
+                  mock.patch.object(playback_coherence, "HIGH_MANIFEST_SHA",
+                                    aec.digest(high/"manifest.json")),
+                  mock.patch.object(playback_coherence, "LOW_MIC_SHA",
+                                    aec.digest(low/"microphone-aba-raw.wav")),
+                  mock.patch.object(playback_coherence, "HIGH_MIC_SHA",
+                                    aec.digest(high/"microphone-aba-raw.wav")),
+                  mock.patch.object(playback_coherence, "REFERENCE_SHA",
+                                    aec.digest(ref_path)),
+                  mock.patch.object(playback_coherence, "SOURCE_MANIFEST_SHA",
+                                    aec.digest(digital_manifest))):
+                out = audit/"voice-aec/M5-playback-coherence-001"
+                report = playback_coherence.analyze(low, high, out)
+                self.assertEqual(len(report["per_band_change"]), 2)
+                self.assertFalse(report["voice_recorded_or_analyzed"])
+                self.assertTrue(report["no_aec_filter_fitted"])
+                self.assertTrue(report[
+                    "prospective_prior_gate_0_67881_db_remains_failed"])
+                self.assertTrue((out/"playback-coherence.json").is_file())
+                self.assertTrue((out/"SHA256SUMS").is_file())
+                self.assertEqual(list(out.glob("*.wav")), [])
+                band = next(b for b in report["per_band_change"][0]["bands"]
+                            if b["band_hz"] == [1500, 4000])
+                self.assertGreater(
+                    band["linked_power_proxy_change_030_minus_015_db"], 5.0)
+                with self.assertRaises(FileExistsError):
+                    playback_coherence.analyze(low, high, out)
+                self.assertEqual(old_hashes, [aec.digest(p) for p in old_paths])
+                with (high/"microphone-aba-raw.wav").open("ab") as f:
+                    f.write(b"tamper")
+                with self.assertRaisesRegex(ValueError, "SHA256"):
+                    playback_coherence.analyze(
+                        low, high,
+                        audit/"voice-aec/M5-playback-coherence-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

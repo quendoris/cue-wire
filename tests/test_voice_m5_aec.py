@@ -26,6 +26,7 @@ import voice_m5_aba as aba
 import voice_m5_aba_spectrum as aba_spectrum
 import voice_m5_refcoherence as refcoherence
 import voice_m5_frozen_heldout as frozen_heldout
+import voice_m5_doubletalk_gate as doubletalk_gate
 
 RATE = aec.RATE
 
@@ -597,6 +598,91 @@ class M5Tests(unittest.TestCase):
             capture.main()
         self.assertEqual(err.exception.code, 2)
         run.assert_not_called()
+
+    def test_doubletalk_gate_training_independent_of_future_voice(self):
+        """Changing voice after 12s MUST NOT change the frozen FIR."""
+        rng = np.random.default_rng(88552)
+        reference = rng.normal(0, .06, 32*RATE)
+        lag = round(.18 * RATE)
+        mic = rng.normal(0, .0008, 33*RATE)
+        mic[lag:lag+len(reference)] += .20*reference
+        prediction, model = doubletalk_gate.fit_calibration(reference, mic, lag)
+        a = doubletalk_gate.cut(
+            doubletalk_gate.VALIDATE_S, lag, mic)
+        b = doubletalk_gate.cut(
+            doubletalk_gate.VALIDATE_S, lag, prediction)
+        self.assertGreater(
+            doubletalk_gate.erle_db(a, a-b), 8)
+        speech = mic.copy()
+        voice_start = lag + 13 * RATE
+        speech[voice_start:] += rng.normal(0, .02, len(speech)-voice_start)
+        prediction2, model2 = doubletalk_gate.fit_calibration(
+            reference, speech, lag)
+        np.testing.assert_array_equal(prediction, prediction2)
+        self.assertEqual(model, model2)
+        self.assertEqual(doubletalk_gate.TRAIN_S, (3.0, 9.0))
+        self.assertEqual(doubletalk_gate.VALIDATE_S, (10.0, 11.5))
+        self.assertEqual(doubletalk_gate.DOUBLE_TALK_S, (13.0, 28.0))
+        self.assertGreater(model["training_erle_db"], 8)
+        compared = doubletalk_gate.band_score(
+            reference[10*RATE:round(11.5*RATE)], a, a-b)
+        self.assertEqual(len(compared), 6)
+        self.assertEqual(doubletalk_gate.MIN_ERLE_DB, 1.0)
+
+    def test_doubletalk_gate_rehash_rejects_tamper_and_no_wav_output(self):
+        """End-to-end new numeric report, verified hashes, no source mutation."""
+        rng = np.random.default_rng(88553)
+        reference = rng.normal(0, .05, 32*RATE)
+        lag = round(.11 * RATE)
+        mic = rng.normal(0, .001, 33*RATE)
+        mic[lag:lag+len(reference)] += .20*reference
+        with tempfile.TemporaryDirectory() as root:
+            audit = Path(root)/".audit"
+            source = audit/"voice-aec/M5-doubletalk-001"
+            source.mkdir(parents=True)
+            x_path = source/"reference-sent.wav"
+            y_path = source/"microphone-raw.wav"
+            pcm16_file(x_path, reference)
+            pcm16_file(y_path, mic)
+            manifest = {
+                "schema": "cuewire-M5-paired-physical-capture-v1",
+                "status": "captured_for_offline_aec",
+                "speaker_only_calibration_s": 12,
+                "requested_duration_s": 32,
+                "mic_capture": {
+                    "backend": "pipewire",
+                    "mic_source_name": "alsa_input.usb-test-synthetic"},
+                "speaker_sink_name": "alsa_output.pci-test-synthetic",
+                "reference": {"sha256": aec.digest(x_path)},
+                "microphone": {"sha256": aec.digest(y_path)},
+            }
+            manifest_path = source/"manifest.json"
+            manifest_path.write_text(json.dumps(manifest))
+            before = [aec.digest(p) for p in (
+                x_path, y_path, manifest_path)]
+            with mock.patch.object(doubletalk_gate, "AUDIT", audit.resolve()):
+                output = audit/"voice-aec/M5-doubletalk-gate-001"
+                report = doubletalk_gate.study(source, output)
+                self.assertTrue(
+                    report["speaker_only_validation"][
+                        "passes_minimum_wholeband_erle"])
+                self.assertFalse(report["approved_for_virtual_mic"])
+                self.assertFalse(report["voice_preservation_validated"])
+                self.assertIsNotNone(
+                    report["double_talk_numerical_exploration"])
+                self.assertEqual(list(output.glob("*.wav")), [])
+                self.assertTrue((output/"doubletalk-gate.json").is_file())
+                self.assertTrue((output/"SHA256SUMS").is_file())
+                with self.assertRaises(FileExistsError):
+                    doubletalk_gate.study(source, output)
+                self.assertEqual(
+                    before, [aec.digest(p) for p in (
+                        x_path, y_path, manifest_path)])
+                with y_path.open("ab") as file:
+                    file.write(b"tamper")
+                with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
+                    doubletalk_gate.study(
+                        source, audit/"voice-aec/M5-doubletalk-gate-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

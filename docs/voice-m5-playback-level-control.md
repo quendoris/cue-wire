@@ -120,6 +120,94 @@ private \`manifest.json\` files, each with its
 \`SHA256SUMS\`. No WAV upload is needed. Keep originals
 as evidence; the two WAVs remain private under \`.audit\`.
 
+## Actual sequential playback-level A/B results — 2026-11-09
+
+Both real runs were supplied as paired \`manifest.json\` and
+\`SHA256SUMS\`, each independently checked for manifest integrity:
+
+| Per-stream volume | Actual manifest SHA256 | Physical microphone raw WAV SHA256 (from source manifest/SHA256SUMS) |
+| --- | --- | --- |
+| 0.15 | \`d38b12b6e5c4740deb9149dcfd43d0c49610ad4d9a098e96da425e4ae40786cf\` | \`f895567b0abe53612ee20385435d31577066f2f1589bad25b1af98b980adc30b\` |
+| 0.30 | \`3c0b6c2ba4468b84edd9fb550251277c62bd1a6ec57dc262f08818922ac9f9f4\` | \`5c9fa9b70b2c23e8c62dac5d1b17dc3e9106593af8f5e5754b05ee69013ccb50\` |
+
+**These uploaded files do NOT contain the original microphone WAVs**.
+The two WAV digests match between the submitted \`SHA256SUMS\` and
+their manifests, but independent byte-for-byte WAV rehashing
+is not possible without the RAW files.
+
+Both have \`status=captured_aba_for_noise_diagnostics\`,
+explicit identical physical mic and speaker names and
+sample spec \`s16le 1ch 48000Hz\`, the same 20s
+digital reference
+\`afd3b0ea1141147d6df284bfab62d2a9c9adc579053cfbea8c35559f2e94aa90\`,
+0 clipped mic samples, mic WAV duration 36.0533s and
+36.0747s respectively, and near-identical
+playback startup 8.0267 and 8.0224s after recorder launch.
+The 20s playback wall times were 20.0504 and 20.0520s.
+No AEC or voice was processed.
+
+**Total/phase power levels, dBFS:**
+
+| Metric | 0.15 | 0.30 | Change |
+| --- | ---: | ---: | ---: |
+| All mic samples, RMS | -58.201 | -56.888 | +1.313 |
+| Speaker OFF combined (mean of pre/post powers) | -58.56368 | -57.62583 | +0.93785 |
+| Speaker ON, selected interior | -57.84618 | -56.01336 | **+1.83282** |
+| ON minus combined OFF | +0.71750dB | +1.61247dB | +0.89497dB |
+| ON half-second-window median | -57.92998 | -56.01541 | +1.91457 |
+| Pre-OFF RMS | -57.95061 | -57.20516 | +0.74545 |
+| Post-OFF RMS | -59.27774 | -58.09165 | +1.18609 |
+| Pre-OFF median | -58.28488 | -57.28505 | +0.99983 |
+| Post-OFF median | -59.29004 | -58.84268 | +0.44736 |
+
+The OFF background is NOT constant: in the 0.15
+take, post-OFF mean-power RMS is **1.32713dB lower**
+than pre-OFF (medians: **1.00516dB** lower).
+In the 0.30 take, post-OFF is **0.88649dB lower**
+(medians: **1.55763dB** lower). There are short
+high-energy windows both while music plays and in
+supposedly speaker-OFF intervals (e.g. -55.29183dBFS
+in one post-OFF 0.30 window).
+
+**Conditional engineering estimate, NOT a measured isolated
+speaker-echo fraction:** assuming the arithmetic mean of
+two OFF-phase mean powers accurately represents independent
+stationary background throughout the ON interval, the
+extra ON power estimate
+\`P_on - P_off\` increases by **3.106x in power**
+(**+4.922dB**) as \`pw-play\` level goes from
+0.15 to 0.30. The nominal per-stream amplitude
+doubling corresponds to **+6.021dB in power level**
+for a pure linear speaker component. The discrepancy
+cannot be assigned to a particular nonlinearity:
+the OFF baseline itself varies within and across
+takes, microphone DSP/AGC is unmeasured, and
+speaker playback may not scale identically.
+
+The raw observations support that changing the
+isolated playback gain changes the physical mic
+signal in the expected direction, with ON increasing
+more than baseline OFF. They DO NOT prove that
+physical speaker SPL doubled, that speaker 60% was
+different in the historical experiments, that
+AEC ERLE should increase in a monotone fashion,
+or that voice quality is established.
+
+**Next experiment, if needed:** use one uninterrupted
+mic recording with quiet → .15 playback → quiet →
+.30 playback → quiet to compare levels and recover
+OFF baseline trends inside the SAME run. Better
+still, measure a known reference-correlated
+component separately from total raw RMS.
+A two-take chronological A/B without repeats
+cannot exclude ambient drift and transient noise;
+the above should not be promoted into a causal
+volume attribution.
+
+The prospective **0.67881dB FAIL** and M4 approved
+voice master remain unchanged. No more retrospective
+threshold changes or AEC filter tuning.
+
 ## Interpretation
 
 Compare on/off RMS and background stability; use

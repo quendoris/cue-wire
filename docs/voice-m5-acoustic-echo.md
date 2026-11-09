@@ -70,6 +70,105 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 new frozen FIR holdout: source-code readiness (not yet measured on real PCM)
+
+New `tools/voice_m5_frozen_heldout.py` runs the first controlled
+**train-once / heldout** test of the reference-conditioned echo
+cancellation model on the already saved, immutable M5-ABA-001
+microphone and verified M5-006 digital reference.
+
+The prior M5 coherence report was **M5-reference-coherence-002**;
+its non-overlapping second window has already been *inspected* in a
+previous exploratory analysis. Therefore these new measurements are
+**research heldout for parameter fitting**, not a fully blind or
+independently replicated validation of the overall development
+process. Avoid promoting this single heldout result to a production
+AEC guarantee.
+
+### Fixed protocol, no trial-and-error candidate search
+
+- Reference source: `M5-006/reference-sent.wav` loaded through the
+  immutable source link in the M5-ABA-001 manifest; all WAVs and
+  both manifests must match their SHA256s.
+- **Alignment:** initial 1.0–3.7 s of reference, bandpass
+  1500–4000 Hz, via previously tested
+  `voice_m5_refcoherence.band_lag`.
+- **Training:** reference 3.0–9.0 s, physical microphone with
+  measured fixed sample offset. Fit one 120-ms FIR using the
+  same regularized Wiener/CSD model as the previous M5
+  implementation (8192 FFT, ridge factor **0.02**, final
+  8-ms impulse taper). FIR is causal starting about
+  10 ms before the strongest alignment peak.
+- **Gain:** one scalar determined on **training samples only**,
+  never on the evaluation interval.
+- **Heldout:** reference 10.0–16.0 s, evaluate the **frozen**
+  model with no retiming, refitting, adaptation or gain adjustment.
+  A full second separates training from heldout.
+- **Outputs:** original vs residual mic RMS, heldout
+  whole-band and band-specific ERLE; magnitude-squared coherence
+  with the reference BEFORE and AFTER subtraction. Both
+  coherence variants use **unchanged original microphone PSD
+  weights** or unchanged reference PSD weights for a fair
+  within-band comparison. Record pre/post median coherence too.
+- **Controls:** physical speaker-OFF intervals, sample/peak
+  levels, immutable input hashes, source/device/volume identity.
+  Predicted echo in OFF should be zero **by construction**;
+  that is not a test of speech preservation.
+- **No processed audio is written**, and no speaker/microphone
+  hardware is opened. This does **not** change the original
+  AEC >=1 dB fail-closed gate, and success in a no-voice test
+  never authorizes real-time processing.
+
+Only one preset is tested, to avoid inflating significance
+by choosing the best of many models after seeing heldout
+results. Report potentially **negative ERLE**, higher
+post-cancellation coherence, or unsafe levels as such;
+never silently discard a failed candidate.
+
+### Local run (no music playback and no new capture)
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_frozen_heldout.py \
+  --capture .audit/voice-aec/M5-ABA-001 \
+  --out .audit/voice-aec/M5-frozen-aec-heldout-001
+
+cd .audit/voice-aec/M5-frozen-aec-heldout-001
+sha256sum -c SHA256SUMS
+~~~
+
+Report: `frozen-aec-heldout.json` (JSON metrics only) and
+`SHA256SUMS`. Choose a NEW output identifier if
+`M5-frozen-aec-heldout-001` already exists; never overwrite
+a prior study.
+
+Two additional synthetic regression tests ensure that
+(i) changing only the *future heldout mic samples* does not
+change the predicted echo filter or training metrics and
+(ii) the end-to-end offline report preserves audio hashes,
+rejects source tampering and writes no WAV. There are
+**21 tests** in `tests/test_voice_m5_aec.py` after
+this change; local execution is still required.
+
+User should send the resulting
+`M5-frozen-aec-heldout-001/frozen-aec-heldout.json`
+and optionally the console test summary. No private
+raw music or voice upload is required.
+
+If the measured heldout coherence drops substantially in
+1500–4000 Hz and the residual stays near the observed
+OFF-noise spectrum, investigate independent controlled
+double-talk speech-preservation tests; if coherence remains
+high or ERLE becomes negative, investigate time variation,
+nonlinearity and acoustic-response fitting with new
+independent calibration, not by lowering the safety gate.
+
 ## M5 reference-conditioned ABA report: actual run -002 (2026-11-08)
 
 User corrected the output-directory identifier:

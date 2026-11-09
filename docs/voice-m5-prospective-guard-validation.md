@@ -312,6 +312,91 @@ metadata. No private WAV upload is needed for that
 manifest-level check.
 
 
+### Corrected M5-lag-postmortem-003: actual 27 peaks, checksum verified
+
+The user reran the diagnostic after the 3ms/3s exclusion
+bug was fixed. Both uploaded \`lag-postmortem.json\` and
+\`SHA256SUMS\` were read; the independently computed
+report SHA256 agrees exactly:
+
+\`81615df066df8a740162f13ae972f880c30ad6bdd8eaeedb9262b9416e3d38d7\`.
+
+- The corrected report has **3 separated peaks in each of 9
+  early-window × spectral-band combinations** (27 total).
+  All entries have nonnull first-vs-second margins.
+- The immutable source and original failed guarded report
+  digests match the preceding prospective failed capture,
+  so this is not a new physical recording or model refit.
+- The **0.67881 dB** guarded wholeband speaker-only heldout
+  ERLE remains an unmodified **FAIL**.
+
+**Top-two correlation peaks** (lag in milliseconds, absolute
+normalized correlation; source report retains signed values):
+
+| Band | 0.8–2.3s | 3.0–4.5s | 6.0–7.5s |
+| --- | --- | --- | --- |
+| Fullband | 281.3125 (.1211), 294.3958 (.0899) | 281.2917 (.1354), 294.3750 (.0905) | 281.0000 (.1328), 291.1875 (.1278) |
+| 500–1500Hz | 282.2708 (.3024), 290.3958 (.2766) | 282.2083 (.2501), 290.3333 (.2409) | 282.1667 (.3781), 306.4792 (.3317) |
+| 1500–4000Hz | 281.2917 (.3883), 289.3750 (.2590) | 281.2708 (.4086), 289.1458 (.2787) | 281.2500 (.3514), 285.3333 (.2843) |
+
+The 1500–4000Hz primary lag varies by only
+**0.04167ms** (two 48kHz samples) among early windows.
+Absolute correlation advantage over the next
+3ms-separated peak is **0.129378, 0.129877,
+0.067132**: measurable, but the peak is not
+"unambiguously unique" in a statistical sense.
+In 500–1500Hz the corresponding advantage is only
+**0.025832, 0.009160, 0.046436**, so substantial
+alternate candidates exist.
+
+First two low-mid peaks on windows 0.8–2.3s and
+3.0–4.5s differ by **8.125ms**; the top high-mid
+peaks in the first two windows differ by
+**8.08333ms** and **7.875ms**. A periodic
+source with period ~8.1ms has repeating structure
+around **123Hz**, compatible with musical pitch/
+harmonics; it is NOT a measured separate room
+reflection or the confirmed cause of the
+underperforming AEC. Frequency-dependent
+filtering/group delay and room response may
+also contribute to peak shifts. The overall
+broadband correlations remain low (~0.12–0.14),
+and the three windows do not prove hardware
+clock synchronization or rule out slow phase
+variation.
+
+Crucial nuance: on the third fullband window the
+top peak is **281.0000ms (positive r +0.132763)**,
+while original committed lag 281.29167ms has
+**negative r -0.116396**. A few samples can
+change the sign of a broadband music correlation;
+the frequency-limited peaks are more stable.
+This is a measurement of the actual alignment
+objective, not a proposal to retime the already
+frozen model.
+
+**Interpretation preserved:** (1) diagnostic code
+now produces the intended complete alternative-peak
+list; (2) stable high-mid primary lag suggests that
+a large early timing jump is not the simplest
+explanation; (3) other bands and broadband have
+competing harmonic peaks; (4) no cause of low
+wholeband ERLE is yet established. Avoid selecting
+the best peak from these data to retroactively
+convert a failed prospective holdout into a PASS.
+
+The next needed evidence is the **actual new capture's
+\`M5-doubletalk-002/manifest.json\`**, not another
+WAV recording. The report itself lists only
+source digests and timing/correlation statistics;
+it lacks the capture's device/gain/playback
+metadata needed to check the hardware/session
+conditions against the prior 5.73176dB successful
+take. Without that manifest, do not claim a
+particular hub, gain setting, mic position,
+PipeWire route, firmware AGC, or speaker level
+caused the difference.
+
 ### Postmortem alternative-peak calculation bug — fixed, 2026-11-09
 
 The first uploaded lag postmortem returned only ONE

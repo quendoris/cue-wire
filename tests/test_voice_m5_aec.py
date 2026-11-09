@@ -33,6 +33,7 @@ import voice_m5_lag_postmortem as lag_postmortem
 import voice_m5_early_cross_take as cross_take
 import voice_m5_playback_coherence as playback_coherence
 import voice_m5_echo_floor as echo_floor
+import voice_m5_off_floor_windows as off_windows
 
 RATE = aec.RATE
 
@@ -242,7 +243,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_lag_postmortem.py",
                        "voice_m5_early_cross_take.py",
                        "voice_m5_playback_coherence.py",
-                       "voice_m5_echo_floor.py"):
+                       "voice_m5_echo_floor.py",
+                       "voice_m5_off_floor_windows.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -1406,6 +1408,100 @@ class M5Tests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "SHA256"):
                     echo_floor.analyze(
                         lo, hi, audit/"voice-aec/M5-echo-floor-002")
+
+    def test_off_floor_windows_distinguish_transient_from_median_shift(self):
+        """One high-frequency 0.3s burst must not masquerade as steady floor."""
+        rng = np.random.default_rng(451122)
+        pcm = rng.normal(0, .0002, 36*RATE)
+        a, b = round(2.1*RATE), round(2.4*RATE)
+        t = np.arange(b-a) / RATE
+        pcm[a:b] += .025*np.sin(2*np.pi*11000*t)
+        before = off_windows.split_level(pcm, 2.0, 7.0)
+        after = off_windows.split_level(pcm, 30.0, 35.0)
+        self.assertEqual(before["num_windows"], 10)
+        high_pre = next(x for x in before["band_windows"]
+                        if x["band_hz"] == [8000, 16000])
+        high_post = next(x for x in after["band_windows"]
+                         if x["band_hz"] == [8000, 16000])
+        self.assertGreater(
+            high_pre["max_half_second_power_dbfs"]-
+            high_pre["median_half_second_power_dbfs"], 15)
+        self.assertGreater(
+            high_pre["maximum_window_fraction_of_phase_power"], .9)
+        self.assertEqual(high_pre["count_windows_over_median_plus_6_db"], 1)
+        self.assertLess(high_post["maximum_window_fraction_of_phase_power"], .2)
+        self.assertLess(abs(
+            high_pre["median_half_second_power_dbfs"]-
+            high_post["median_half_second_power_dbfs"]), 2)
+        with self.assertRaisesRegex(ValueError, "exactly 5s"):
+            off_windows.split_level(pcm, 2., 6.)
+
+    def test_off_floor_windows_only_numeric_and_strict_source_hash(self):
+        """Two existing captures remain intact, no holdout or audio output."""
+        rng = np.random.default_rng(451123)
+        with tempfile.TemporaryDirectory() as temp:
+            audit = Path(temp)/".audit"
+            digital = audit/"voice-aec/M5-006"
+            lo = audit/"voice-aec/M5-level-015-001"
+            hi = audit/"voice-aec/M5-level-030-001"
+            for folder in (digital, lo, hi):
+                folder.mkdir(parents=True)
+            ref_file = digital/"reference-sent.wav"
+            pcm16_file(ref_file, rng.normal(0, .05, 20*RATE))
+            ref_manifest = digital/"manifest.json"
+            ref_manifest.write_text('{"synthetic":true}')
+            for folder, volume in ((lo, .15),(hi, .30)):
+                mic_file=folder/"microphone-aba-raw.wav"
+                pcm16_file(mic_file,rng.normal(0,.0005,36*RATE))
+                meta={
+                    "schema":"cuewire-M5-continuous-ABA-control-v1",
+                    "status":"captured_aba_for_noise_diagnostics",
+                    "source_mic_sample_spec":"s16le 1ch 48000Hz",
+                    "source_mic_name":"alsa_input.usb-synthetic",
+                    "speaker_sink_name":"alsa_output.pci-synthetic",
+                    "speaker_play_volume":volume,
+                    "reference_source_capture":str(digital),
+                    "reference_source_manifest_sha256":aec.digest(ref_manifest),
+                    "reference_wav_sha256":aec.digest(ref_file),
+                    "reference_duration_s":20.0,
+                    "requested_speaker_off_before_s":8,
+                    "requested_speaker_off_after_s":8,
+                    "microphone":{"sha256":aec.digest(mic_file)}
+                }
+                (folder/"manifest.json").write_text(json.dumps(meta))
+            files=[ref_file,ref_manifest,
+                   lo/"manifest.json",lo/"microphone-aba-raw.wav",
+                   hi/"manifest.json",hi/"microphone-aba-raw.wav"]
+            old=[aec.digest(p) for p in files]
+            with (mock.patch.object(off_windows,"AUDIT",audit.resolve()),
+                  mock.patch.object(playback_coherence,"AUDIT",audit.resolve()),
+                  mock.patch.object(off_windows,"LOW_MANIFEST_SHA",aec.digest(lo/"manifest.json")),
+                  mock.patch.object(off_windows,"HIGH_MANIFEST_SHA",aec.digest(hi/"manifest.json")),
+                  mock.patch.object(off_windows,"LOW_MIC_SHA",aec.digest(lo/"microphone-aba-raw.wav")),
+                  mock.patch.object(off_windows,"HIGH_MIC_SHA",aec.digest(hi/"microphone-aba-raw.wav")),
+                  mock.patch.object(off_windows,"REFERENCE_SHA",aec.digest(ref_file)),
+                  mock.patch.object(off_windows,"SOURCE_MANIFEST_SHA",aec.digest(ref_manifest)),
+                  mock.patch.object(playback_coherence,"REFERENCE_SHA",aec.digest(ref_file)),
+                  mock.patch.object(playback_coherence,"SOURCE_MANIFEST_SHA",aec.digest(ref_manifest))):
+                output=audit/"voice-aec/M5-off-floor-windows-001"
+                report=off_windows.analyze(lo,hi,output)
+                self.assertTrue((output/"off-floor-windows.json").exists())
+                self.assertTrue((output/"SHA256SUMS").exists())
+                self.assertEqual(list(output.glob("*.wav")),[])
+                self.assertFalse(report["aec_fir_fitted_or_modified"])
+                self.assertFalse(report["voice_preservation_validated"])
+                self.assertTrue(report[
+                    "historical_0_67881_db_prospective_gate_remains_failed"])
+                self.assertEqual(
+                    len(report["high_volume"]["before_after_band_comparison"]),6)
+                self.assertEqual(old,[aec.digest(p) for p in files])
+                with self.assertRaises(FileExistsError):
+                    off_windows.analyze(lo,hi,output)
+                with (hi/"microphone-aba-raw.wav").open("ab") as fd:
+                    fd.write(b"tamper")
+                with self.assertRaisesRegex(ValueError,"SHA256"):
+                    off_windows.analyze(
+                        lo,hi,audit/"voice-aec/M5-off-floor-windows-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

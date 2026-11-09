@@ -7,8 +7,9 @@ through pw-play, so its samples provide the digital source for offline AEC.
 The digital file is NOT a sample-clock-synchronized hardware monitor.
 The reference-to-microphone lag MUST be estimated later.
 
-The first 5 seconds after playback launch are intended to contain only
-the speaker signal. After that, the operator reads text over the music.
+The first configurable speaker-only calibration interval (default 5 seconds,
+up to 14 seconds for extended experiments) must contain NO operator speech.
+After that, the operator reads text over the music.
 No existing PipeWire source/default/sink/routes are changed and no new
 monitor or virtual microphone is created. No music or mic is uploaded.
 """
@@ -206,7 +207,7 @@ def watch_paired_streams(record, play, mic_file: Path, out: Path,
         time.sleep(0.04)
     report["capture_wav_bytes_observed_during_playback"] = observed_stream_bytes
     if not announcement:
-        raise RuntimeError("Playback ended before 5-second calibration/reading prompt")
+        raise RuntimeError("Playback ended before speaker-only calibration/reading prompt")
 
 
 
@@ -351,8 +352,8 @@ def main() -> None:
     args = parser.parse_args()
     if not 15 <= args.seconds <= 45:
         parser.error("--seconds must be 15..45")
-    if not 4 <= args.calibration_seconds <= 7 or args.seconds - args.calibration_seconds < 9:
-        parser.error("Need 4..7s calibration and >=9s readout")
+    if not 4 <= args.calibration_seconds <= 14 or args.seconds - args.calibration_seconds < 9:
+        parser.error("Need 4..14s speaker-only calibration and >=9s readout")
     if not math.isfinite(args.volume) or not 0.05 <= args.volume <= 0.6:
         parser.error("--volume must be 0.05..0.6 for safe first-pilot gain")
     try:

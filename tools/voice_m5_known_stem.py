@@ -21,6 +21,8 @@ import json
 import math
 import os
 from pathlib import Path
+import re
+import wave
 
 import numpy as np
 from scipy import signal
@@ -36,7 +38,7 @@ from voice_m5_refcoherence import band_lag
 VOICE_TARGET_RMS_DBFS = -39.0
 VOICE_MIN_SECONDS = 3.0
 VOICE_MAX_SECONDS = 6.0
-VOICE_OFFSET_S = 0.0
+VOICE_OFFSET_S = 6.0  # Older M4 ALSA recording protocol starts with 5s silence.
 BANDS = ((70, 180), (180, 500), (500, 1500),
          (1500, 4000), (4000, 8000), (8000, 16000))
 
@@ -106,7 +108,90 @@ def error_by_band(stem: np.ndarray, cases: dict[str, np.ndarray]) -> list[dict]:
     return out
 
 
-def analyze(aba_dir: Path, voice_dir: Path, output_dir: Path) -> dict:
+def validate_m4_voice_manifest(manifest: dict) -> tuple[str, str, str]:
+    """Recognize the two real CueWire M4 recorder schemas; never relax SHA256.
+
+    The original M4/R0/ALSA capture used raw_wav/raw_sha256; the later
+    PipeWire RAW capture uses wav/wav_sha256. Unknown or rejected schemas
+    MUST NOT be treated as equivalent based solely on filename.
+    """
+    if manifest.get("status") != "recorded_unprocessed_raw":
+        raise ValueError("M4 voice RAW capture is not successfully recorded")
+    schema = manifest.get("schema")
+    if schema == "cuewire-M4-raw-alsa-v1":
+        if (manifest.get("source") != "physical_alsa_hw" or
+                not re.fullmatch(r"hw:\d{1,3},\d{1,3}",
+                                 str(manifest.get("device", ""))) or
+                not manifest.get("card_id")):
+            raise ValueError("M4 ALSA manifest lacks verified physical hardware provenance")
+        if manifest.get("raw_wav") != "raw.wav":
+            raise ValueError("M4 ALSA raw_wav must be exactly raw.wav")
+        processing = manifest.get("processing")
+        if not isinstance(processing, dict) or any(
+                processing.get(name) is not False for name in
+                ("aec", "denoise", "eq", "compression", "virtual_mic",
+                 "normalization", "monitoring")):
+            raise ValueError("M4 ALSA capture must have unprocessed recording metadata")
+        sha = manifest.get("raw_sha256")
+        kind = "physical_alsa_hw"
+    elif schema == "cuewire-M4-raw-capture-v2":
+        if (manifest.get("wav") != "raw.wav" or
+                not manifest.get("mic_node_name", "").startswith("alsa_input.")):
+            raise ValueError("M4 PipeWire capture must explicitly name a physical RAW mic")
+        processing = manifest.get("explicit_processing")
+        if not isinstance(processing, dict) or any(
+                processing.get(name) is not False for name in
+                ("aec", "denoise", "eq", "compression",
+                 "manual_gain_normalization", "playback", "virtual_microphone")):
+            raise ValueError("M4 PipeWire capture must have unprocessed recording metadata")
+        sha = manifest.get("wav_sha256")
+        kind = "physical_pipewire"
+    else:
+        raise ValueError(f"Unknown M4 capture schema: {schema!r}")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise ValueError("M4 voice RAW manifest has invalid SHA256")
+    meta = manifest.get("measurements")
+    if isinstance(meta, dict):
+        if (meta.get("clipped_samples") not in (None, 0) or
+                meta.get("rate") not in (None, RATE) or
+                meta.get("channels") not in (None, 1) or
+                meta.get("sample_width_bytes") not in (None, 2)):
+            raise ValueError("M4 capture measurements incompatible/clipped")
+    return sha, schema, kind
+
+
+def read_voice_excerpt(path: Path, start_seconds: float,
+                       max_seconds: float = VOICE_MAX_SECONDS) -> np.ndarray:
+    """Read only a bounded speech window, even for long 150s ALSA RAW takes.
+
+    M5's general read_wav is intentionally capped at 50s; ALSA M4
+    recorder can legitimately produce up to 300s, so avoid decoding
+    the whole file or rejecting a good long-voice recording.
+    """
+    if (not math.isfinite(start_seconds) or start_seconds < 0 or
+            start_seconds > 300 - VOICE_MIN_SECONDS):
+        raise ValueError("Invalid M4 speech excerpt start")
+    with wave.open(str(path), "rb") as input_wav:
+        info = (input_wav.getframerate(), input_wav.getnchannels(),
+                input_wav.getsampwidth(), input_wav.getcomptype())
+        if info != (RATE, 1, 2, "NONE"):
+            raise ValueError(f"Expected physical mono PCM16 48k for M4 RAW, got {info}")
+        total = input_wav.getnframes()
+        if not RATE <= total <= 300 * RATE:
+            raise ValueError("M4 RAW duration outside 1..300 seconds")
+        start = round(start_seconds * RATE)
+        frames = min(round(max_seconds*RATE), total-start)
+        if frames < round(VOICE_MIN_SECONDS*RATE):
+            raise ValueError("M4 voice RAW too short after initial calibration silence")
+        input_wav.setpos(start)
+        raw = input_wav.readframes(frames)
+        if len(raw) != frames*2:
+            raise ValueError("M4 RAW truncated during selected speech excerpt")
+    return np.frombuffer(raw, dtype="<i2").astype(np.float64) / 32768.0
+
+
+def analyze(aba_dir: Path, voice_dir: Path, output_dir: Path,
+            voice_start_s: float = VOICE_OFFSET_S) -> dict:
     # Reuse the audited M5-ABA-001 source and immutable M5-006
     # reference link verification. No audio device is ever opened.
     ref_path, speaker_mic_path, hashes, aba, manifest_paths = verify_inputs(
@@ -118,21 +203,17 @@ def analyze(aba_dir: Path, voice_dir: Path, output_dir: Path) -> dict:
     voice_manifest_path = voice_dir/"manifest.json"
     voice_manifest = json.loads(
         voice_manifest_path.read_text(encoding="utf-8"))
-    if (voice_manifest.get("schema") != "cuewire-M4-raw-capture-v2"
-            or voice_manifest.get("status") != "recorded_unprocessed_raw"
-            or voice_manifest.get("wav") != "raw.wav"):
-        raise ValueError("Require a successfully recorded M4 voice-only RAW manifest")
-    if not voice_manifest.get("mic_node_name", "").startswith("alsa_input."):
-        raise ValueError("M4 voice source must be an explicit physical microphone")
+    expected_voice_sha, voice_schema, voice_backend = (
+        validate_m4_voice_manifest(voice_manifest))
     voice_path = voice_dir/"raw.wav"
     hashes["voice_manifest"] = digest(voice_manifest_path)
     hashes["known_voice_raw"] = digest(voice_path)
-    if hashes["known_voice_raw"] != voice_manifest.get("wav_sha256"):
-        raise ValueError("Known voice RAW SHA256 does not match its M4 manifest")
+    if hashes["known_voice_raw"] != expected_voice_sha:
+        raise ValueError("Known voice RAW SHA256 does not match M4 manifest")
 
     reference = read_wav(ref_path)
     physical_speaker_mic = read_wav(speaker_mic_path)
-    voice = read_wav(voice_path)
+    voice = read_voice_excerpt(voice_path, voice_start_s)
     if np.max(np.abs(voice)) >= 32767/32768:
         raise ValueError("Clipped clean speech control; reject synthetic mix")
     lag, alignment = band_lag(
@@ -151,10 +232,8 @@ def analyze(aba_dir: Path, voice_dir: Path, output_dir: Path) -> dict:
             f"Original frozen speaker-only holdout below 1 dB: "
             f"{speaker_only_erle:.5f} dB. No voice injection permitted.")
 
-    voice_begin = round(VOICE_OFFSET_S*RATE)
-    voice_samples = min(round(VOICE_MAX_SECONDS*RATE),
-                        len(voice)-voice_begin,
-                        len(speaker_only))
+    voice_begin = 0  # read_voice_excerpt has already skipped initial silence
+    voice_samples = min(len(voice), len(speaker_only))
     if voice_samples < round(VOICE_MIN_SECONDS*RATE):
         raise ValueError("M4 voice RAW insufficient for >=3s clean stem")
     original_voice = voice[voice_begin:voice_begin+voice_samples]
@@ -235,6 +314,11 @@ def analyze(aba_dir: Path, voice_dir: Path, output_dir: Path) -> dict:
         "heldout_reference_time_s": list(HELDOUT_REFERENCE_S),
         "injected_voice_target_rms_dbfs": VOICE_TARGET_RMS_DBFS,
         "voice_original_rms_dbfs": round(input_level, 5),
+        "voice_source_capture_schema": voice_schema,
+        "voice_source_capture_backend": voice_backend,
+        "voice_excerpt_start_s": round(voice_start_s, 5),
+        "voice_excerpt_sampling_policy":
+            "fixed user-selectable offset; original M4 ALSA protocol starts with 5s silence",
         "voice_rescaling_gain": round(scale, 8),
         "injected_voice_seconds": round(voice_samples/RATE, 5),
         "known_voice_stem_metrics": results,
@@ -285,9 +369,11 @@ def main() -> None:
                    help="Existing M4 RAW voice-only folder with manifest.json")
     p.add_argument("--out", required=True, type=Path,
                    help="NEW private sibling of M5-ABA capture")
+    p.add_argument("--voice-start-s", type=float, default=VOICE_OFFSET_S,
+                   help="Speech-only excerpt start in M4 RAW; default 6s skips initial 5s silence")
     args = p.parse_args()
     try:
-        analyze(args.capture, args.voice, args.out)
+        analyze(args.capture, args.voice, args.out, args.voice_start_s)
     except (ValueError, OSError, RuntimeError, KeyError) as e:
         p.exit(1, "ERROR: "+str(e)+"\n")
 

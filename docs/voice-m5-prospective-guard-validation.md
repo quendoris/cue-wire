@@ -312,6 +312,74 @@ metadata. No private WAV upload is needed for that
 manifest-level check.
 
 
+### Offline cross-take calibration comparison — fixed and source-hash-pinned
+
+Added \`tools/voice_m5_early_cross_take.py\` to compare
+**only reference-time 0.8–2.3s, 3.0–4.5s and 6.0–7.5s**
+from the **same digitally identical music reference**
+in the two physical recordings. The analysis addresses the
+hypothesis of changed physical mic-level/background versus
+changed linear correlation with the speaker source, but
+cannot definitively separate electronic noise, room noise,
+acoustic path transfer and microphone firmware AGC.
+
+Inputs are strictly pinned to the SHA256s of the two
+original physical capture manifests, both microphone RAW WAVs
+and the identical exact digital PCM reference. Both captured
+devices/volume must also match; the code refuses any modified
+file and any existing output directory. The original
+**4690-frame** and prospective **13502-frame**
+correlation delays are only used as fixed data indices.
+There is NO lag search, FIR fitting, gain optimization,
+AEC subtractions, validation-holdout inspection, doubletalk
+analysis, voice export or audio output.
+
+Report for each early speaker-only window:
+
+- Original music RMS, mic RMS and physical mic peak;
+- observed zero-shift signed reference/mic correlation
+  at each take's original frozen timing;
+- per-band source/mic RMS levels, mic-PSD-weighted
+  magnitude-squared spectral coherence for 20–70,
+  70–180, 180–500, 500–1500, 1500–4000, 4000–8000
+  and 8000–16000Hz;
+- per-band *new minus old* mic RMS and coherence
+  differences; no inferred clean voice quality.
+
+All three windows avoid the heldout speaker-only
+**10–11.5s** interval; results cannot retroactively
+change the prospectively registered **0.67881 dB FAIL**.
+Raw PCM input remains private and is not committed.
+
+Run the **33** regression tests (two new cross-take tests
+verify source-pin failure, tampering, and numeric-only
+output) then run the offline diagnostic:
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_early_cross_take.py \
+  --old-capture .audit/voice-aec/M5-doubletalk-001 \
+  --new-capture .audit/voice-aec/M5-doubletalk-002 \
+  --out .audit/voice-aec/M5-cross-take-calibration-001
+
+cd .audit/voice-aec/M5-cross-take-calibration-001
+sha256sum -c SHA256SUMS
+~~~
+
+No additional physical recording is necessary. The output
+contains only \`cross-take-calibration.json\` and
+\`SHA256SUMS\`. If \`M5-cross-take-calibration-001\`
+already exists, choose a new output folder; never
+overwrite or edit prior numerical experiments.
+**Tests have not yet been executed on the user's machine**.
+Share the JSON report for the next review.
+
 ### Physical capture manifest comparison: doubletalk-001 vs doubletalk-002
 
 The user supplied the **actual original M5-doubletalk-002 manifest**,

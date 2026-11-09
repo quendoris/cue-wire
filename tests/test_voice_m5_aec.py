@@ -30,6 +30,7 @@ import voice_m5_doubletalk_gate as doubletalk_gate
 import voice_m5_guarded_fir as guarded_fir
 import voice_m5_known_stem as known_stem
 import voice_m5_lag_postmortem as lag_postmortem
+import voice_m5_early_cross_take as cross_take
 
 RATE = aec.RATE
 
@@ -236,7 +237,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_frozen_heldout.py",
                        "voice_m5_guarded_fir.py",
                        "voice_m5_known_stem.py",
-                       "voice_m5_lag_postmortem.py"):
+                       "voice_m5_lag_postmortem.py",
+                       "voice_m5_early_cross_take.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -1055,6 +1057,113 @@ class M5Tests(unittest.TestCase):
                     lag_postmortem.analyze(
                         capture_dir, old_file,
                         audit/"voice-aec/M5-lag-postmortem-003")
+
+    def test_m5_early_cross_take_fixed_lag_does_not_fit_from_holdout(self):
+        """No timing search; exact old/new early mic coherence and noise."""
+        rng = np.random.default_rng(98010)
+        x = rng.normal(0, .055, 12*RATE)
+        y_old = rng.normal(0, .0006, 13*RATE)
+        y_new = rng.normal(0, .0006, 13*RATE)
+        lag_old, lag_new = 4690, 13502
+        y_old[lag_old:lag_old+len(x)] += .15*x
+        y_new[lag_new:lag_new+len(x)] += .02*x
+        first = cross_take.window_statistics(
+            x, y_old, lag_old, 3.0, 4.5)
+        second = cross_take.window_statistics(
+            x, y_new, lag_new, 3.0, 4.5)
+        self.assertGreater(
+            first["microphone_total_rms_dbfs"] -
+            second["microphone_total_rms_dbfs"], 7.0)
+        old_band = next(b for b in first["bands"]
+                        if b["hz"] == [1500, 4000])
+        new_band = next(b for b in second["bands"]
+                        if b["hz"] == [1500, 4000])
+        self.assertGreater(
+            old_band["mic_power_weighted_coherence"],
+            new_band["mic_power_weighted_coherence"])
+        self.assertEqual(first["frozen_original_lag_ms"],
+                         round(lag_old*1000/RATE, 5))
+        self.assertEqual(second["frozen_original_lag_ms"],
+                         round(lag_new*1000/RATE, 5))
+        with self.assertRaisesRegex(ValueError, "outside available WAV"):
+            cross_take.window_statistics(x, y_new, lag_new, 13., 14.)
+
+    def test_m5_early_cross_take_pinned_hashes_and_numeric_only(self):
+        """Two strictly pinned captures, no processing or output WAV."""
+        rng = np.random.default_rng(98011)
+        ref = rng.normal(0, .05, 32*RATE)
+        old_mic = rng.normal(0, .0008, 33*RATE)
+        new_mic = rng.normal(0, .0008, 33*RATE)
+        old_mic[cross_take.OLD_LAG_FRAMES:
+                cross_take.OLD_LAG_FRAMES+len(ref)] += .2*ref
+        new_mic[cross_take.NEW_LAG_FRAMES:
+                cross_take.NEW_LAG_FRAMES+len(ref)] += .04*ref
+        with tempfile.TemporaryDirectory() as root:
+            audit = Path(root)/".audit"
+            first = audit/"voice-aec/M5-doubletalk-001"
+            second = audit/"voice-aec/M5-doubletalk-002"
+            first.mkdir(parents=True)
+            second.mkdir(parents=True)
+            names = []
+            for folder, m in ((first, old_mic), (second, new_mic)):
+                xr = folder/"reference-sent.wav"
+                yr = folder/"microphone-raw.wav"
+                pcm16_file(xr, ref)
+                pcm16_file(yr, m)
+                names.extend([xr, yr])
+                meta = {
+                    "schema": "cuewire-M5-paired-physical-capture-v1",
+                    "status": "captured_for_offline_aec",
+                    "requested_duration_s": 32,
+                    "speaker_only_calibration_s": 12,
+                    "mic_capture": {
+                        "backend": "pipewire",
+                        "mic_source_name": "alsa_input.usb-microphone",
+                        "mic_source_id_at_start": 10788,
+                        "mic_source_sample_spec": "s16le 1ch 48000Hz",
+                    },
+                    "speaker_sink_name": "alsa_output.pci-speaker",
+                    "speaker_sink_id_at_start": 1836,
+                    "volume_pw_play": .30,
+                    "reference": {"frames": 32*RATE,
+                                  "sha256": aec.digest(xr)},
+                    "microphone": {"sha256": aec.digest(yr)}
+                }
+                mf = folder/"manifest.json"
+                mf.write_text(json.dumps(meta))
+                names.append(mf)
+            sha_before = [aec.digest(p) for p in names]
+            with (mock.patch.object(cross_take, "AUDIT", audit.resolve()),
+                  mock.patch.object(cross_take, "OLD_MANIFEST_SHA",
+                                    aec.digest(first/"manifest.json")),
+                  mock.patch.object(cross_take, "NEW_MANIFEST_SHA",
+                                    aec.digest(second/"manifest.json")),
+                  mock.patch.object(cross_take, "OLD_MIC_SHA",
+                                    aec.digest(first/"microphone-raw.wav")),
+                  mock.patch.object(cross_take, "NEW_MIC_SHA",
+                                    aec.digest(second/"microphone-raw.wav")),
+                  mock.patch.object(cross_take, "REFERENCE_SHA",
+                                    aec.digest(first/"reference-sent.wav"))):
+                out = audit/"voice-aec/M5-cross-take-calibration-001"
+                result = cross_take.compare(first, second, out)
+                self.assertEqual(
+                    result["status"],
+                    "postmortem_only_prospective_gate_still_failed")
+                self.assertEqual(len(result["comparisons"]), 3)
+                self.assertFalse(result["aec_fitting_or_retiming_performed"])
+                self.assertTrue(result["speech_doubletalk_not_analyzed"])
+                self.assertTrue((out/"cross-take-calibration.json").is_file())
+                self.assertTrue((out/"SHA256SUMS").is_file())
+                self.assertEqual(list(out.glob("*.wav")), [])
+                self.assertEqual(sha_before, [aec.digest(p) for p in names])
+                with self.assertRaises(FileExistsError):
+                    cross_take.compare(first, second, out)
+                with (second/"microphone-raw.wav").open("ab") as f:
+                    f.write(b"tamper")
+                with self.assertRaisesRegex(ValueError, "hash mismatch"):
+                    cross_take.compare(
+                        first, second,
+                        audit/"voice-aec/M5-cross-take-calibration-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

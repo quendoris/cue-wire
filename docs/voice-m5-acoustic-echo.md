@@ -70,6 +70,91 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 known-stem ALSA compatibility correction (2026-11-09)
+
+User's actual command used **M5-ABA-002** (rather than
+the documented example \`M5-ABA-001\`) and existing M4
+\`M4-R0-ALSA-007\`. The first run correctly produced no
+numeric report, but failed with:
+
+\`ERROR: Require a successfully recorded M4 voice-only RAW manifest\`
+
+**Root cause confirmed in our own repository code:** the
+original M4/R0 capture utility \`tools/voice_alsa_capture.py\`
+writes \`schema="cuewire-M4-raw-alsa-v1"\`,
+\`raw_wav="raw.wav"\`, \`raw_sha256=<SHA256>\`,
+\`source="physical_alsa_hw"\`, while the first version
+of \`voice_m5_known_stem.py\` erroneously required only
+the newer PipeWire \`cuewire-M4-raw-capture-v2\`
+format (\`wav\`, \`wav_sha256\`, \`mic_node_name\`).
+This was a schema mismatch, **not evidence the
+original physical M4 voice recording was damaged**.
+
+The known-stem analyzer now explicitly accepts both
+documented schemas, under separate strict validations:
+
+- ALSA v1 requires \`source=physical_alsa_hw\`,
+  \`device=hw:C,D\`, nonempty \`card_id\`,
+  \`raw_wav=raw.wav\`, all original processing flags
+  false and a valid 64-digit \`raw_sha256\`;
+- PipeWire v2 requires an explicit physical
+  \`alsa_input.*\` node, \`wav=raw.wav\`,
+  disabled processing flags, and valid
+  \`wav_sha256\`;
+- neither schema may be in a rejected state,
+  silently substitute a different RAW file or
+  bypass SHA256 verification. Both use exact
+  PCM16/48k/mono input validation.
+
+**Secondary correction:** the original M4 ALSA capture
+prints "Start with 5s silence". The first known-stem
+code would have taken the first six seconds of that
+recording, which is NOT a representative six-second
+speech stem. The fixed script now selects a six-second
+excerpt beginning at **6.0 seconds by default**
+(\`--voice-start-s 6\`), with an explicit opt-in
+alternate offset if the user's actual speech starts
+later. It reads only this bounded section from even
+a legitimate **50–300-second** M4 ALSA WAV,
+rather than rejecting it because M5's general
+WAV reader has a conservative 50-second cap.
+
+The original M4 and M5 RAW recordings remain
+immutable; a retry needs **no new recording**.
+A successful run writes only a fresh \`known-stem.json\`
+and \`SHA256SUMS\`, still expressly NOT certifying
+physical double-talk preservation.
+
+**Corrected local command, using the user's actual ABA directory:**
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_known_stem.py \
+  --capture .audit/voice-aec/M5-ABA-002 \
+  --voice .audit/voice-captures/M4-R0-ALSA-007 \
+  --voice-start-s 6 \
+  --out .audit/voice-aec/M5-known-stem-001
+
+cd /data/cue-wire/.audit/voice-aec/M5-known-stem-001
+sha256sum -c SHA256SUMS
+~~~
+
+If \`M5-known-stem-001\` already exists, choose a
+new output identifier and change the last \`cd\`
+accordingly; **never overwrite**. This corrective
+commit includes a regression using the REAL ALSA
+manifest structure, rejected/tampered schemas,
+the newer PipeWire format and an example 52s
+M4 WAV to prove bounded excerpt extraction.
+There are now **29 M5 test methods** and local
+execution is needed before accepting this fix.
+
 ## Next M5 control: exact clean M4 speech stem digitally injected into physical ABA speaker-only take
 
 A new research-only, **JSON-only** tool,

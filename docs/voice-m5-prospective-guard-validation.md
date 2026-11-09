@@ -237,3 +237,76 @@ never alter the 0.67881 dB heldout result or reuse
 capture's \`manifest.json\` would also permit checking
 device, gain and playback timestamps against prior
 runs.
+
+
+### Read-only diagnostic after the FAILED new take
+
+New \`tools/voice_m5_lag_postmortem.py\` was added after
+the negative result. It is **not** part of the registered
+acceptance test and does not modify the result or tune the
+model.
+
+It requires the original new-take manifest, both physically
+recorded WAVs under the existing local \`.audit\` directory,
+and the original already-failed \`guarded-fir.json\`. It
+SHA256-checks both WAVs and the manifest against the failed
+report, and refuses if those files differ or the earlier
+1dB gate did not FAIL.
+
+It computes correlations for three EARLY
+speaker-only reference intervals **0.8–2.3, 3.0–4.5, and
+6.0–7.5 seconds**, in the full band, 500–1500Hz
+and 1500–4000Hz. For each it reports normalized
+correlation at the ORIGINAL committed lag (**281.29167ms**)
+and the top three separated lag peaks in the
+fixed 0–2s search. The source material used for
+these extra probes ends before the operator starts
+speaking; it neither fits an acoustic filter nor
+uses the 10–11.5s validation interval.
+
+**The diagnostic peaks must never be substituted back
+into this prospective result to convert FAIL to PASS.**
+Their purpose is to determine whether the original lag
+was consistent across several early observation windows,
+and whether speaker-reference correlation changed
+between bands. Ambiguous music-correlations and
+process-start jitter are recognized limitations.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_lag_postmortem.py \
+  --capture .audit/voice-aec/M5-doubletalk-002 \
+  --report .audit/voice-aec/M5-guarded-fir-prospective-002/guarded-fir.json \
+  --out .audit/voice-aec/M5-lag-postmortem-002
+
+cd .audit/voice-aec/M5-lag-postmortem-002
+sha256sum -c SHA256SUMS
+~~~
+
+The example report folder assumes the documented
+\`M5-guarded-fir-prospective-002\` name was actually used;
+if different, locate the existing \`guarded-fir.json\`
+and replace ONLY \`--report\` with its real path.
+Likewise use the actual capture folder and NEW output
+identifier. Do not overwrite or move prior records.
+The new tool outputs only \`lag-postmortem.json\`
+and \`SHA256SUMS\`.
+
+Two synthetic tests were added (31 total in
+\`tests/test_voice_m5_aec.py\`), checking that a known
+lag is recovered on an independent early interval,
+input files are unmodified, no WAV is written, and
+an already failed original gate is not overridden.
+Local tests have not yet been executed.
+
+Please also provide the new capture's actual
+\`M5-doubletalk-002/manifest.json\` to audit source,
+playback duration, physical microphone and timing
+metadata. No private WAV upload is needed for that
+manifest-level check.

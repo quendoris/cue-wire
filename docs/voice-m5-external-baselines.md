@@ -316,6 +316,148 @@ library or a source hash does not match,
 the exact error, then review the adapter.
 The latest native AEC run has not yet happened.
 
+## Actual first native SpeexDSP result and mandatory zero-farend control (2026-11-09)
+
+The user supplied actual \`M5-speex-aec-only-001/speex-aec-only.json\`
+and \`SHA256SUMS\`. The complete report independently
+SHA256-checks as
+\`75ca166a0439bf5e5345a567a569549aaf81ef1f95affdc9aedcb7e929adfc01\`,
+matching their checksum. The report's six input
+SHA256 identifiers are identical to the existing
+0.15 and 0.30 physical WAV/manifest and M5-006
+music source digests. We rehashed the report, not
+unuploaded private physical WAV bytes.
+The native library was **libspeexdsp.so.1**,
+using real 10ms frames at 48kHz and 120ms tail.
+The Speex preprocessor/noise suppressor and AGC
+were not enabled, but the native AEC has internal
+signal processing as noted below.
+
+### Same 10–16s music-only holdout, source 500–4000Hz
+
+| Metric | 0.15: CueWire guarded FIR | 0.15: Speex native AEC | 0.30: CueWire guarded FIR | 0.30: Speex native AEC |
+| --- | ---: | ---: | ---: | ---: |
+| Wholeband speaker-only ERLE | +0.23316dB | **+1.79157dB** | +0.88581dB | **+3.79385dB** |
+| 500–4000Hz linked proxy reduction | +4.79193dB | **+5.88278dB** | +6.55686dB | **+11.10253dB** |
+| Linked proxy residual absolute level | -73.830dBFS | **-74.92077dBFS** | -69.612dBFS | **-74.15756dBFS** |
+| Source-linked raw mic proxy | -69.03799dBFS | same | -63.05503dBFS | same |
+
+Per-band Speex native speaker-only ERLE in 0.15/0.30:
+70–180Hz **+2.96565/+2.10144dB**,
+180–500 **+0.21362/+0.89443dB**,
+500–1500 **+0.50251/+2.50042dB**,
+1500–4000 **+1.25096/+4.89939dB**,
+4000–8000 **+0.00936/+0.20243dB**,
+8000–16000 **-0.02262/+0.00187dB**.
+
+Native performance in the report:
+- Volume 0.15: 3606 frames, **0.303661s**
+  processing 36.053333s audio, **RTF=0.008423**;
+- Volume 0.30: 3608 frames, **0.514640s**
+  processing 36.074667s audio, **RTF=0.014266**.
+This is processing time ONLY, not end-to-end
+acoustic latency, deterministic worst-case load,
+or a certified real-time scheduling guarantee.
+
+**CRITICAL OFF control:** Speex changed microphone
+signal even when the loudspeaker was silent and
+the supplied far-end reference was all zeros
+for those periods. Whole-spectrum raw-to-Speex
+RMS reduction during original mic OFF segments:
+- 0.15, before/after: **1.4370/1.89397dB**;
+- 0.30, before/after: **3.52640/1.55913dB**.
+Most prominent band is **70–180Hz**, reduced by
+2.54–2.73dB across runs, while 500–4000Hz
+OFF energy changes are only hundredths of a dB.
+Thus the high wholeband ERLE cannot be interpreted
+as pure echo cancellation without qualification.
+
+Looking at the official SpeexDSP source
+\`libspeexdsp/mdf.c\`, within
+\`speex_echo_cancellation\` lines 671–697,
+the MIC passes through \`filter_dc_notch16\`
+and pre-emphasis even before the adaptive MDF
+echo processing:
+https://raw.githubusercontent.com/xiph/speexdsp/master/libspeexdsp/mdf.c
+The rate-dependent \`notch_radius\` is .992
+at 48kHz (see same file's sample-rate ctl
+lines 1150–1168). This is source-code
+evidence of input front-end conditioning,
+but its exact contribution to measured
+70–180Hz attenuation needs a controlled
+experiment. The local distro binary was
+not disassembled or independently mapped
+to the exact upstream commit.
+
+**Mandatory next falsifiable control**:
+\`tools/voice_m5_speex_zero_reference.py\`.
+Run actual native Speex on precisely the same
+two physical mic WAVs, but feed PCM16 **zero**
+throughout as far-end. Compare the numerical
+speaker-ON/OFF outputs with the exact
+SHA256-pinned first real native Speex report.
+This will separate how much of the apparent
+improvement exists independently of knowing
+the speaker signal from the additional change
+caused by supplying it. The normal vs zero
+difference still isn't ground-truth isolated
+physical echo SPL, due to nonlinear/adaptive
+states, different background, and absence of
+clean near-end speech. No production pass
+or voice-preservation claim follows.
+
+The new control produces only
+\`speex-zero-reference.json\` and
+\`SHA256SUMS\`. It does NOT save any residual
+waveform, play music, use live audio devices,
+change PipeWire state, or modify inputs.
+The original first real Speex report digest
+is an immutable constant checked along with
+all six original source SHA256s.
+It should be a fresh sibling of the existing
+\`M5-speex-aec-only-001\` report.
+
+Two new synthetic tests verify that even
+a fake native implementation sees ONLY
+zero far-end samples in every 10ms frame,
+and that source integrity, exact report
+digests, refusing overwrite, and numeric-only
+output hold end-to-end. **46 M5 test methods**
+now require local execution.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~~~
+
+Only if 46 tests are green:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_speex_zero_reference.py \
+  --low-capture .audit/voice-aec/M5-level-015-001 \
+  --high-capture .audit/voice-aec/M5-level-030-001 \
+  --original-speex-report .audit/voice-aec/M5-speex-aec-only-001/speex-aec-only.json \
+  --out .audit/voice-aec/M5-speex-zero-reference-001
+
+cd /data/cue-wire/.audit/voice-aec/M5-speex-zero-reference-001
+sha256sum -c SHA256SUMS
+~~~
+
+Send only \`speex-zero-reference.json\`
+and \`SHA256SUMS\`. If the output folder
+already exists, use another fresh suffix;
+never overwrite old evidence. No recordings
+or system/audio-setting modifications needed.
+
+**This original M5 prospective speaker-only
+guarded fullband ERLE 0.67881dB is still FAIL.**
+No real-doubletalk quality, voice preservation,
+or end-to-end streaming latency has yet been proven.
+
 ## Next engineering actions
 
 Implement two **offline adapters**, pinned to

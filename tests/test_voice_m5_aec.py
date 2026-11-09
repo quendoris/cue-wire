@@ -969,7 +969,14 @@ class M5Tests(unittest.TestCase):
             # A multi-second search has abundant alternatives outside the
             # excluded +/-3ms peak neighborhood. Keep the top-three list
             # complete instead of accidentally reporting unique peaks.
-            self.assertEqual(len(result["diagnostic_top_separated_peaks"]), 3)
+            peaks = result["diagnostic_top_separated_peaks"]
+            self.assertEqual(len(peaks), 3)
+            # Regression: 3 milliseconds == 144 frames, NOT 3 seconds.
+            for i, peak in enumerate(peaks):
+                for earlier in peaks[:i]:
+                    self.assertGreaterEqual(
+                        abs(peak["lag_ms"] - earlier["lag_ms"]),
+                        lag_postmortem.PEAK_SEPARATION_MS - 0.00002)
             self.assertIsNotNone(result["first_minus_second_peak_abs_correlation"])
             self.assertGreaterEqual(result["first_minus_second_peak_abs_correlation"], 0)
             self.assertTrue(result["diagnostic_not_a_retiming"])

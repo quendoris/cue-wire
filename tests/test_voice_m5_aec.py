@@ -27,6 +27,7 @@ import voice_m5_aba_spectrum as aba_spectrum
 import voice_m5_refcoherence as refcoherence
 import voice_m5_frozen_heldout as frozen_heldout
 import voice_m5_doubletalk_gate as doubletalk_gate
+import voice_m5_guarded_fir as guarded_fir
 
 RATE = aec.RATE
 
@@ -683,6 +684,77 @@ class M5Tests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
                     doubletalk_gate.study(
                         source, audit/"voice-aec/M5-doubletalk-gate-002")
+
+    def test_guarded_echo_high_frequency_preserves_only_mic_not_filter(self):
+        """A predeclared LPF leaves 1 kHz echo, suppresses >5 kHz echo."""
+        fs = RATE
+        t = np.arange(11*fs, dtype=float)/fs
+        lo = .010 * np.sin(2*np.pi*1000*t)
+        hi = .010 * np.sin(2*np.pi*8000*t)
+        echo = lo+hi
+        original_copy = echo.copy()
+        filtered, response = guarded_fir.guarded_echo(echo)
+        # Verify original data are never modified by the numerical guard.
+        np.testing.assert_array_equal(echo, original_copy)
+        center = slice(fs, 10*fs)
+        self.assertGreater(float(np.dot(filtered[center], lo[center])) /
+                           float(np.dot(lo[center], lo[center])), .99)
+        self.assertLess(abs(float(np.dot(filtered[center], hi[center])) /
+                            float(np.dot(hi[center], hi[center]))), .005)
+        self.assertLess(response["max_gain_5000_to_16000_hz"], .0032)
+        self.assertFalse(response["original_physical_mic_filtering"])
+        self.assertTrue(response["noncausal_not_realtime"])
+
+    def test_guarded_fir_audio_remains_private_json_only(self):
+        """New guarded model audit cannot overwrite WAVs or claim voice safety."""
+        rng = np.random.default_rng(7193)
+        ref = rng.normal(0, .05, 32*RATE)
+        lag = round(.10*RATE)
+        mic = rng.normal(0, .0008, 33*RATE)
+        mic[lag:lag+len(ref)] += .20*ref
+        start = lag + 13*RATE
+        mic[start:] += rng.normal(0, .018, len(mic)-start)
+        with tempfile.TemporaryDirectory() as root:
+            audit = Path(root)/".audit"
+            capture_dir = audit/"voice-aec/M5-doubletalk-001"
+            capture_dir.mkdir(parents=True)
+            x_path = capture_dir/"reference-sent.wav"
+            y_path = capture_dir/"microphone-raw.wav"
+            pcm16_file(x_path, ref)
+            pcm16_file(y_path, mic)
+            manifest = {
+                "schema": "cuewire-M5-paired-physical-capture-v1",
+                "status": "captured_for_offline_aec",
+                "speaker_only_calibration_s": 12,
+                "requested_duration_s": 32,
+                "reference": {"sha256": aec.digest(x_path)},
+                "microphone": {"sha256": aec.digest(y_path)},
+            }
+            manifest_file = capture_dir/"manifest.json"
+            manifest_file.write_text(json.dumps(manifest))
+            initial = [aec.digest(p) for p in (manifest_file, x_path, y_path)]
+            with mock.patch.object(guarded_fir, "AUDIT", audit.resolve()):
+                out = audit/"voice-aec/M5-guarded-001"
+                result = guarded_fir.analyze(capture_dir, out)
+                self.assertFalse(result["virtual_microphone_approved"])
+                self.assertFalse(result["near_end_voice_preservation_approved"])
+                self.assertTrue(result["frozen_original_speaker_only_gate_passes"])
+                self.assertEqual(result["guard"]["cutoff_hz"], 3800)
+                self.assertIsNotNone(result["double_talk"])
+                self.assertEqual(len(result["double_talk"]["bands"]), 6)
+                self.assertTrue((out/"guarded-fir.json").is_file())
+                self.assertTrue((out/"SHA256SUMS").is_file())
+                self.assertEqual(list(out.glob("*.wav")), [])
+                with self.assertRaises(FileExistsError):
+                    guarded_fir.analyze(capture_dir, out)
+                self.assertEqual(
+                    initial, [aec.digest(p) for p in (
+                        manifest_file, x_path, y_path)])
+                with x_path.open("ab") as file:
+                    file.write(b"tamper")
+                with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
+                    guarded_fir.analyze(
+                        capture_dir, audit/"voice-aec/M5-guarded-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

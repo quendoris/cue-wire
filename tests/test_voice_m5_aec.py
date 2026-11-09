@@ -28,6 +28,7 @@ import voice_m5_refcoherence as refcoherence
 import voice_m5_frozen_heldout as frozen_heldout
 import voice_m5_doubletalk_gate as doubletalk_gate
 import voice_m5_guarded_fir as guarded_fir
+import voice_m5_known_stem as known_stem
 
 RATE = aec.RATE
 
@@ -756,6 +757,117 @@ class M5Tests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
                     guarded_fir.analyze(
                         capture_dir, audit/"voice-aec/M5-guarded-002")
+
+    def test_known_clean_stem_metrics_preserve_exact_injected_signal(self):
+        """Known stem SNR must measure the actual error to clean voice."""
+        rng = np.random.default_rng(77129)
+        clean = rng.normal(0, .009, 3*RATE)
+        noise = rng.normal(0, .003, 3*RATE)
+        clean_before = clean.copy()
+        original = clean + noise
+        modeled = .70*noise
+        full_output = original-modeled
+        guarded_output = original-.65*noise
+        metrics = known_stem.clean_stem_score(
+            clean, original, full_output, guarded_output)
+        self.assertGreater(metrics["full_fir_subtraction"]
+                           ["exact_stem_snr_improvement_db"], 9)
+        self.assertGreater(metrics["guarded_fir_subtraction"]
+                           ["exact_stem_snr_improvement_db"], 8)
+        np.testing.assert_array_equal(clean, clean_before)
+        bands = known_stem.error_by_band(clean, {
+            "original": original,
+            "full_fir": full_output,
+            "echo_guard": guarded_output})
+        self.assertEqual(len(bands), 6)
+        self.assertTrue(all(math.isfinite(
+            item["echo_guard_exact_voice_snr_db"]) for item in bands))
+        with self.assertRaises(ValueError):
+            known_stem.clean_stem_score(
+                clean, original[:-1], full_output, guarded_output)
+
+    def test_m5_known_stem_end_to_end_hash_guard_and_no_audio_writes(self):
+        """ABA and M4 originals stay byte-identical; emit only numeric JSON."""
+        rng = np.random.default_rng(77130)
+        x = rng.normal(0, .05, 20*RATE)
+        lag = round((8.0+.14)*RATE)
+        mic = rng.normal(0, .0008, 36*RATE)
+        mic[lag:lag+len(x)] += .19*x
+        voice = rng.normal(0, .006, 8*RATE)
+        with tempfile.TemporaryDirectory() as root:
+            audit = Path(root)/".audit"
+            ref_dir = audit/"voice-aec/M5-006"
+            aba_dir = audit/"voice-aec/M5-ABA-001"
+            m4_dir = audit/"voice-captures/M4-R0-ALSA-007"
+            ref_dir.mkdir(parents=True)
+            aba_dir.mkdir(parents=True)
+            m4_dir.mkdir(parents=True)
+            x_path = ref_dir/"reference-sent.wav"
+            mic_path = aba_dir/"microphone-aba-raw.wav"
+            voice_path = m4_dir/"raw.wav"
+            pcm16_file(x_path, x)
+            pcm16_file(mic_path, mic)
+            pcm16_file(voice_path, voice)
+            rm = {
+                "schema": "cuewire-M5-paired-physical-capture-v1",
+                "status": "captured_for_offline_aec",
+                "reference": {"sha256": aec.digest(x_path)},
+                "mic_capture": {"mic_source_name": "alsa_input.usb-test"},
+                "speaker_sink_name": "alsa_output.pci-test",
+                "volume_pw_play": .30,
+            }
+            rm_path = ref_dir/"manifest.json"
+            rm_path.write_text(json.dumps(rm))
+            am = {
+                "schema": "cuewire-M5-continuous-ABA-control-v1",
+                "status": "captured_aba_for_noise_diagnostics",
+                "reference_source_capture": str(ref_dir),
+                "reference_source_manifest_sha256": aec.digest(rm_path),
+                "reference_wav_sha256": aec.digest(x_path),
+                "source_mic_name": "alsa_input.usb-test",
+                "speaker_sink_name": "alsa_output.pci-test",
+                "speaker_play_volume": .30,
+                "playback_start_after_recorder_launch_s": 8.0,
+                "microphone": {"sha256": aec.digest(mic_path)},
+            }
+            am_path = aba_dir/"manifest.json"
+            am_path.write_text(json.dumps(am))
+            vm = {
+                "schema": "cuewire-M4-raw-capture-v2",
+                "status": "recorded_unprocessed_raw",
+                "wav": "raw.wav",
+                "mic_node_name": "alsa_input.usb-test",
+                "wav_sha256": aec.digest(voice_path),
+            }
+            vm_path = m4_dir/"manifest.json"
+            vm_path.write_text(json.dumps(vm))
+            original_paths = [x_path, mic_path, voice_path,
+                              rm_path, am_path, vm_path]
+            original_hashes = [aec.digest(p) for p in original_paths]
+            with (mock.patch.object(known_stem, "AUDIT", audit.resolve()),
+                  mock.patch.object(frozen_heldout, "AUDIT", audit.resolve())):
+                out = audit/"voice-aec/M5-known-stem-001"
+                report = known_stem.analyze(aba_dir, m4_dir, out)
+                self.assertEqual(
+                    report["status"],
+                    "research_only_known_stem_synthetic_doubletalk")
+                self.assertFalse(report["approved_for_virtual_mic"])
+                self.assertFalse(
+                    report["voice_preservation_validated_under_real_acoustics"])
+                self.assertGreater(
+                    report["speaker_only_heldout_erle_db"], 1.0)
+                self.assertTrue((out/"known-stem.json").exists())
+                self.assertTrue((out/"SHA256SUMS").exists())
+                self.assertEqual(list(out.glob("*.wav")), [])
+                self.assertEqual(original_hashes,
+                                 [aec.digest(p) for p in original_paths])
+                with self.assertRaises(FileExistsError):
+                    known_stem.analyze(aba_dir, m4_dir, out)
+                with voice_path.open("ab") as file:
+                    file.write(b"corrupted")
+                with self.assertRaisesRegex(ValueError, "SHA256"):
+                    known_stem.analyze(
+                        aba_dir, m4_dir, audit/"voice-aec/M5-known-stem-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

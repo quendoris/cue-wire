@@ -287,6 +287,113 @@ share the private WAV unless separately needed.
 Original **0.67881dB prospective FAIL** remains
 unchanged regardless of this new diagnostic.
 
+## Actual reference-coherence audit — two physical levels, verified (2026-11-09)
+
+User supplied `playback-coherence.json` and `SHA256SUMS`.
+The JSON's SHA256 was independently recomputed from uploaded bytes:
+`8e7842dc9023d8c1b392e52fb80d5d371b308718228125ca98b1808f4b8554a5`
+(matches the supplied checksum file).
+
+The analyzer linked the same 20s music file to the two private
+physical microphone recordings at per-stream levels **0.15** and
+**0.30**. Their source-hash identifiers match the previously
+audited two manifestations. The RAW mic WAV bytes were not uploaded
+here, so their independent byte-for-byte verification is limited
+to the tool's locally performed hash checks recorded in its report.
+
+It used a 1500–4000Hz correlation alignment on reference time
+**1.0–3.7s** and then evaluated the separate reference windows
+**4.0–9.0s** and **10.0–16.0s**. The identified origin-to-mic
+offsets were **8061.500ms** (0.15) and **8082.64583ms** (0.30);
+normalized alignment correlations were **0.229456** and
+**0.438680**, respectively. Those delays include capture/playback
+software startup and cannot be read as physical propagation times.
+
+### Primary metric: reference-linked spectral power proxy
+
+Per band the tool computes Welch mic power PSD times the
+estimated magnitude-squared coherence with the digital
+music reference, integrated over the band. This is a
+**linear reference-linked power PROXY**, subject to finite
+sample coherence bias and unmeasured microphone processing;
+it is **not a calibrated acoustic speaker SPL**, clean
+echo-only energy, or percent voice removed.
+
+| Band (Hz) | +dB at 0.30 vs 0.15, window 4–9s | +dB at 0.30 vs 0.15, window 10–16s |
+| --- | ---: | ---: |
+| 70–180 | +2.85444 | +4.15648 |
+| 180–500 | +5.01363 | +5.94136 |
+| **500–1500** | **+5.78269** | **+5.69588** |
+| **1500–4000** | **+5.88595** | **+6.08307** |
+| 4000–8000 | +2.99824 | +4.82466 |
+| 8000–16000 | +4.06382 | +8.72732 |
+
+Combining the **unrounded per-band linear proxy powers**
+in 500–1500 and 1500–4000Hz gives:
+
+| Reference interval | 0.15 linked proxy power | 0.30 linked proxy power | Ratio, +dB |
+| --- | ---: | ---: | ---: |
+| 4–9s | 8.62688994e-8 | 3.33170060e-7 | **3.861995x, +5.86812 dB** |
+| 10–16s | 1.24796045e-7 | 4.94876710e-7 | **3.965484x, +5.98296 dB** |
+
+The expected power increase if physical output amplitude
+scales linearly with the command's 0.15→0.30 gain is
+**4x, +6.02060 dB**. The results are close in both
+separate windows, more convincing than wholeband raw
+mic RMS alone given the measured varying background.
+
+### Cross-checks and limitations
+
+- In the 500–1500Hz band, the reference/mic weighted
+  spectral coherence increases from **0.071137→0.305102**
+  (4–9s) and **0.153641→0.429306** (10–16s).
+  The 0.15/0.30 speaker-OFF negative controls in the
+  same band are **0.010591 / 0.016506**.
+- In 1500–4000Hz it increases from **0.205874→0.531795**
+  (4–9s) and **0.247161→0.562324** (10–16s).
+  The speaker-OFF negative controls are **0.011790 / 0.008361**.
+- The unprocessed microphone's total mic RMS only increases
+  by **+1.38 dB** and **+2.11 dB** in those ON intervals,
+  because independent background, noise, and other mic
+  signal contributions remain in the waveform.
+  This is why full-band ERLE and overall RMS should not be
+  the only criteria for an AEC system.
+- The upper bands have more variable estimates,
+  particularly 8–16kHz, where the independent
+  reference-correlated proxy is weak. Do not interpret
+  an isolated +8.73dB there as a clean linear transfer.
+- The exact same digital song used twice makes these
+  useful *local gain-response* tests, not generalization
+  to a different track or physical environment.
+- No independent calibration microphone measured actual
+  sound pressure, the speaker's hardware volume was not
+  recorded in historical take 001, and the current 60%
+  output setting does NOT establish it had been different
+  in the past.
+- The historical new-capture guarded AEC gate
+  **0.67881dB FAIL remains unchanged**.
+  No voice preservation or streaming latency was tested.
+
+**Engineering conclusion:** on this present physical
+microphone/speaker setup, the digital music-linked
+mic power in speech-relevant 500–4000Hz bands
+responds very nearly linearly to a 2x per-stream
+amplitude change, supporting the hypothesis that
+playback amplitude and the echo/background ratio
+can substantially alter observed full-band ERLE.
+This does NOT prove that historical volume changes
+caused the earlier failed M5 doubletalk run.
+
+**Next focus:** design a predeclared AEC evaluation
+that separately measures (a) absolute strength of the
+reference-linked component, (b) its residual after
+subtraction, (c) independent noise floor, and
+(d) preservation of actual simultaneous near-end speech.
+A production gate should not reward large ERLE solely
+because the speaker is loud or punish low ERLE
+when the raw echo is already negligible. Do not
+retroactively revise existing acceptance thresholds.
+
 ## Interpretation
 
 Compare on/off RMS and background stability; use

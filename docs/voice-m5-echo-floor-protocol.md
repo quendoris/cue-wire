@@ -165,6 +165,83 @@ Share \`echo-floor.json\` and \`SHA256SUMS\`.
 No raw mic, M4 voice, speaker audio, or new session is
 needed for the present diagnostic.
 
+## M5 echo-floor-001: real numeric audit, SHA256 verified (2026-11-09)
+
+User supplied \`echo-floor.json\` and \`SHA256SUMS\`. Independently
+recomputed report SHA256:
+\`13b1211682f9c96b1be51f3824154fea0b79ff88e3837682050e42302a231a07\`.
+The report's physical WAV/reference/manifests SHA256 IDs match
+the previously audited volume-control captures; original WAV
+bytes were not uploaded for independent rehashing here.
+
+Both studies use the same 120ms/ridge 0.02 frozen FIR,
+513-tap/3800Hz echo-estimate-only noncausal guard,
+and the 10–16s heldout reference window. No near-end voice
+was recorded, no model was refit on the heldout, no audio
+was exported or played. These are retrospective
+diagnostics, NOT independent blind acceptance tests.
+
+| Metric | Per-stream volume 0.15 | Per-stream volume 0.30 |
+| --- | ---: | ---: |
+| Training ERLE | +0.31158dB | +0.92427dB |
+| Whole-band heldout full-FIR ERLE | +0.22198dB | +0.87119dB |
+| Whole-band heldout guarded ERLE | **+0.23316dB** | **+0.88581dB** |
+| 500–4000Hz raw mic band PSD power | -62.313dBFS | -60.231dBFS |
+| 500–4000Hz guarded residual PSD power | **-63.088dBFS** | **-63.129dBFS** |
+| 500–4000Hz mean OFF background band PSD power | -64.338dBFS | -64.769dBFS |
+| Guarded residual above mean OFF background | +1.250dB | +1.640dB |
+| 500–4000Hz original reference-linked power PROXY | -69.038dBFS | -63.055dBFS |
+| 500–4000Hz guarded residual linked PROXY | **-73.830dBFS** | **-69.612dBFS** |
+| 500–4000Hz unrelated-reference OFF null PROXY | -85.031dBFS | -85.236dBFS |
+| Residual linked proxy above unrelated OFF null | **+11.201dB** | **+15.624dB** |
+| Linked proxy suppression from guarded FIR | **+4.79193dB** | **+6.55686dB** |
+
+These combined 500–4000Hz values were recomputed
+by **adding linear band powers first**, then converting
+to dB. The protected AEC residual is remarkably
+similar (~-63.1dBFS) at both playback levels,
+and within 1.3–1.6dB of an OFF power estimate.
+**BUT** reference-linked residual power remains
+11–16dB above the unrelated-reference null estimate.
+Total residual proximity to background is therefore
+NOT evidence that audible echo is gone.
+The linked proxy reduction is ~66.8% at 0.15 and
+~77.9% at 0.30, **of the coherence proxy only**,
+not independently measured physical echo/SPL.
+Magnitude-squared coherence estimates have positive
+finite-sample bias and cannot be converted into
+a certified clean near-end speech result.
+
+**Highband instability:** during genuine speaker-OFF
+microphone intervals 2–7s and 30–35s,
+8–16kHz band power changed **-11.46258dB**
+in the 0.15 take and **+13.56910dB**
+in the 0.30 take (opposite directions).
+The OFF floor is emphatically NOT stationary
+over the full recordings. In 500–1500Hz,
+the same before→after changes were -1.53543dB
+and -1.08801dB; in 1500–4000Hz,
+-1.77797dB and -0.02740dB.
+So the mean OFF power is a *descriptive*
+baseline and not a statistically validated
+noise floor during ON. These findings do not
+identify whether mic DSP/AGC, electronics,
+environmental transients or other factors caused
+the fluctuations.
+
+The echo-only guard suppresses negligible upper-band
+reference power, leaving original microphone high
+frequencies almost unchanged. This avoids known
+highband energy regressions at the price of not
+cancelling those frequencies. Voice preservation,
+latency and real physical doubletalk remain UNTESTED.
+
+**Status:** research-only; the historical
+M5-doubletalk-002 guarded **0.67881dB prospective FAIL**
+is unchanged. Next diagnostic: inspect 0.5s short-window
+OFF floor variation to distinguish brief spikes from
+persistent level changes, with no new audio recording.
+
 ## Future: true near-end speech criterion
 
 Only after we understand the absolute residual vs

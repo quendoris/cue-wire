@@ -70,6 +70,119 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## New real M5 32-second double-talk take: capture-level PASS (2026-11-09)
+
+The user has supplied the **actual** new paired-capture `manifest.json`
+for the 12-second speaker-only calibration + ~20 seconds of local speech
+experiment. The manifest is CueWire schema
+`cuewire-M5-paired-physical-capture-v1`, status
+`captured_for_offline_aec`.
+
+**Verified from manifest only (physical WAV files not uploaded here):**
+
+- Digital reference **32.000000 s**, **1,536,000 frames**, SHA256
+  `7661d6412ec346a79db5781ed2bef20fa55a66578a00e5852c5b775451c8b685`.
+  Recorded `reference_sha256_after` matches this entry.
+- Physical MICAudio-97i / PipeWire 48 kHz mono PCM16 mic
+  **32.533333 s**, **1,561,600 frames**, peak **-17.501 dBFS**,
+  whole-take RMS **-40.781 dBFS**, **zero clipped samples**.
+  Mic SHA256
+  `f6ce01ba66b9e68121c535ff1ddd735001e4381f9028e9fcb7032da420ed24c8`.
+  Recorded `mic_sha256_after` matches this entry.
+- `pw-play` exit **0**, playback wall time **32.073 s**,
+  recorder exit **1** after controlled stop with valid finalized WAV.
+- Speaker sink `alsa_output.pci-0000_00_1f.3.analog-stereo`,
+  volume **0.30**, exactly specified physical USB mic source
+  `alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback`.
+- Source capture was successful with **12 seconds of requested
+  speaker-only calibration**. A manifest cannot itself
+  prove the operator was silent during the whole interval.
+
+The uploaded manifest's own SHA256 is
+`6e3a33caf73620e718d2e378a8daec96800e24712477fde932cffecaaaa7bb83`.
+It has been independently computed from the supplied JSON.
+The raw local WAV hashes remain assertions from the manifest
+until they are rehashed against physical source files by
+the local next-stage tool.
+
+### Next M5 stage: safe frozen double-talk NUMERICAL GATE
+
+`tools/voice_m5_doubletalk_gate.py` was added as an independent
+**read-only/no-WAV research tool** accepting the full raw paired
+M5 capture. It verifies both original WAV SHA256s against
+the source manifest, requires exactly a 32-s / 12-s calibration
+capture, rejects clipping and nonphysical endpoints, and refuses
+to overwrite an existing output directory.
+
+The model intentionally matches previous M5 research:
+
+| Partition | Digital reference time | Use |
+| --- | --- | --- |
+| Alignment | first ~3.6 s | speaker-to-microphone lag estimate |
+| Training | **3.0–9.0 s** | fixed 120-ms Wiener FIR and training-only gain |
+| Speaker-only holdout | **10.0–11.5 s** | untouched by model fit, before speech prompt |
+| Double-talk | **13.0–28.0 s** | only in-memory numerical estimates, **only if speaker-only minimum ERLE is >=1 dB** |
+
+The fixed Wiener configuration is 120-ms FIR / 5760 taps,
+8192 FFT / regularization 0.02, with the reference inserted
+10ms before the strongest acoustic-lag correlation peak
+and an 8ms tail taper. The model is **frozen after training**.
+No lag/gain/FIR parameter is adapted using the holdout or
+the operator speech; the original AEC safety threshold
+remains 1.0 dB.
+
+The report computes speaker-only validation ERLE, per-band
+ERLE and reference coherence before/after *using the same
+original-mic PSD weights*, explicitly flags high-band
+regressions (4–8 and 8–16kHz). It may also report numerical
+double-talk levels/coherence, but **such statistics cannot
+certify voice preservation** because no independent clean
+simultaneous operator speech truth exists. The report
+unconditionally retains `approved_for_virtual_mic=false`
+and `voice_preservation_validated=false`.
+
+**The 1.5s holdout uses 2048-point Welch/coherence bins**, not
+the 4096-point 6s estimate from earlier ABA analyses; absolute
+coherence aggregates across these methods are not directly
+comparable. If the early speaker-only gate fails, **no**
+double-talk exploration is computed at all.
+
+Run:
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_doubletalk_gate.py \
+  --capture .audit/voice-aec/M5-doubletalk-001 \
+  --out .audit/voice-aec/M5-doubletalk-gate-001
+
+cd .audit/voice-aec/M5-doubletalk-gate-001
+sha256sum -c SHA256SUMS
+~~~
+
+The input directory is the planned name; if the user's
+actual capture uses `-002` or any other identifier, change
+**only** the `--capture` path. Output must be a new directory.
+
+Output: `doubletalk-gate.json` and `SHA256SUMS`; **no
+generated speech WAV or microphone recording**. New tests
+check that changes to future voice samples cannot change the
+model, and test end-to-end output immutability and SHA256
+tampering. The new combined suite has **24 test methods**,
+but this addition requires local execution before acceptance.
+
+**Next decision:** evaluate the actual calibration success,
+reference coherence vs speaker-only residual, upper-band
+regressions and separate talk+music numerical statistics.
+Only then design independent subjective/objective speech
+preservation evaluation. The previously accepted M4
+voice master remains unchanged.
+
 ## M5 new opt-in double-talk capture — 12s silent calibration, 20s voice
 
 Following the REAL M5-ABA-001 frozen AEC heldout result

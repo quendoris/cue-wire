@@ -107,7 +107,7 @@ def render_reference_on_mic_timeline(reference: np.ndarray,
 
 
 def run_speex_native(mic_pcm: np.ndarray, far_pcm: np.ndarray,
-                     library=None) -> tuple[np.ndarray, dict]:
+                     library=None, library_name: str | None = None) -> tuple[np.ndarray, dict]:
     """Process every 10ms frame in temporal order with one adaptive state.
 
     This is the DIRECT synchronous speex_echo_cancellation API.
@@ -123,7 +123,7 @@ def run_speex_native(mic_pcm: np.ndarray, far_pcm: np.ndarray,
             not mic_pcm.flags.c_contiguous or
             not far_pcm.flags.c_contiguous):
         raise ValueError("Speex requires equal-length contiguous mono PCM16 arrays")
-    lib, library_path = load_speex() if library is None else (library, "synthetic-test-stub")
+    lib, library_path = load_speex() if library is None else (library, library_name or "injected-library")
     state = lib.speex_echo_state_init(FRAME_SAMPLES, TAIL_SAMPLES)
     if not state:
         raise RuntimeError("Native Speex echo state initialization failed")
@@ -184,11 +184,12 @@ def run_speex_native(mic_pcm: np.ndarray, far_pcm: np.ndarray,
 
 
 def one_take(reference: np.ndarray, mic: np.ndarray, manifest: dict,
-             lag: int, speex_lib) -> dict:
+             lag: int, speex_lib, speex_lib_name: str) -> dict:
     vol = float(manifest["speaker_play_volume"])
     far = render_reference_on_mic_timeline(reference, len(mic), lag, vol)
     mic_pcm = exact_pcm16(mic)
-    residual, impl = run_speex_native(mic_pcm, far, library=speex_lib)
+    residual, impl = run_speex_native(mic_pcm, far, library=speex_lib,
+                                      library_name=speex_lib_name)
     a,b=indices(EVAL_S,lag,len(mic))
     x=reference[round(EVAL_S[0]*RATE):round(EVAL_S[1]*RATE)]
     y=mic[a:b]
@@ -253,8 +254,8 @@ def analyze(low_dir: Path, high_dir: Path, out_dir: Path,
     if len(reference)!=20*RATE:
         raise ValueError("Digital reference must be exactly 20s at 48kHz")
     native, library_path=speex_loader()
-    low=one_take(reference,yl,ml,LAG_015_SAMPLES,native)
-    high=one_take(reference,yh,mh,LAG_030_SAMPLES,native)
+    low=one_take(reference,yl,ml,LAG_015_SAMPLES,native,library_path)
+    high=one_take(reference,yh,mh,LAG_030_SAMPLES,native,library_path)
     inputs={
         "volume015_manifest":(low_dir/"manifest.json",hl["manifest"]),
         "volume015_mic":(low_dir/"microphone-aba-raw.wav",hl["physical_mic_raw"]),

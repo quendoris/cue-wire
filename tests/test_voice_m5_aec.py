@@ -37,6 +37,7 @@ import voice_m5_off_floor_windows as off_windows
 import voice_m5_off_spectral_fingerprint as off_fingerprint
 import voice_m5_speex_baseline as speex_baseline
 import voice_m5_speex_zero_reference as speex_zero
+import voice_m5_speex_known_voice as speex_voice
 import ctypes
 
 RATE = aec.RATE
@@ -251,7 +252,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_off_floor_windows.py",
                        "voice_m5_off_spectral_fingerprint.py",
                        "voice_m5_speex_baseline.py",
-                       "voice_m5_speex_zero_reference.py"):
+                       "voice_m5_speex_zero_reference.py",
+                       "voice_m5_speex_known_voice.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -1977,6 +1979,50 @@ class M5Tests(unittest.TestCase):
                         speex_zero.analyze(
                             low,high,f,audit/"voice-aec/M5-speex-zero-reference-002",
                             speex_loader=lambda:(stub,"libspeexdsp.so.1"))
+
+    def test_speex_known_voice_incremental_gain_snr_math(self):
+        """Speech transfer distortion is not conflated with residual music."""
+        rng=np.random.default_rng(776010)
+        stem=rng.normal(0,.015,3*RATE)
+        exact=speex_voice.score_incremental_voice(stem,stem)
+        halved=speex_voice.score_incremental_voice(stem,stem*.5)
+        self.assertAlmostEqual(
+            exact["incremental_voice_transfer_gain"],1.0,delta=1e-7)
+        self.assertGreater(exact["incremental_voice_response_snr_db"],200)
+        self.assertAlmostEqual(
+            halved["incremental_voice_transfer_gain"],.5,delta=1e-7)
+        self.assertAlmostEqual(
+            halved["incremental_voice_response_snr_db"],6.0206,delta=.002)
+        self.assertEqual(len(exact["frequency_bands"]),4)
+        with self.assertRaisesRegex(ValueError,">=3s"):
+            speex_voice.score_incremental_voice(stem[:RATE],stem[:RATE])
+        with self.assertRaisesRegex(ValueError,"silent"):
+            speex_voice.score_incremental_voice(np.zeros_like(stem),stem)
+
+    def test_speex_known_voice_real_pcm_delta_is_ground_truth(self):
+        """Injected speech is PCM16-difference exact, not an ideal float stem."""
+        rng=np.random.default_rng(776011)
+        mic=rng.normal(0,.0007,36*RATE)
+        voice=rng.normal(0,.01,6*RATE)
+        lag=speex_baseline.LAG_015_SAMPLES
+        a,b=lag+10*RATE,lag+16*RATE
+        mixed,stem,meta=speex_voice.construct_mixture(
+            mic,voice,a,b,-50.)
+        actual=(mixed[a:b].astype(np.int32)-
+                speex_baseline.exact_pcm16(mic)[a:b].astype(np.int32))/32768.
+        np.testing.assert_array_equal(stem,actual)
+        self.assertEqual(meta["voice_samples"],6*RATE)
+        self.assertAlmostEqual(meta["digitized_injected_voice_rms_dbfs"],
+                               -50.,delta=.05)
+        self.assertFalse(meta["real_mic_or_room_nearend_speech_simulated"])
+        baseline=speex_voice.known_stem_interference(
+            stem,mixed[a:b].astype(np.float64)/32768)
+        self.assertTrue(np.isfinite(baseline["known_stem_snr_db"]))
+        with self.assertRaisesRegex(ValueError,"Invalid bounded"):
+            speex_voice.construct_mixture(mic,voice,a,b,-10.)
+        with self.assertRaisesRegex(ValueError,"too quiet"):
+            speex_voice.construct_mixture(
+                mic,np.zeros_like(voice),a,b,-50.)
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

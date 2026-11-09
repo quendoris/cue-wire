@@ -312,6 +312,85 @@ metadata. No private WAV upload is needed for that
 manifest-level check.
 
 
+### Physical capture manifest comparison: doubletalk-001 vs doubletalk-002
+
+The user supplied the **actual original M5-doubletalk-002 manifest**,
+independently SHA256-checked against the earlier failed guarded report:
+\`7664960264e0117a110e7b62f6a2d137b52578012569ee50fcc26fe34ea92c77\`.
+The earlier **successful** M5-doubletalk-001 manifest is also available:
+\`6e3a33caf73620e718d2e378a8daec96800e24712477fde932cffecaaaa7bb83\`.
+This is a new report-side comparison; no previous result is modified.
+
+| Capture metadata | First real doubletalk-001 | New prospective doubletalk-002 |
+| --- | ---: | ---: |
+| Recorder start UTC | 2026-11-09 00:25:23.478539 | 2026-11-09 02:31:30.519506 |
+| pw-play launch UTC (approx) | 00:25:23.586263 | 02:31:30.799314 |
+| Launch minus recorder start | **107.724 ms** | **279.808 ms** |
+| Acoustic/reference lag from frozen estimator | **97.70833 ms** | **281.29167 ms** |
+| Estimated lag minus wall-clock launch interval | **-10.01567 ms** | **+1.48367 ms** |
+| pw-play wall duration | **32.073 s** | **32.291 s** |
+| pw-record final WAV duration | **32.533333 s** | **32.725333 s** |
+| Whole-take physical mic RMS | -40.781 dBFS | -42.379 dBFS |
+| Whole-take mic peak | -17.501 dBFS | -17.825 dBFS |
+| Mic clipping | 0 | 0 |
+| Frozen FIR train ERLE | +6.37718 dB | +0.58930 dB |
+| Frozen FIR speaker-only heldout ERLE | +5.73176 dB | +0.67956 dB |
+| Guarded speaker-only heldout ERLE | +5.63696 dB | **+0.67881 dB — FAIL** |
+
+**Exactly matching identifiers/settings in both manifests:**
+
+- \`mic_source_name=alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback\`,
+  PipeWire \`mic_source_id_at_start=10788\`,
+  \`backend=pipewire\`, \`s16le 1ch 48000Hz\`.
+- Sink \`alsa_output.pci-0000_00_1f.3.analog-stereo\`,
+  \`speaker_sink_id_at_start=1836\`, \`volume_pw_play=0.30\`.
+- Same exact 32s digital reference SHA256
+  \`7661d6412ec346a79db5781ed2bef20fa55a66578a00e5852c5b775451c8b685\`.
+- Same original music input and 12s planned speaker-only interval.
+- Successful player returncode 0; recorder returncode 1 after controlled
+  termination with valid finalized RAW WAV and no clipping.
+- Distinct microphone RAW SHA256s; the prospective take is not a duplicate.
+
+**Timing insight:** the estimated reference-to-mic lag increased
+by **183.58334 ms** between takes, while the relative wall-clock
+player-launch interval grew **172.084 ms**. Their difference is
+**11.49934 ms**. Thus roughly 93.7% of the *numerical*
+lag change tracks variable process startup times. The remaining
+difference is not proven acoustic path length or clock drift;
+wall-clock process launch is not a DAC or ADC sample timestamp,
+and the musical signal has multiple approximately 8ms-separated
+correlation peaks. The first lag even precedes its approximate
+logged playback launch by 10ms, demonstrating why these
+different timebases cannot be treated as direct hardware events.
+
+The new manifest records microphone bytes observed during
+playback at 0.1607s, versus 0.1206s in the successful
+capture, but those are **file-buffer readiness indicators**,
+not calibrated microphone acoustic onset times.
+
+The whole-take microphone RMS differs by -1.598 dB,
+but includes 20s of user speech after the 12s music-only
+calibration; this is **not a valid comparison of echo
+level, mic hardware gain, or environmental noise floor**.
+No independent gain setting, mixer graph state, physical
+mic/speaker positions or AGC behavior was logged. Identical
+node IDs and fixed pw-play volume do not establish identical
+physical acoustic conditions.
+
+**Interpretation:** variable recorder/player startup accounts
+for much of the difference in absolute lag, whereas the
+serious reduction in acoustic model performance appears
+already within training. Do not claim that an overall
+183ms lag jump caused the 0.67881-dB failure; the original
+fit re-estimated that lag. The mechanism remains unresolved.
+
+**Next safe diagnostic:** compare predeclared early 3–9s
+speaker-only *frequency-resolved mic/reference power and
+linear coherence* between the two SHA256-verified physical
+mic WAVs. Do not use the heldout 10–11.5s or
+doubletalk 13–28s to reselect alignment or model. Keep
+the failed gate and all historical reports immutable.
+
 ### Corrected M5-lag-postmortem-003: actual 27 peaks, checksum verified
 
 The user reran the diagnostic after the 3ms/3s exclusion

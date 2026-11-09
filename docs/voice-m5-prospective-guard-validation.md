@@ -159,3 +159,81 @@ inspection. Evaluation can be derived from the numeric report.
 - Generalization to another song, placement, speaker, environment,
   or microphone gain.
 - AEC production readiness; production remains explicitly not approved.
+
+
+## Result — NEW prospective physical take, 2026-11-09 (locked criteria)
+
+The user uploaded the new \`guarded-fir.json\` and matching
+\`SHA256SUMS\`. SHA256 independently recalculated from the uploaded JSON:
+\`c6fb1cd3bf9275d1d7e0206e6dafebfe8ba57d4c8e7cfc6a247a2aa5bffe1106\`.
+The report's new microphone RAW digest is
+\`5a35b112abb8de9f7701ea990c87ce2961f1dc449fdf9fff2589ac13c78e8811\`,
+different from the former \`M5-doubletalk-001\`
+\`f6ce01ba66b9e68121c535ff1ddd735001e4381f9028e9fcb7032da420ed24c8\`.
+Its new capture manifest digest is
+\`7664960264e0117a110e7b62f6a2d137b52578012569ee50fcc26fe34ea92c77\`;
+the 32s digital reference digest remains
+\`7661d6412ec346a79db5781ed2bef20fa55a66578a00e5852c5b775451c8b685\`.
+
+The new manifest and original WAVs were not uploaded,
+so only report-side hash identities, not independent
+on-disk RAW audio integrity, could be checked here.
+
+**The prospective result FAILS the predeclared gate.**
+Do not change, waive, or backfill any of the thresholds.
+
+| Prespecified guarded metric | Result | Requirement | Verdict |
+| --- | ---: | ---: | --- |
+| Speaker-only whole-band heldout ERLE | **0.67881 dB** | >=1 dB | **FAIL** |
+| 500–1500 Hz | 3.07699 dB | >=3 dB | PASS |
+| 1500–4000 Hz | 3.18032 dB | >=3 dB | PASS |
+| 4000–8000 Hz | +0.00575 dB | >=-0.25 dB | PASS |
+| 8000–16000 Hz | +0.00002 dB | >=-0.25 dB | PASS |
+| 4–16kHz during actual doubletalk | NOT COMPUTED | >=-0.25 dB | NOT TESTED |
+
+The existing original fullband AEC gate also **fails**:
+full-FIR heldout ERLE **0.67956 dB**, below 1dB,
+so \`double_talk=null\` is the **correct fail-closed behavior**.
+Voice quality was neither validated nor rejected by this
+speaker-only result; \`approved_for_virtual_mic=false\`.
+
+Calibration/fit degradation is substantial and appears
+**already in training**: training ERLE **0.58930 dB**
+vs **6.37718 dB** on the prior M5-doubletalk-001 take.
+Normalized early reference/microphone lag correlation
+**0.111581** vs **0.310195**. Estimated broad-band lag
+**281.29167 ms** vs **97.70833 ms**. The lag includes
+software/audio-buffer start as well as acoustic propagation;
+its change does **not** prove changed physical propagation
+or clock drift. Without the new raw WAV and its timing
+metadata, the source of degraded correlation is unknown.
+Possibilities include weaker speaker leakage relative to
+mic background, changed physical/device gain, buffer/route
+effects, interfering audio, or an ambiguous correlation
+peak. These remain hypotheses, not measured causes.
+
+**Important classification:** the analyzer still emits
+\`status=exploratory_reused_holdout_not_production_approved\`,
+a generic status string inherited from the prior
+same-capture exploration. The physical microphone WAV
+hash and the prospectively locked protocol demonstrate
+that this is a **new-take prospective FAIL**, not a
+reused old capture. The report status label is stale;
+do not silently reinterpret it as a PASS or change
+the original numeric report. Any later code/metadata
+fix is for future studies only.
+
+The echo-only high-frequency guard is encouraging
+for *preventing high-band amplification* on this take,
+but not sufficient for full-band acceptance and
+not validated on simultaneous clean near-end speech.
+
+**Immediate next task:** a separate, immutable, numeric
+*postmortem* on the SAME speaker-only 0–9s calibration,
+looking for unstable correlation peaks across early
+windows and speaker-to-mic level variation. It must
+never alter the 0.67881 dB heldout result or reuse
+10–11.5s to optimize alignment. Sharing the new
+capture's \`manifest.json\` would also permit checking
+device, gain and playback timestamps against prior
+runs.

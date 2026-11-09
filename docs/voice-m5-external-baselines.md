@@ -458,6 +458,100 @@ guarded fullband ERLE 0.67881dB is still FAIL.**
 No real-doubletalk quality, voice preservation,
 or end-to-end streaming latency has yet been proven.
 
+## Actual native Speex zero-far-end control: independently verified 2026-11-09
+
+The user supplied \`speex-zero-reference.json\` and \`SHA256SUMS\`.
+Independently rehashed file bytes, SHA256
+\`732cda21d46ffd27d37f1470747967b6d9c92c9868fcf8ba150699dc7a3fc5c4\`
+matches the checksum. Its pinned original native Speex
+report SHA256
+\`75ca166a0439bf5e5345a567a569549aaf81ef1f95affdc9aedcb7e929adfc01\`
+and source metadata digests match the earlier audited
+0.15 and 0.30 physical captures. No raw WAV was
+uploaded in this turn, so source-WAV byte verification
+is limited to the local numerical analyzer's earlier checks.
+
+Native SpeexDSP uses exactly the SAME microphone PCM,
+library and 10ms/120ms state, only replacing its
+far-end PCM by all zeros throughout the recording.
+The 10–16s result (same preselected heldout window)
+clearly separates reference-independent effects
+from adding a real speaker reference:
+
+| Metric | 0.15 | 0.30 |
+| --- | ---: | ---: |
+| Wholeband ERLE with ZERO far-end | **+1.32978 dB** | **+1.86056 dB** |
+| Wholeband ERLE with actual music reference | **+1.79157 dB** | **+3.79385 dB** |
+| Additional wholeband ERLE with actual reference | **+0.46179 dB** | **+1.93329 dB** |
+| Reference-linked 500–4000Hz PROXY suppression, zero | +0.00415dB | +0.00430dB |
+| Reference-linked 500–4000Hz PROXY suppression, music | +5.88278dB | +11.10253dB |
+| **Additional linked proxy suppression with music** | **+5.87863dB** | **+11.09823dB** |
+
+Some highly informative per-band additional MUSIC
+benefits (fullband ERLE measures):
+- 500–1500Hz: +0.49071dB (0.15), +2.49041dB (0.30);
+- **1500–4000Hz: +1.24911dB (0.15),
+  +4.89717dB (0.30)**;
+- 8–16kHz: **-0.01427dB (0.15)** and
+  +0.00244dB (0.30): essentially absent/highband
+  perturbation.
+
+The **12 per take** speaker-OFF comparison entries
+(two 5s OFF intervals × six bands) showed
+\`normal_minus_zero_source_off_residual_band_db=0.0\`
+to report precision. The source-independent
+reduction when music is absent therefore persists
+in both modes. In particular, the native Speex AEC
+does modify the 70–180Hz signal even with all-zero
+speaker reference, consistent with code-level
+front-end conditioning. It does NOT represent
+proven near-end voice preservation: no real or
+synthetic voice was included in these test sessions.
+
+**Interpretation:** the strong removal of
+reference-linked energy in 500–4000Hz depends
+on supplying the real far-end PCM, not simply
+a fixed low-frequency front-end filter. However
+subtracting the zero-ref ERLE from normal-ref ERLE
+does not exactly isolate physical echo energy
+in a non-linear/stateful adaptive system.
+Reference-ON/zero-OFF differences describe
+algorithmic behavior, not independent clean
+acoustic components. The report remains a
+retrospective experiment, NOT a blinded
+production/pass evaluation.
+
+**Next step:** before any cascading or hybrid
+AEC design, measure *near-end incremental speech
+transfer* on the two stored physical speaker-only
+M5 captures by digitally injecting the same
+verified clean M4 speech excerpt at fixed levels.
+For any causal engine \`F\`, compare
+\`F(mic + known_stem, reference) -
+ F(mic, reference)\` to the actual injected PCM
+stem. This is a direct synthetic-source
+perturbation measurement of how much an algorithm
+changes the speech contribution, accounting for
+nonlinear internal state by replaying the entire
+stream from reset for each condition. Also measure
+whole residual vs known clean injected stem, and
+compare Speex with real/zero far-end to CueWire's
+reference-only guarded FIR.
+
+DO NOT describe a synthetic additive voice
+as a real captured doubletalk and DO NOT
+assume digital stem injection reproduces USB mic
+firmware/AGC, physical interaction or speech
+intelligibility. Any cascade that improves
+speaker-only ERLE while measurably harming
+incremental clean voice must be rejected.
+If the replay is stable, only THEN consider
+an experimental Speex + conservative reference-
+gated residual echo stage, with voice protection
+and latency constraints. M4 working chain is
+not modified. The historical 0.67881dB
+prospective FAIL remains immutable.
+
 ## Next engineering actions
 
 Implement two **offline adapters**, pinned to

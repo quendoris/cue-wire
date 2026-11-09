@@ -199,6 +199,123 @@ voice quality.
   separate later prospective trial; old FAIL
   remains \`0.67881dB\`.
 
+## Offline Native SpeexDSP AEC-only baseline: code ready for first physical run
+
+The user's read-only Arch package inventory confirmed:
+- \`speexdsp 1.2.1-2\` installed; \`ldconfig\` found
+  \`/usr/lib/libspeexdsp.so.1\`;
+- legacy \`webrtc-audio-processing-1 1.3-5\` installed;
+- current \`webrtc-audio-processing\` not installed,
+  and no WebRTC shared library was visible under
+  the earlier \`ldconfig\` grep. No missing packages
+  were installed.
+
+Added \`tools/voice_m5_speex_baseline.py\` using
+Python ctypes to call **the locally installed native
+libspeexdsp**:
+\`speex_echo_state_init\`,
+\`speex_echo_ctl\`,
+\`speex_echo_cancellation\` and
+\`speex_echo_state_destroy\`, following the official
+\`include/speex/speex_echo.h\` API. No compilation,
+download, audio device or subprocess is necessary.
+The native functions run in the manually launched,
+foreground Python process and are not persisted.
+
+**Locked first-pass configuration before actual Speex results:**
+
+| Parameter | Value | Why |
+| --- | --- | --- |
+| Sampling | 48000Hz mono PCM16 | Physical capture/digital source native format |
+| Speex frame | 480 samples (10ms) | Official native library API recommends 10–20ms |
+| Speex filter tail | 5760 samples (120ms) | Match CueWire linear FIR nominal memory |
+| 0.15 fixed capture lag | 386952 samples / 8061.5ms | Previously published 1500–4000Hz reference coherence, NO retiming on Speex output |
+| 0.30 fixed capture lag | 387967 samples / 8082.64583ms | Same |
+| Render pre-peak shift | -480 samples (-10ms) | Exactly CueWire frozen-FIR pre-peak convention |
+| Digital speaker PCM source | Original identical SHA256-pinned 20s M5-006 reference | No sink-monitor or hardware playback |
+| Per-stream playback gain | 0.15 / 0.30 respectively | Matches original \`pw-play --volume\`; sink/room gain NOT fabricated |
+| Processing | Continuous sequential frame-by-frame including OFF | Standard Speex native AEC, adapting through evaluation |
+| Separate Speex preprocessor | **DISABLED** | Isolates AEC linear baseline from NS/AGC/residual postprocessing |
+| Eval | 10–16s of music-reference time | Exactly CueWire M5 heldout reference interval |
+| OFF negative controls | Original mic 2–7s, 30–35s | Catch undesired background changes |
+| Outputs | \`speex-aec-only.json\`, \`SHA256SUMS\` only | No residual audio exported |
+
+The native ABI uses \`SPEEX_ECHO_SET_SAMPLING_RATE=24\`,
+\`GET_SAMPLING_RATE=25\` and
+\`GET_FRAME_SIZE=3\`; library responses are
+checked before streaming. Input is verified
+exact PCM16 recovered from the audited WAVs.
+The final partial 480-sample block is zero-padded
+and output is cut back to the original sample
+count. The process records measured CPU-wall
+duration/RTF but **does not** measure
+device-to-device or perceptual latency.
+No processed audio is stored or played.
+
+**Fairness caveat:** CueWire fixed FIR learns only on
+reference 3–9s and is frozen; Speex adapts continuously
+including 10–16s evaluation. Hence this is an
+**external sequential-adaptive engineering baseline**,
+not a matched frozen model or a rigorously blind
+prospective A/B comparison. The test reuses
+previously examined M5 recordings.
+All metrics and mode labels remain explicit.
+Do NOT call a better score a formal production PASS
+and do not rescue the historical 0.67881dB failure.
+
+Three new regression tests cover (i) immutable
+reference alignment and exact PCM16 conversion,
+(ii) 480-frame/native ABI order including partial
+tail with a controlled fake library, and
+(iii) two SHA-pinned synthetic physical A/B/A
+captures with numerical-only output, no WAV,
+no overwritten source and tamper refusal.
+**44 M5 regression methods** now in the file;
+these were not yet run on the user's Arch.
+The fake-library tests do NOT establish that the
+native Speex algorithm performs well.
+
+### First physical Speex benchmark — opt-in, read-only inputs
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~~~
+
+Only when all tests pass:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_speex_baseline.py \
+  --low-capture .audit/voice-aec/M5-level-015-001 \
+  --high-capture .audit/voice-aec/M5-level-030-001 \
+  --out .audit/voice-aec/M5-speex-aec-only-001
+
+cd .audit/voice-aec/M5-speex-aec-only-001
+sha256sum -c SHA256SUMS
+~~~
+
+If source names differ, point to actual existing files
+whose SHA256 hashes match the pinned evidence.
+If output dir exists, use fresh \`-002\` etc: never
+overwrite anything in private \`.audit\`.
+
+Send **only** \`speex-aec-only.json\` and \`SHA256SUMS\`.
+The pre-existing CueWire
+\`M5-echo-floor-001/echo-floor.json\` is the
+frozen baseline for numerical comparison.
+No new microphone capture, public upload of WAV
+or any PipeWire sound setting change is needed.
+
+If an invocation aborts because the local native
+library or a source hash does not match,
+**do not install/fix packages in haste**: send
+the exact error, then review the adapter.
+The latest native AEC run has not yet happened.
+
 ## Next engineering actions
 
 Implement two **offline adapters**, pinned to

@@ -569,6 +569,35 @@ class M5Tests(unittest.TestCase):
                     frozen_heldout.analyze(
                         aba_dir, audit / "voice-aec/M5-frozen-aec-heldout-002")
 
+    def test_extended_doubletalk_calibration_requires_silent_first_12s(self):
+        """Explicit 32s, 12s calibration allowed; no recording via CLI test."""
+        argv = [
+            "voice_m5_capture.py",
+            "--music", "/tmp/synthetic-unused-reference.wav",
+            "--speaker", "alsa_output.synthetic",
+            "--capture-backend", "pipewire",
+            "--source", "alsa_input.usb-synthetic",
+            "--seconds", "32", "--calibration-seconds", "12",
+            "--volume", "0.30",
+            "--out", "/tmp/no-capture-is-created-by-this-test"
+        ]
+        with (mock.patch.object(sys, "argv", argv),
+              mock.patch.object(capture, "experiment") as run):
+            capture.main()
+            run.assert_called_once()
+            args = run.call_args[0][0]
+            self.assertEqual(args.seconds, 32)
+            self.assertEqual(args.calibration_seconds, 12)
+            self.assertEqual(args.capture_backend, "pipewire")
+        bad_argv = [*argv]
+        bad_argv[bad_argv.index("12")] = "15"
+        with (mock.patch.object(sys, "argv", bad_argv),
+              mock.patch.object(capture, "experiment") as run,
+              self.assertRaises(SystemExit) as err):
+            capture.main()
+        self.assertEqual(err.exception.code, 2)
+        run.assert_not_called()
+
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

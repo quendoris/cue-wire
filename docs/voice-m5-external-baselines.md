@@ -1,9 +1,9 @@
 # CueWire M5 — audited 13 kHz bursts and fair external DSP/AEC baselines
 
 Date: 2026-11-09.
-Status: exploratory architecture research; no third-party engine has yet
-been executed on the private M5 physical WAVs. **NO benchmark winner
-or production approval is claimed.** The previously preregistered
+Status: exploratory architecture research; native SpeexDSP AEC was
+run on the private M5 physical WAVs, including a zero-far-end control.
+**No production approval or independently proven benchmark winner is claimed.** The previously preregistered
 new-take guarded 0.67881dB wholeband AEC result remains FAIL.
 
 ## Fresh physical M5 off-spectral-fingerprint result
@@ -551,6 +551,128 @@ gated residual echo stage, with voice protection
 and latency constraints. M4 working chain is
 not modified. The historical 0.67881dB
 prospective FAIL remains immutable.
+
+## Implemented next control: exact incremental M4 voice transfer through native Speex
+
+New CLI \`tools/voice_m5_speex_known_voice.py\` uses the
+two SHA256-pinned existing 0.15/0.30 physical
+speaker-only mic WAVs; same original M5-006 digital
+reference, already fixed alignment delays,
+and **one explicit M4 RAW voice capture** whose
+real schema/manifests and RAW SHA256 must verify
+through the existing \`voice_m5_known_stem.py\`
+validation functions. No new microphone capture.
+
+Parameters declared prior to actual report:
+- M4 RAW speech excerpt starts at **6.0s** by
+  default to skip initial five seconds of silence
+  from the first M4-ALSA protocol. Six full
+  seconds of speech are needed;
+- Digital voice is inserted only into physical mic
+  during reference **10–16s** (no speech in earlier
+  3–9s training). Predefined voice levels:
+  **-50 and -39dBFS**;
+- Exact PCM16 incremental stem
+  \`PCM16(mic+voice)-PCM16(mic)\` is preserved
+  as the known reference after quantization;
+- For **each** speaker level and each voice level,
+  native Speex is replayed from freshly
+  initialized AEC state on speaker-only vs
+  speaker-plus-digitally-injected-voice signals.
+  Both the actual render and a **zero far-end**
+  render path are tested, holding frame size
+  10ms and tail 120ms unchanged;
+- Separately, the existing original
+  **120ms/ridge .02 frozen CueWire FIR** and
+  **3800Hz echo-estimate-only guard** run as
+  the unchanged reference-only mathematical
+  control (guard remains NONCAUSAL);
+- Define near-end incremental response
+  \`F(mic+voice,ref)-F(mic,ref)\` and compare
+  against actual injected PCM16 stem:
+  transfer gain, relative error, SNR of
+  transfer difference, and 500–1500Hz,
+  1500–4000Hz, 4–8kHz, 8–16kHz subbands.
+  Also measure output-known-stem interference
+  SNR. Do NOT confuse these two metrics;
+- No algorithm, gain, frequency cutoff, time
+  shift, postprocessor or threshold is chosen
+  based on this test. No hybrid cascade
+  runs yet; this first examines risks
+  of damaging speech before designing one.
+
+This synthetic digital experiment is NOT an
+independent clean-voice measurement of real
+physical simultaneous doubletalk, acoustic
+AGC/DSP, subjective sound, speech intelligibility,
+live latency, or real microphone transparency.
+The native Speex library (already installed
+under \`libspeexdsp.so.1\`) runs wholly inside
+the foreground Python process, without
+PipeWire route changes, GUI or daemons.
+The script exports only \`known-voice-speex.json\`
+and its \`SHA256SUMS\` under a fresh
+private \`.audit\` directory.
+
+Two new tests for exact 6s PCM16 source
+perturbation and synthetic speech transfer
+math were added; **48 M5 test methods** total.
+Run them locally before trusting any new
+tool results.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~~~
+
+Find the prior M4 voice RAW manifest location
+*without assuming a private path*:
+
+~~~bash
+find .audit -type f \
+  -path '*/M4-R0-ALSA-007/manifest.json' -print
+~~~
+
+Use its containing directory as the \`--voice\`
+argument. Example **only if the found path
+is exactly as shown**:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_speex_known_voice.py \
+  --low-capture .audit/voice-aec/M5-level-015-001 \
+  --high-capture .audit/voice-aec/M5-level-030-001 \
+  --voice .audit/voice-m4/M4-R0-ALSA-007 \
+  --voice-start-s 6 \
+  --out .audit/voice-aec/M5-speex-known-voice-001
+
+cd .audit/voice-aec/M5-speex-known-voice-001
+sha256sum -c SHA256SUMS
+~~~
+
+If the actual M4 path differs, use the path
+from \`find\`; NEVER fabricate a private path
+or use a different voice RAW whose original
+manifest fails SHA verification. If there is
+no M4-R0-ALSA-007, stop and report the
+existing available M4 RAW folders; do not
+silently substitute arbitrary microphone speech.
+The output is NUMERIC ONLY; do not upload voice
+WAV. Send \`known-voice-speex.json\`
+and \`SHA256SUMS\`.
+
+Only after evaluating incremental voice
+transfer should we add the exploratory
+Speex + conservative reference-gated
+residual stage. Any hybrid must pass
+voice preservation and timing constraints
+on new independent physical doubletalk
+before live activation. Historical
+0.67881dB FAIL and M4 approved
+voice master remain untouched.
 
 ## Next engineering actions
 

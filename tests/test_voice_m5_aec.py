@@ -34,6 +34,7 @@ import voice_m5_early_cross_take as cross_take
 import voice_m5_playback_coherence as playback_coherence
 import voice_m5_echo_floor as echo_floor
 import voice_m5_off_floor_windows as off_windows
+import voice_m5_off_spectral_fingerprint as off_fingerprint
 
 RATE = aec.RATE
 
@@ -244,7 +245,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_early_cross_take.py",
                        "voice_m5_playback_coherence.py",
                        "voice_m5_echo_floor.py",
-                       "voice_m5_off_floor_windows.py"):
+                       "voice_m5_off_floor_windows.py",
+                       "voice_m5_off_spectral_fingerprint.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -1502,6 +1504,107 @@ class M5Tests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,"SHA256"):
                     off_windows.analyze(
                         lo,hi,audit/"voice-aec/M5-off-floor-windows-002")
+
+    def test_off_spectral_fingerprint_tone_vs_broadband_burst(self):
+        """Known 11kHz tone has concentrated spectrum vs broadband noise."""
+        rng = np.random.default_rng(674901)
+        t = np.arange(RATE//2)/RATE
+        stable = rng.normal(0, .0005, RATE//2)
+        burst_tone = stable + .012*np.sin(2*np.pi*11000*t)
+        burst_broad = stable + rng.normal(0, .012, RATE//2)
+        base = off_fingerprint.window_fingerprint(stable)
+        tone = off_fingerprint.window_fingerprint(burst_tone)
+        broad = off_fingerprint.window_fingerprint(burst_broad)
+        self.assertLess(
+            abs(tone["highest_welch_psd_frequency_hz"]-11000), 20)
+        self.assertGreater(
+            tone["top_one_percent_frequency_bins_power_fraction"],
+            broad["top_one_percent_frequency_bins_power_fraction"]+.3)
+        self.assertLess(tone["spectral_flatness_0_to_1"],
+                        broad["spectral_flatness_0_to_1"]*.3)
+        self.assertGreater(
+            tone["full_highband_power_dbfs"],
+            base["full_highband_power_dbfs"]+15)
+        self.assertAlmostEqual(
+            sum(x["fraction_of_8_16khz_spectral_power"]
+                for x in tone["subbands"]), 1, delta=1e-5)
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            off_fingerprint.window_fingerprint(stable[:-1])
+
+    def test_off_spectral_fingerprint_source_hashes_and_json_only(self):
+        """All 40 OFF-only windows; captures stay unchanged and private."""
+        rng = np.random.default_rng(674902)
+        with tempfile.TemporaryDirectory() as root:
+            audit=Path(root)/".audit"
+            digital=audit/"voice-aec/M5-006"
+            lo=audit/"voice-aec/M5-level-015-001"
+            hi=audit/"voice-aec/M5-level-030-001"
+            for folder in (digital,lo,hi):
+                folder.mkdir(parents=True)
+            ref_file=digital/"reference-sent.wav"
+            pcm16_file(ref_file,rng.normal(0,.05,20*RATE))
+            ref_mf=digital/"manifest.json"
+            ref_mf.write_text('{"synthetic":"reference"}')
+            for folder,vol in ((lo,.15),(hi,.30)):
+                data=rng.normal(0,.0002,36*RATE)
+                if vol==.15:
+                    t=np.arange(RATE//2)/RATE
+                    data[round(5.5*RATE):round(6.*RATE)] += (
+                        .02*np.sin(2*np.pi*11000*t))
+                wav=folder/"microphone-aba-raw.wav"
+                pcm16_file(wav,data)
+                meta={
+                    "schema":"cuewire-M5-continuous-ABA-control-v1",
+                    "status":"captured_aba_for_noise_diagnostics",
+                    "source_mic_sample_spec":"s16le 1ch 48000Hz",
+                    "source_mic_name":"alsa_input.usb-synthetic",
+                    "speaker_sink_name":"alsa_output.pci-synthetic",
+                    "speaker_play_volume":vol,
+                    "reference_source_capture":str(digital),
+                    "reference_source_manifest_sha256":aec.digest(ref_mf),
+                    "reference_wav_sha256":aec.digest(ref_file),
+                    "reference_duration_s":20.0,
+                    "requested_speaker_off_before_s":8,
+                    "requested_speaker_off_after_s":8,
+                    "microphone":{"sha256":aec.digest(wav)}
+                }
+                (folder/"manifest.json").write_text(json.dumps(meta))
+            sources=[ref_file,ref_mf,lo/"microphone-aba-raw.wav",
+                     lo/"manifest.json",hi/"microphone-aba-raw.wav",
+                     hi/"manifest.json"]
+            old_hashes=[aec.digest(x) for x in sources]
+            with (mock.patch.object(off_fingerprint,"AUDIT",audit.resolve()),
+                  mock.patch.object(playback_coherence,"AUDIT",audit.resolve()),
+                  mock.patch.object(off_fingerprint,"LOW_MANIFEST_SHA",aec.digest(lo/"manifest.json")),
+                  mock.patch.object(off_fingerprint,"HIGH_MANIFEST_SHA",aec.digest(hi/"manifest.json")),
+                  mock.patch.object(off_fingerprint,"LOW_MIC_SHA",aec.digest(lo/"microphone-aba-raw.wav")),
+                  mock.patch.object(off_fingerprint,"HIGH_MIC_SHA",aec.digest(hi/"microphone-aba-raw.wav")),
+                  mock.patch.object(off_fingerprint,"REFERENCE_SHA",aec.digest(ref_file)),
+                  mock.patch.object(off_fingerprint,"SOURCE_MANIFEST_SHA",aec.digest(ref_mf)),
+                  mock.patch.object(playback_coherence,"REFERENCE_SHA",aec.digest(ref_file)),
+                  mock.patch.object(playback_coherence,"SOURCE_MANIFEST_SHA",aec.digest(ref_mf))):
+                dest=audit/"voice-aec/M5-off-spectral-fingerprint-001"
+                report=off_fingerprint.analyze(lo,hi,dest)
+                self.assertTrue((dest/"off-spectral-fingerprint.json").is_file())
+                self.assertTrue((dest/"SHA256SUMS").is_file())
+                self.assertEqual(list(dest.glob("*.wav")),[])
+                self.assertFalse(report["microphone_voice_analyzed"])
+                self.assertFalse(report["virtual_mic_approved"])
+                self.assertEqual(report["status"],
+                                 "diagnostic_after_observed_highband_bursts_not_independent")
+                phase=report["volume_015"]["speaker_off"]["before"]
+                self.assertEqual(len(phase["windows"]),10)
+                self.assertEqual(len(phase["elevated_windows"]),1)
+                self.assertEqual(phase["elevated_windows"][0]["mic_wav_time_s"],
+                                 [5.5,6.0])
+                self.assertEqual(old_hashes,[aec.digest(x) for x in sources])
+                with self.assertRaises(FileExistsError):
+                    off_fingerprint.analyze(lo,hi,dest)
+                with (lo/"microphone-aba-raw.wav").open("ab") as f:
+                    f.write(b"tamper")
+                with self.assertRaisesRegex(ValueError,"SHA256"):
+                    off_fingerprint.analyze(
+                        lo,hi,audit/"voice-aec/M5-off-spectral-fingerprint-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

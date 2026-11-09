@@ -70,6 +70,89 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 new opt-in double-talk capture — 12s silent calibration, 20s voice
+
+Following the REAL M5-ABA-001 frozen AEC heldout result
+(**1.18578 dB total, with harmful negative ERLE in 4–16 kHz**),
+the next recording is a new **controlled double-talk sample**,
+not a live virtual-microphone deployment.
+
+The existing `tools/voice_m5_capture.py` was extended to accept
+`--calibration-seconds 4..14` instead of only 4..7.
+This leaves the original 5-second default unchanged and reuses the
+known working USB microphone and child-process ownership logic.
+A new synthetic CLI test checks 12s is accepted, 15s rejected,
+with no real hardware access; there are **22 tests** in
+`tests/test_voice_m5_aec.py` after this change.
+
+**Protocol for a new take only:**
+
+- Digital reference: freshly converted **32 seconds** of the same
+  original local music file, played via explicit physical speaker
+  `alsa_output.pci-0000_00_1f.3.analog-stereo` at `--volume 0.30`.
+  No system audio routes/defaults or microphone gain are adjusted.
+- Physical microphone capture: explicit `alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback`.
+  Use the previously working externally powered USB hub.
+- **0–12 seconds of music: operator completely silent.**
+  Reserve model training and a distinct unused speaker-only
+  heldout interval before speech begins.
+- When terminal prints
+  **`CALIBRATION COMPLETE — NOW READ YOUR TEXT!`**,
+  operator reads continuously for the next approximately
+  **20 seconds**, while the same reference music plays.
+- Never route mic sound back to speakers/headphones and do
+  not play other system audio during this controlled sample.
+  Keep mic, speaker and volume stationary.
+- Original unprocessed mic and exact sent reference go into
+  a brand new `.audit/voice-aec/M5-doubletalk-001`.
+  SHA256 and a manifest are produced; no denoising,
+  AEC, cleaned voice preview, background daemon or
+  virtual mic is produced by the capture process.
+- Keep the prior M4 LEVEL-001 recording and all M5-00N,
+  A/B/A and numerical audit files unchanged.
+
+**First run tests; abort the recording if any test is red:**
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~~~
+
+**Then opt-in to one raw double-talk take:**
+
+~~~bash
+cd /data/cue-wire
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_capture.py \
+  --music '/data/oae-research/ACDC_-_Thunderstruck_(Official_Video).wav' \
+  --capture-backend pipewire \
+  --source 'alsa_input.usb-Anlya.cn_MICAudio-97i_08613544166503-00.mono-fallback' \
+  --speaker 'alsa_output.pci-0000_00_1f.3.analog-stereo' \
+  --seconds 32 \
+  --calibration-seconds 12 \
+  --volume 0.30 \
+  --out .audit/voice-aec/M5-doubletalk-001
+~~~
+
+Share only `M5-doubletalk-001/manifest.json` first.
+No source microphone WAV need be uploaded yet. If the
+capture fails or the mic was not actually silent during
+the calibration, reject the take and choose a NEW directory
+for retry, never overwrite.
+
+**Next (not yet approved or implemented):** independently
+validate the 12-second calibration within the same take
+using the 1500–4000 Hz initial alignment and separate
+training/heldout 3–9 s / 10–11.5 s windows, then
+apply one frozen model to the speech-after-12s segment.
+Critically, retaining near-end voice requires further
+objective/subjective evidence; a speaker-only ERLE PASS
+is not a voice-preservation certification. High-frequency
+regressions above 4kHz remain a blocker to claiming
+full-band quality.
+
 ## M5 frozen-FIR heldout: ACTUAL recorded evidence (2026-11-09)
 
 The user supplied the real `M5-frozen-aec-heldout-001/frozen-aec-heldout.json`

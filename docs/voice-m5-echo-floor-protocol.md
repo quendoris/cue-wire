@@ -311,6 +311,86 @@ No physical audio WAVs, playback or microphone
 capture are required. The original 0.67881dB
 prospective FAIL and M4 speech master remain unchanged.
 
+## M5-off-floor-windows-001: verified 0.5s physical OFF background (2026-11-09)
+
+User supplied the actual \`off-floor-windows.json\` and its
+\`SHA256SUMS\`. Independently computed JSON SHA256 matches:
+\`b8488b715e1094bb16ab2284c4d6b793e653aa2538717d1b2480131b9c7a984f\`.
+Source RAW/manifests IDs in the report are consistent
+with the previous SHA256-pinned 0.15 and 0.30 captures.
+The raw WAV bytes remain private and were verified only
+by the local analyzer, not reuploaded for independent
+byte-for-byte SHA256 checking here.
+
+The investigation is diagnostic-only: half-second windowed
+band RMS of microphone WAV seconds 2–7 and 30–35, with
+NO new audio capture, echo filter fit, virtual microphone
+routing, or changed historical heldout results.
+
+### Evidence: 8–16kHz difference is burst-dominated
+
+| Take | OFF phase | 5s mean-power level | Median of ten 0.5s levels | Windows > median+6dB | Loudest-window fraction of 5s band power |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 0.15 | Before | -67.90325dBFS | **-79.27066dBFS** | 2 | 49.60% |
+| 0.15 | After | -80.44873dBFS | **-80.50628dBFS** | 0 | 10.99% |
+| 0.30 | Before | -78.91548dBFS | **-80.36775dBFS** | 0 | 25.54% |
+| 0.30 | After | -66.08848dBFS | **-79.41520dBFS** | 4 | 43.03% |
+
+The 0.15 BEFORE highband anomalies occur in mic-WAV
+half-second windows **5.5–6.0s (-60.94837dBFS)** and
+**6.0–6.5s (-61.41730dBFS)**. These two windows
+contain **94.12%** of the five-second 8–16kHz energy.
+During the AFTER phase, the 10 highband windows
+instead remain close to -80.5dBFS, with no major bursts.
+
+The 0.30 AFTER highband anomalies are
+**30.0–30.5s (-65.53625dBFS)**,
+**30.5–31.0s (-59.75097dBFS)**,
+**31.0–31.5s (-63.71976dBFS)** and
+**34.0–34.5s (-61.94713dBFS)**.
+These four windows contain **97.59%** of the
+5s highband energy. The other windows remain
+approximately -80dBFS. The 0.30 BEFORE highband
+has no windows over median+6dB but includes two
+milder excursions, -74.84 and -76.47dBFS.
+
+Thus the previous phase-mean highband differences
+of roughly **-12.55dB** (0.15 before→after) and
+**+12.83dB** (0.30 before→after) are dominated by
+concentrated short-duration bursts, NOT a uniform
+11–13dB floor shift. The median differences were
+only **-1.23562dB** and **+0.95255dB**.
+The report uses a 4th-order Butterworth offline
+bandpass rather than the prior 4096-point Welch
+bandpower estimator; their mean values should not
+be compared at sub-0.1dB precision.
+
+### Other bands: smaller sustained differences
+
+For the 0.15 take, median OFF AFTER minus BEFORE
+levels are **-1.34593dB** (500–1500Hz),
+**-1.83708dB** (1500–4000Hz), and
+**-2.40872dB** (4000–8000Hz), with NO
+window exceeding the phase median by 6dB.
+Therefore the full OFF background is NOT exactly
+stationary: some changes extend across many
+half-second windows, not only isolated 8–16kHz
+bursts. The 0.30 take's equivalent median changes
+are -0.48515, +0.17920 and -0.12767dB.
+
+**Classification:** the high-frequency energy is
+burst-dominated; source UNKNOWN. Spectral or
+waveform structure of the original private mic
+RAW is still needed to distinguish narrowband
+interference, broadband bursts, mic DSP mode
+changes and other plausible explanations.
+This report cannot infer actual USB dropout,
+system-wide noise, room reflections, or AGC.
+No clean voice preservation was measured.
+
+Old prospective 0.67881dB FAIL, M4 LEVEL-001,
+source WAVs and fixed M5 FIR remain unchanged.
+
 ## Future: true near-end speech criterion
 
 Only after we understand the absolute residual vs

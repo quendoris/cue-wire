@@ -70,6 +70,80 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 known-stem-001: ACTUAL SHA-verified result (2026-11-09)
+
+User completed the corrected M4 ALSA-v1 source path and the actual
+M5-ABA-002 capture. \`known-stem.json\` was independently SHA256 verified
+against the attached \`SHA256SUMS\`:
+
+\`16ad3c6da4f0f5dec34a03837d45c1373b255a4913afe214879c69b5c4c79ce2\`.
+
+The source hashes match the previously inspected M5 ABA microphone
+\`47bb10cd4f79e8e9a84a753bf05898a875955b966c4d2550315b77327eb53aef\`
+and M5-006 reference
+\`afd3b0ea1141147d6df284bfab62d2a9c9adc579053cfbea8c35559f2e94aa90\`.
+The M4 voice-only original was accepted through the historical ALSA
+schema \`cuewire-M4-raw-alsa-v1\`, with RAW SHA256
+\`aff66d0b3fadb45da122bf26036e7d92e68d20f3b0e33efdfe68f905ee155e9a\`.
+Independent rehash of original private WAVs is unavailable without
+the WAV bytes; the local analyzer verified them against their manifests.
+
+The source M4 voice clip starts **6s** into the original recorded RAW,
+has exactly **6s** of PCM, with original RMS **-35.66446 dBFS**.
+It is digitally multiplied by **0.68111866** to a pre-specified
+**-39 dBFS** clean-stem level.
+
+| Exact-stem SNR | Value | Improvement versus original |
+| --- | ---: | ---: |
+| Unprocessed physical music track plus clean stem | **19.30545 dB** | — |
+| Original frozen FIR subtraction | **20.49123 dB** | +1.18578 dB |
+| Echo-only 3800Hz guard subtraction | **20.52294 dB** | +1.21749 dB |
+
+The algebraic speech identity check is exactly **0.0**
+digital error. This verifies that the known stem was added
+and reference-only subtraction did not numerically transform
+its sample values in the synthetic sum.
+
+**Crucial non-independent identity:** Let the physically recorded
+ABA speaker-only microphone signal be \`b\`, the injected known
+clean speech be \`s\`, and the frozen modeled echo be \`e_hat\`.
+The original mixture is \`b+s\`. Subtracting the frozen echo
+produces \`(b-e_hat)+s\`. Its error relative to the clean stem
+is \`b-e_hat\`; before subtraction the error is \`b\`.
+Therefore the improvement in known-stem SNR is
+**identically equal by algebra** to the speaker-only
+heldout ERLE of the chosen echo estimate, *provided the
+same samples and calibration are used*. In particular
+the original +1.18578 dB is **not a new independent validation
+result** beyond the ABA speaker-only heldout ERLE.
+The guarded +1.21749 dB is likewise a new expression of
+the already explored guard subtraction on the same ABA data.
+
+Additional per-band SNR improvements (full FIR → guarded):
+in 500–1500Hz **+2.28759 → +2.28763 dB**;
+1500–4000Hz **+3.26274 → +3.26389 dB**;
+4000–8000Hz **-0.24140 → +0.00271 dB**;
+8000–16000Hz **-0.82629 → +0.00000 dB**.
+The high-band guard repairs an already observed additive-error
+regression, but the synthetic voice stem has no real acoustic
+coupling to the speaker sound and cannot establish a speech-
+preservation result under USB mic AGC, nonlinear acoustic
+distortion, or physical doubletalk.
+
+\`approved_for_virtual_mic=false\` and
+\`voice_preservation_validated_under_real_acoustics=false\`.
+The offline zero-phase 513-tap guard is noncausal and has
+not been implemented or latency-audited as a live filter.
+Existing M4 LEVEL-001 remains untouched.
+
+**Next: prospectively locked physical recording with NO parameter
+changes based on its outcome.** See
+\`docs/voice-m5-prospective-guard-validation.md\`. The new
+run must be saved in a new directory (e.g. \`M5-doubletalk-002\`)
+and tested with the already frozen numeric guard.
+Failing or inconclusive tests must stay visible; do not
+re-label a voice-quality result PASS from energy alone.
+
 ## M5 known-stem ALSA compatibility correction (2026-11-09)
 
 User's actual command used **M5-ABA-002** (rather than

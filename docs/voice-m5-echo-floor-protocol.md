@@ -242,6 +242,75 @@ is unchanged. Next diagnostic: inspect 0.5s short-window
 OFF floor variation to distinguish brief spikes from
 persistent level changes, with no new audio recording.
 
+## Next fixed OFF-window diagnostic — detect highband transients without new recordings
+
+The real \`echo-floor-001\` analysis revealed **11–14dB**
+before/after changes of the 8–16kHz physical speaker-OFF
+mic power, while combined 500–4000Hz AEC residual power
+was near the descriptive mean OFF power.
+
+Before asking for any new recording, the new tool
+\`tools/voice_m5_off_floor_windows.py\` will divide
+each old mic WAV's 2–7s and 30–35s truly OFF segments
+into **ten 0.5-second windows per segment**. It computes,
+for each of the six fixed bands, median, P10, P90, maximum,
+arithmetic mean POWER, and the fraction of the phase's
+total band energy concentrated in its single loudest
+half-second window. It also records any window more
+than 6dB above its own phase's median. Those thresholds
+are solely descriptive indicators of bursts,
+**not new AEC or voice acceptance gates**.
+
+This answers a testable diagnostic question:
+do the historical OFF differences come from one
+or two isolated mic/background bursts, or from
+a more sustained shift of the distribution?
+The tool does not determine whether such changes
+were caused by the USB microphone, AGC/noise gating,
+software, or environmental sounds.
+
+The original physical source SHA256s of both volume
+takes and M5-006 digital reference/manifest are
+checked. Only the two existing OFF raw microphone
+intervals are analyzed. A 4096-bin Welch power
+estimate is **NOT** reused for this short-window
+check: a 4th-order offline Butterworth bandpass is
+applied to each 5s OFF phase, and 0.5s mean
+squared band samples are measured. Therefore the
+short-window band energies need not match the earlier
+Welch PSD estimate to the last decibel.
+
+New source code adds two synthetic tests:
+a single strong highband burst that dominates
+mean power while the median stays stable, and a
+full immutable-source/JSON-only integration test.
+**39 tests total**, requiring a local run before
+we trust the new code.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_off_floor_windows.py \
+  --low-capture .audit/voice-aec/M5-level-015-001 \
+  --high-capture .audit/voice-aec/M5-level-030-001 \
+  --out .audit/voice-aec/M5-off-floor-windows-001
+
+cd /data/cue-wire/.audit/voice-aec/M5-off-floor-windows-001
+sha256sum -c SHA256SUMS
+~~~
+
+Use a NEW output folder if that name already exists,
+never overwrite evidence. Send
+\`off-floor-windows.json\` and \`SHA256SUMS\` only.
+No physical audio WAVs, playback or microphone
+capture are required. The original 0.67881dB
+prospective FAIL and M4 speech master remain unchanged.
+
 ## Future: true near-end speech criterion
 
 Only after we understand the absolute residual vs

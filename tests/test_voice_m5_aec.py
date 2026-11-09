@@ -36,6 +36,7 @@ import voice_m5_echo_floor as echo_floor
 import voice_m5_off_floor_windows as off_windows
 import voice_m5_off_spectral_fingerprint as off_fingerprint
 import voice_m5_speex_baseline as speex_baseline
+import voice_m5_speex_zero_reference as speex_zero
 import ctypes
 
 RATE = aec.RATE
@@ -249,7 +250,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_echo_floor.py",
                        "voice_m5_off_floor_windows.py",
                        "voice_m5_off_spectral_fingerprint.py",
-                       "voice_m5_speex_baseline.py"):
+                       "voice_m5_speex_baseline.py",
+                       "voice_m5_speex_zero_reference.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -1782,6 +1784,199 @@ class M5Tests(unittest.TestCase):
                     speex_baseline.analyze(
                         low,high,audit/"voice-aec/M5-speex-aec-only-002",
                         speex_loader=lambda:(stub,"mock-only-library"))
+
+    def test_speex_zero_reference_control_drops_all_far_end_frames(self):
+        """Real mic signal maintained, but far-end exactly zero throughout."""
+        rng=np.random.default_rng(777310)
+        x=rng.normal(0,.05,20*RATE)
+        mic=rng.normal(0,.0006,36*RATE)
+        lag=speex_baseline.LAG_015_SAMPLES
+        mic[lag:lag+len(x)]+= .012*x
+        class ZeroFarOnly:
+            def __init__(self):
+                self.calls=0
+                self.not_zero=0
+            def speex_echo_state_init(self,frame,tail):
+                assert (frame,tail)==(480,5760)
+                return 3030
+            def speex_echo_ctl(self,state,request,ptr):
+                data=ctypes.cast(ptr,ctypes.POINTER(ctypes.c_int))
+                if request==24: self.rate=data[0]
+                elif request==25: data[0]=self.rate
+                elif request==3: data[0]=480
+                else: return -1
+                return 0
+            def speex_echo_cancellation(self,state,rec,far,out):
+                self.calls+=1
+                y=np.ctypeslib.as_array(far,shape=(480,))
+                self.not_zero+=int(np.count_nonzero(y))
+                ctypes.memmove(out,rec,960)
+            def speex_echo_state_destroy(self,state):
+                assert state==3030
+        fake=ZeroFarOnly()
+        result=speex_zero.zero_reference_run(
+            x if False else mic,x,lag,fake,"synthetic-zero-far")
+        self.assertGreater(fake.calls,3500)
+        self.assertEqual(fake.not_zero,0)
+        self.assertEqual(
+            result["native_processor"]["frame_samples"],480)
+        self.assertEqual(len(result["heldout_speaker_only"]["bands"]),6)
+        self.assertAlmostEqual(
+            result["heldout_speaker_only"]["full_band_erle_db"],0.,delta=.05)
+        self.assertTrue(result["processed_with_exactly_zero_far_end_pcm"])
+        self.assertEqual(len(
+            result["speaker_off_source_independent_impact"]),2)
+        normal={
+          "heldout_speaker_only":{
+            "full_band_erle_db":2.5,
+            "bands":[dict(row) for row in result["heldout_speaker_only"]["bands"]]
+          },
+          "speech_band_500_4000hz_proxy":dict(
+              result["speech_band_500_4000hz_proxy"]),
+          "speaker_off_speex_impact":{
+            phase:dict(out)
+            for phase,out in result[
+                "speaker_off_source_independent_impact"].items()
+          },
+        }
+        normal["speech_band_500_4000hz_proxy"][
+            "linked_proxy_suppression_db"]+=2.5
+        report=speex_zero.compare(normal,result)
+        self.assertAlmostEqual(
+            report["wholeband_erle_gain_due_to_real_reference_db"],
+            2.5,delta=.05)
+        self.assertAlmostEqual(
+            report["500_4000hz_linked_suppression_gain_due_to_real_reference_db"],
+            2.5,delta=1e-6)
+        self.assertEqual(len(report["per_band_speaker_off"]),12)
+
+    def test_speex_zero_reference_immutable_sha_pinned_numeric_only(self):
+        """Verified baseline report, synthetic offline inputs and no WAV output."""
+        rng=np.random.default_rng(777311)
+        class PassSpeex:
+            def speex_echo_state_init(self,frame,tail): return 3031
+            def speex_echo_ctl(self,state,request,ptr):
+                c=ctypes.cast(ptr,ctypes.POINTER(ctypes.c_int))
+                if request==24: self.rate=c[0]
+                elif request==25: c[0]=self.rate
+                elif request==3: c[0]=480
+                else: return -1
+                return 0
+            def speex_echo_cancellation(self,state,rec,far,out):
+                ctypes.memmove(out,rec,960)
+            def speex_echo_state_destroy(self,state):
+                assert state==3031
+        with tempfile.TemporaryDirectory() as tmp:
+            audit=Path(tmp)/".audit"
+            digital=audit/"voice-aec/M5-006"
+            low=audit/"voice-aec/M5-level-015-001"
+            high=audit/"voice-aec/M5-level-030-001"
+            for folder in (digital,low,high):
+                folder.mkdir(parents=True)
+            ref=digital/"reference-sent.wav"
+            music=rng.normal(0,.05,20*RATE)
+            pcm16_file(ref,music)
+            source_manifest=digital/"manifest.json"
+            source_manifest.write_text('{"test":"zero-ref"}')
+            for folder,gain,lag in (
+                (low,.15,speex_baseline.LAG_015_SAMPLES),
+                (high,.30,speex_baseline.LAG_030_SAMPLES)):
+                mic=rng.normal(0,.0009,36*RATE)
+                mic[lag:lag+len(music)] += .06*gain*music
+                wav=folder/"microphone-aba-raw.wav"
+                pcm16_file(wav,mic)
+                meta={
+                    "schema":"cuewire-M5-continuous-ABA-control-v1",
+                    "status":"captured_aba_for_noise_diagnostics",
+                    "source_mic_sample_spec":"s16le 1ch 48000Hz",
+                    "source_mic_name":"alsa_input.usb-test",
+                    "speaker_sink_name":"alsa_output.pci-test",
+                    "speaker_play_volume":gain,
+                    "reference_source_capture":str(digital),
+                    "reference_source_manifest_sha256":aec.digest(source_manifest),
+                    "reference_wav_sha256":aec.digest(ref),
+                    "reference_duration_s":20.0,
+                    "requested_speaker_off_before_s":8,
+                    "requested_speaker_off_after_s":8,
+                    "microphone":{"sha256":aec.digest(wav)}
+                }
+                (folder/"manifest.json").write_text(json.dumps(meta))
+            originals=[
+                ref,source_manifest,low/"manifest.json",
+                low/"microphone-aba-raw.wav",high/"manifest.json",
+                high/"microphone-aba-raw.wav"
+            ]
+            hashes_before=[aec.digest(p) for p in originals]
+            stub=PassSpeex()
+            patches=[
+                mock.patch.object(speex_baseline,"AUDIT",audit.resolve()),
+                mock.patch.object(speex_zero,"AUDIT",audit.resolve()),
+                mock.patch.object(playback_coherence,"AUDIT",audit.resolve()),
+                mock.patch.object(speex_baseline,"LOW_MANIFEST_SHA",
+                                  aec.digest(low/"manifest.json")),
+                mock.patch.object(speex_baseline,"HIGH_MANIFEST_SHA",
+                                  aec.digest(high/"manifest.json")),
+                mock.patch.object(speex_baseline,"LOW_MIC_SHA",
+                                  aec.digest(low/"microphone-aba-raw.wav")),
+                mock.patch.object(speex_baseline,"HIGH_MIC_SHA",
+                                  aec.digest(high/"microphone-aba-raw.wav")),
+                mock.patch.object(speex_baseline,"REFERENCE_SHA",
+                                  aec.digest(ref)),
+                mock.patch.object(speex_baseline,"SOURCE_MANIFEST_SHA",
+                                  aec.digest(source_manifest)),
+                mock.patch.object(speex_zero,"LOW_MANIFEST_SHA",
+                                  aec.digest(low/"manifest.json")),
+                mock.patch.object(speex_zero,"HIGH_MANIFEST_SHA",
+                                  aec.digest(high/"manifest.json")),
+                mock.patch.object(speex_zero,"LOW_MIC_SHA",
+                                  aec.digest(low/"microphone-aba-raw.wav")),
+                mock.patch.object(speex_zero,"HIGH_MIC_SHA",
+                                  aec.digest(high/"microphone-aba-raw.wav")),
+                mock.patch.object(speex_zero,"REFERENCE_SHA",aec.digest(ref)),
+                mock.patch.object(speex_zero,"SOURCE_MANIFEST_SHA",
+                                  aec.digest(source_manifest)),
+                mock.patch.object(playback_coherence,"REFERENCE_SHA",
+                                  aec.digest(ref)),
+                mock.patch.object(playback_coherence,"SOURCE_MANIFEST_SHA",
+                                  aec.digest(source_manifest)),
+            ]
+            with (patches[0],patches[1],patches[2],patches[3],
+                  patches[4],patches[5],patches[6],patches[7],
+                  patches[8],patches[9],patches[10],patches[11],
+                  patches[12],patches[13],patches[14],patches[15],
+                  patches[16]):
+                base=audit/"voice-aec/M5-speex-aec-only-001"
+                speex_baseline.analyze(
+                    low,high,base,speex_loader=lambda:(stub,"libspeexdsp.so.1"))
+                f=base/"speex-aec-only.json"
+                with mock.patch.object(
+                        speex_zero,"NATIVE_REF_REPORT_SHA256",
+                        aec.digest(f)):
+                    dest=audit/"voice-aec/M5-speex-zero-reference-001"
+                    report=speex_zero.analyze(
+                        low,high,f,dest,
+                        speex_loader=lambda:(stub,"libspeexdsp.so.1"))
+                    self.assertTrue((dest/"speex-zero-reference.json").is_file())
+                    self.assertTrue((dest/"SHA256SUMS").is_file())
+                    self.assertEqual(list(dest.glob("*.wav")),[])
+                    self.assertTrue(report["zero_farend_pcm_for_entire_duration"])
+                    self.assertFalse(report["voice_preservation_tested"])
+                    self.assertTrue(report["original_prospective_0_67881_db_gate_remains_failed"])
+                    self.assertEqual(len(report[
+                        "normal_minus_zero_comparison"]["volume_030"][
+                            "per_band_speaker_off"]),12)
+                    self.assertEqual(hashes_before,
+                                     [aec.digest(p) for p in originals])
+                    with self.assertRaises(FileExistsError):
+                        speex_zero.analyze(
+                            low,high,f,dest,
+                            speex_loader=lambda:(stub,"libspeexdsp.so.1"))
+                    with (high/"microphone-aba-raw.wav").open("ab") as fd:
+                        fd.write(b"tamper")
+                    with self.assertRaisesRegex(ValueError,"SHA256"):
+                        speex_zero.analyze(
+                            low,high,f,audit/"voice-aec/M5-speex-zero-reference-002",
+                            speex_loader=lambda:(stub,"libspeexdsp.so.1"))
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -208,6 +208,85 @@ The prospective **0.67881dB FAIL** and M4 approved
 voice master remain unchanged. No more retrospective
 threshold changes or AEC filter tuning.
 
+## Next read-only quantitative check: reference-coherent microphone power
+
+Added \`tools/voice_m5_playback_coherence.py\` to reuse the
+**already stored two A/B/A physical microphone WAVs** and
+the ORIGINAL exact digital 20s M5-006 music reference,
+with NO new capture needed. The new tool has immutable
+source SHA256 constants for the two manifests and the
+two physical WAVs verified above, plus the M5-006
+reference/source-manifest hashes. Different data
+will be rejected rather than silently compared.
+
+For each take independently:
+
+1. Align the digital reference to mic using the
+   **first 1.0–3.7 seconds** and a 1500–4000Hz
+   normalized correlation search near the logged
+   \`pw-play\` launch. Do not change any historical
+   AEC timing, FIR, acceptance gate or recordings.
+2. Evaluate only reference **4–9 seconds** and
+   **10–16 seconds**, not the alignment search
+   interval; compute per-band mic PSD and
+   magnitude-squared reference/mic coherence.
+3. Estimate a **linear reference-linked acoustic
+   power PROXY** by integrating \`P_yy(f) C_xy(f)\`
+   over each band (Welch PSD, 4096 frames/50%
+   overlap) for both volumes; compare in dB.
+4. Run an unrelated-reference negative control
+   using physical microphone speaker-OFF 2–6s
+   versus music reference 3–7s (the music was
+   not playing during that OFF interval).
+
+This coherence-derived proxy is NOT an exact
+measured speaker-echo SPL or clean voice transfer.
+Finite-sample coherence bias, nonlinear mic DSP,
+mic/background noise, 60% system-sink gain and
+separate-run environmental changes remain relevant.
+But this is a more source-specific comparison
+than raw ON/OFF RMS and needs no additional sound
+playback.
+
+The script writes only numeric
+\`playback-coherence.json\` and \`SHA256SUMS\`.
+It has no hardware access and never writes audio.
+
+Two regression tests were added. The M5 regression
+file now contains **35 tests**; new tests check
+the expected ~6dB increase for a doubled synthetic
+source amplitude, exact source hash protection,
+recordings' immutability and numeric-only outputs.
+They still require local execution.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_playback_coherence.py \
+  --low-capture .audit/voice-aec/M5-level-015-001 \
+  --high-capture .audit/voice-aec/M5-level-030-001 \
+  --out .audit/voice-aec/M5-playback-coherence-001
+
+cd .audit/voice-aec/M5-playback-coherence-001
+sha256sum -c SHA256SUMS
+~~~
+
+If the two input directories actually have other
+names, use their real paths: the script checks
+content SHA256s and stored per-stream volumes.
+If output already exists, choose a new identifier
+but never overwrite history.
+
+Share **\`playback-coherence.json\`** only. Do not
+share the private WAV unless separately needed.
+Original **0.67881dB prospective FAIL** remains
+unchanged regardless of this new diagnostic.
+
 ## Interpretation
 
 Compare on/off RMS and background stability; use

@@ -312,6 +312,72 @@ metadata. No private WAV upload is needed for that
 manifest-level check.
 
 
+### Postmortem alternative-peak calculation bug — fixed, 2026-11-09
+
+The first uploaded lag postmortem returned only ONE
+\`diagnostic_top_separated_peaks\` candidate in all nine
+band/window combinations, with a null runner-up margin.
+A new regression assertion reproduced it locally:
+\`AssertionError: 1 != 3\` inside
+\`test_m5_lag_postmortem_known_fixed_lag_early_windows\`
+(31 tests, 1 failure).
+
+**Root cause confirmed in code:**
+
+~~~python
+PEAK_SEPARATION_MS = 3.0
+# Wrong: uses 3 seconds rather than 3 milliseconds (144000 frames).
+separation = round(PEAK_SEPARATION_MS * RATE)
+# Correct: 3 milliseconds / 1000 seconds = 144 PCM frames.
+separation = round(PEAK_SEPARATION_MS * RATE / 1000)
+~~~
+
+The old logic blacklisted a +/-3-second interval around
+the first correlation maximum, eliminating the ENTIRE
+0–2 second candidate range after one iteration. No
+second or third peak could be reported, even on clean
+synthetic signals. The earlier JSON remains immutable
+and valid only for its leading peak and committed-lag
+metrics. Its missing runner-up evidence is a SOFTWARE
+BUG, not evidence of a uniquely identified lag.
+
+The fix changes only **how diagnostic alternative
+peaks are collected**. It does not change input PCM,
+original frozen AEC coefficients, physical capture,
+the leading correlation maximum, or the previously
+failed **0.67881dB** speaker-only gate.
+
+The synthetic test now requires THREE peaks separated
+by at least 3ms (allowing for five-decimal rounding);
+the full local suite still needs to be rerun.
+
+**Repeat diagnostic under a fresh output ID**:
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_lag_postmortem.py \
+  --capture .audit/voice-aec/M5-doubletalk-002 \
+  --report .audit/voice-aec/M5-guarded-fir-prospective-002/guarded-fir.json \
+  --out .audit/voice-aec/M5-lag-postmortem-003
+
+cd /data/cue-wire/.audit/voice-aec/M5-lag-postmortem-003
+sha256sum -c SHA256SUMS
+~~~
+
+Use the **actual** local report/capture paths if
+different. Do not overwrite the earlier postmortem.
+Compare the top 3 peaks for each early window; do
+not use them to retime or relabel the failed heldout.
+If the corrected local unit tests are green, send
+\`M5-lag-postmortem-003/lag-postmortem.json\` and
+its \`SHA256SUMS\`. No recordings are needed.
+
 ### Completed early-window postmortem: actual verified lag-postmortem.json (2026-11-09)
 
 The user supplied the real \`lag-postmortem.json\` and

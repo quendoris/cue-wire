@@ -25,6 +25,7 @@ import voice_m5_noise_probe as noise_probe
 import voice_m5_aba as aba
 import voice_m5_aba_spectrum as aba_spectrum
 import voice_m5_refcoherence as refcoherence
+import voice_m5_frozen_heldout as frozen_heldout
 
 RATE = aec.RATE
 
@@ -455,6 +456,117 @@ class M5Tests(unittest.TestCase):
         self.assertGreater(on["mic_power_weighted_coherence"], .75)
         self.assertLess(off["mic_power_weighted_coherence"], .3)
         self.assertEqual(len(ons), len(refcoherence.BANDS))
+
+    def test_frozen_aec_separate_training_and_heldout_coherence(self):
+        """Train-only FIR reduces independent echo without fitting future PCM."""
+        rng = np.random.default_rng(30102)
+        reference = rng.normal(0, .04, 20 * RATE)
+        lag = round(8.26 * RATE)
+        microphone = rng.normal(0, .0008, 36 * RATE)
+        t = np.arange(len(microphone)) / RATE
+        microphone += .001 * np.sin(2 * np.pi * 50 * t)
+        microphone[lag:lag+len(reference)] += .19 * reference
+        estimate, model = frozen_heldout.fit_frozen(
+            reference, microphone, lag)
+        a, b = frozen_heldout.indices(
+            frozen_heldout.HELDOUT_REFERENCE_S, lag, len(microphone))
+        original = microphone[a:b]
+        remaining = original - estimate[a:b]
+        self.assertGreater(frozen_heldout.erle_db(original, remaining), 9.0)
+        self.assertGreater(model["training_erle_db"], 9.)
+        self.assertEqual(frozen_heldout.TRAIN_REFERENCE_S, (3.0, 9.0))
+        self.assertEqual(frozen_heldout.HELDOUT_REFERENCE_S, (10.0, 16.0))
+        self.assertAlmostEqual(float(np.max(np.abs(estimate[2*RATE:6*RATE]))),
+                               0., delta=1e-12)
+        ref_heldout = reference[10*RATE:16*RATE]
+        compared = frozen_heldout.compare_coherence_same_weights(
+            ref_heldout, original, remaining)
+        highmid = next(m for m in compared if m["band_hz"] == [1500, 4000])
+        self.assertGreater(
+            highmid["coherence_mic_original_psd_weights_before"], 0.8)
+        self.assertLess(
+            highmid["coherence_mic_original_psd_weights_after"], 0.3)
+
+        altered = microphone.copy()
+        altered[a:b] += rng.normal(0, .02, b-a)
+        estimate_again, model_again = frozen_heldout.fit_frozen(
+            reference, altered, lag)
+        # Absolutely NO heldout microphone sample influences the fit.
+        np.testing.assert_allclose(estimate, estimate_again, rtol=0, atol=0)
+        self.assertEqual(model, model_again)
+
+    def test_frozen_aec_report_is_numeric_and_source_hash_guarded(self):
+        """Verified A/B/A source; no overwrite, no voice or WAV rendering."""
+        rng = np.random.default_rng(781)
+        reference = rng.normal(0, .05, 20 * RATE)
+        lag = round((8.0 + .19) * RATE)
+        microphone = rng.normal(0, .0009, 36 * RATE)
+        microphone[lag:lag+len(reference)] += .2 * reference
+        with tempfile.TemporaryDirectory() as temp:
+            audit = Path(temp) / ".audit"
+            ref_dir = audit / "voice-aec/M5-006"
+            aba_dir = audit / "voice-aec/M5-ABA-001"
+            ref_dir.mkdir(parents=True)
+            aba_dir.mkdir(parents=True)
+            x_path = ref_dir / "reference-sent.wav"
+            y_path = aba_dir / "microphone-aba-raw.wav"
+            pcm16_file(x_path, reference)
+            pcm16_file(y_path, microphone)
+            reference_manifest = {
+                "schema": "cuewire-M5-paired-physical-capture-v1",
+                "status": "captured_for_offline_aec",
+                "reference": {"sha256": aec.digest(x_path)},
+                "mic_capture": {"mic_source_name": "alsa_input.usb-test-mic"},
+                "speaker_sink_name": "alsa_output.pci-test-speaker",
+                "volume_pw_play": .3,
+            }
+            reference_manifest_path = ref_dir / "manifest.json"
+            reference_manifest_path.write_text(json.dumps(reference_manifest))
+            aba_manifest = {
+                "schema": "cuewire-M5-continuous-ABA-control-v1",
+                "status": "captured_aba_for_noise_diagnostics",
+                "reference_source_capture": str(ref_dir),
+                "reference_source_manifest_sha256":
+                    aec.digest(reference_manifest_path),
+                "reference_wav_sha256": aec.digest(x_path),
+                "source_mic_name": "alsa_input.usb-test-mic",
+                "speaker_sink_name": "alsa_output.pci-test-speaker",
+                "speaker_play_volume": .3,
+                "playback_start_after_recorder_launch_s": 8.0,
+                "microphone": {"sha256": aec.digest(y_path)},
+            }
+            aba_manifest_path = aba_dir / "manifest.json"
+            aba_manifest_path.write_text(json.dumps(aba_manifest))
+            original_hashes = [aec.digest(p) for p in
+                               (x_path, y_path, reference_manifest_path,
+                                aba_manifest_path)]
+            with mock.patch.object(frozen_heldout, "AUDIT", audit.resolve()):
+                out = audit / "voice-aec/M5-frozen-aec-heldout-001"
+                result = frozen_heldout.analyze(aba_dir, out)
+                self.assertEqual(
+                    result["status"], "research_only_no_voice_no_audio_output")
+                self.assertTrue(result["heldout"]["meets_prior_minimum_total_erle"])
+                self.assertGreater(result["heldout"]["erle_db"], 8)
+                self.assertGreater(len(result["heldout"]["band_metrics"]), 5)
+                self.assertEqual(
+                    result["speaker_off_control"]["echo_prediction_off_max_abs"],
+                    0.0)
+                self.assertTrue((out / "frozen-aec-heldout.json").is_file())
+                self.assertTrue((out / "SHA256SUMS").is_file())
+                self.assertEqual(list(out.glob("*.wav")), [])
+                with self.assertRaises(FileExistsError):
+                    frozen_heldout.analyze(aba_dir, out)
+            self.assertEqual(
+                original_hashes, [aec.digest(p) for p in
+                                  (x_path, y_path, reference_manifest_path,
+                                   aba_manifest_path)])
+            # Corrupt the raw source bytes without changing capture digest.
+            with y_path.open("ab") as f:
+                f.write(b"tamper")
+            with mock.patch.object(frozen_heldout, "AUDIT", audit.resolve()):
+                with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
+                    frozen_heldout.analyze(
+                        aba_dir, audit / "voice-aec/M5-frozen-aec-heldout-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

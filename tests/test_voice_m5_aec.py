@@ -1815,7 +1815,7 @@ class M5Tests(unittest.TestCase):
                 assert state==3030
         fake=ZeroFarOnly()
         result=speex_zero.zero_reference_run(
-            x if False else mic,x,lag,fake,"synthetic-zero-far")
+            mic,x,lag,fake,"synthetic-zero-far")
         self.assertGreater(fake.calls,3500)
         self.assertEqual(fake.not_zero,0)
         self.assertEqual(

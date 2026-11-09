@@ -70,6 +70,139 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5 doubletalk-gate-001: VERIFIED numeric real take (2026-11-09)
+
+The user supplied the real \`doubletalk-gate.json\` and a matching
+\`SHA256SUMS\`. Independently computed report SHA256:
+\`ebf0e21a9bf53b3d4718505577d82e1279be7a88b951b8a864029938bec8d3df\`.
+Source WAV hashes in that report match the earlier real
+M5 doubletalk-001 manifest:
+digital music \`7661d6412ec346a79db5781ed2bef20fa55a66578a00e5852c5b775451c8b685\`
+and physical microphone \`f6ce01ba66b9e68121c535ff1ddd735001e4381f9028e9fcb7032da420ed24c8\`.
+These raw SHA256 values were verified locally by the analyzer,
+but the actual WAV bytes were NOT uploaded for independent rehashing.
+
+### Frozen FIR evidence
+
+Source lag: **4690 samples = 97.70833 ms**, normalized correlation
+**0.310195**. Fixed FIR 120ms / 5760 taps / ridge 0.02,
+training-only gain **1.08764791**.
+
+| Reference time | Phase | Total ERLE | Original RMS | Hypothetical residual RMS |
+| --- | --- | ---: | ---: | ---: |
+| 3–9 s | Train speaker only | **6.37718 dB** | — | — |
+| 10–11.5 s | Heldout speaker only | **5.73176 dB** | -48.03121 dBFS | -53.76296 dBFS |
+| 13–28 s | Real doubletalk | **0.20075 dB** | -38.63968 dBFS | -38.84043 dBFS |
+
+The 5.73176-dB heldout speaker-only measurement represents
+about **73.28% reduction of total energy** on that speaker-only
+interval, and passes the pre-existing minimum 1dB gate.
+The mixed speech/music interval shows a **4.52% decrease of
+combined energy**. The latter is NOT doubletalk echo-only ERLE:
+local voice may dominate the mic signal, and clean near-end
+speech ground truth is absent. It is incorrect to call it
+93% loss of echo performance, or to claim speech preservation
+merely because the RMS difference is small.
+
+**Frequency-resolved ERLE (dB):**
+
+| Frequency Hz | Speaker only (10–11.5s) | Doubletalk (13–28s) |
+| --- | ---: | ---: |
+| 70–180 | +1.94803 | -0.00489 |
+| 180–500 | +4.42384 | +0.02389 |
+| **500–1500** | **+7.29838** | **+0.67287** |
+| **1500–4000** | **+8.12994** | **-0.14618** |
+| 4000–8000 | +0.89860 | **-1.32869** |
+| 8000–16000 | **-1.55002** | **-1.08315** |
+
+**Reference/microphone coherence with fixed original-mic
+spectral weights BEFORE → AFTER subtraction:**
+
+| Hz | Speaker-only holdout | Doubletalk |
+| --- | --- | --- |
+| 70–180 | 0.011336 → 0.026941 | 0.001006 → 0.001701 |
+| 180–500 | 0.567373 → 0.034117 | 0.007484 → 0.002431 |
+| 500–1500 | 0.621301 → 0.387583 | 0.150972 → 0.061727 |
+| **1500–4000** | 0.801161 → 0.617904 | **0.255492 → 0.278972** |
+| **4000–8000** | 0.633041 → 0.576051 | **0.061247 → 0.224161** |
+| **8000–16000** | 0.769535 → 0.783976 | **0.024574 → 0.164730** |
+
+Thus the model **genuinely** reduces measured speaker-only
+power on the heldout interval, but the upper band
+8–16kHz regresses, and during actual doubletalk
+both residual energy and coherence become worse
+above 4kHz (and 1500–4000Hz slightly worsens).
+These metrics do **not** prove the quality or intelligibility
+of near-end speech. The report explicitly says
+\`approved_for_virtual_mic=false\` and
+\`voice_preservation_validated=false\`.
+
+The acoustic FIR is reference-only and frozen during
+doubletalk, which prevents direct training contamination
+from the new voice. But nonlinear input processing,
+self-echo from the mic's AGC and actual perceptual
+effects are still unmeasured.
+
+### Next research-only comparison: guard predicted echo ABOVE 4kHz
+
+A new numerical-only \`tools/voice_m5_guarded_fir.py\` compares
+the **SAME frozen fullband FIR** with a single predeclared
+**echo-prediction-only lowpass guard**:
+
+- the original mic signal remains untouched;
+- 513-tap symmetric Hann FIR, lowpass cutoff **3800 Hz**;
+- centered zero-phase convolution is an **OFFLINE non-causal
+  tool**, NOT a design approved for low-latency real-time;
+- no new model, lag or gain is fitted; the same original
+  speaker-only minimum 1 dB gate applies;
+- report fullband and six frequency-band metrics on the
+  already-seen 10–11.5s speaker-only and 13–28s doubletalk
+  intervals for both the baseline and guarded echo estimate;
+- no WAV, playback, mic acquisition, sound routing or
+  AEC enabling is performed.
+
+**This guard is explicitly an exploratory hypothesis inspired
+by high-frequency failures already observed on THIS capture.**
+The reused validation window is *not independent* for the
+guarded model. Even a dramatically better result cannot be
+claimed as a new clean heldout or as voice preservation.
+A new capture with a predeclared guard would be necessary
+before an independent success claim.
+
+Run after pulling and passing the expanded synthetic tests:
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_guarded_fir.py \
+  --capture .audit/voice-aec/M5-doubletalk-001 \
+  --out .audit/voice-aec/M5-guarded-fir-001
+
+cd .audit/voice-aec/M5-guarded-fir-001
+sha256sum -c SHA256SUMS
+~~~
+
+Output is \`guarded-fir.json\` plus \`SHA256SUMS\`
+only. There are **26 tests** in the M5 synthetic
+regression suite after two added guards:
+one confirms suppression of an 8kHz echo while
+preserving an injected 1kHz echo, and another
+checks source integrity, zero WAV outputs and
+failure to overwrite existing numeric evidence.
+Local execution has NOT yet been performed.
+
+If the guarded result avoids upper-band degradation
+without sacrificing the speaker-only 500–4000Hz
+echo suppression, next obtain an independent
+source/voice control experiment; never promote
+this exploratory on-the-same-recording result
+straight into the Steam/CueWire virtual mic.
+The M4 \`LEVEL-001\` master remains immutable.
+
 ## New real M5 32-second double-talk take: capture-level PASS (2026-11-09)
 
 The user has supplied the **actual** new paired-capture `manifest.json`

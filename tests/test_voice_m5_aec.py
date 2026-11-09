@@ -29,6 +29,7 @@ import voice_m5_frozen_heldout as frozen_heldout
 import voice_m5_doubletalk_gate as doubletalk_gate
 import voice_m5_guarded_fir as guarded_fir
 import voice_m5_known_stem as known_stem
+import voice_m5_lag_postmortem as lag_postmortem
 
 RATE = aec.RATE
 
@@ -234,7 +235,8 @@ class M5Tests(unittest.TestCase):
         for script in ("voice_m5_capture.py", "voice_m5_aec.py",
                        "voice_m5_frozen_heldout.py",
                        "voice_m5_guarded_fir.py",
-                       "voice_m5_known_stem.py"):
+                       "voice_m5_known_stem.py",
+                       "voice_m5_lag_postmortem.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -939,6 +941,107 @@ class M5Tests(unittest.TestCase):
             self.assertGreater(aec.rms(excerpt), .003)
             with self.assertRaisesRegex(ValueError, "too short"):
                 known_stem.read_voice_excerpt(path, 50.0)
+
+    def test_m5_lag_postmortem_known_fixed_lag_early_windows(self):
+        """Diagnostic must expose stable known time shift, not fit/override it."""
+        rng = np.random.default_rng(88114)
+        reference = rng.normal(0, .05, 11*RATE)
+        lag = round(.2813*RATE)
+        mic = rng.normal(0, .0005, 12*RATE)
+        mic[lag:lag+len(reference)] += reference*.16
+        for name, bounds in lag_postmortem.PROBE_BANDS:
+            if bounds is None:
+                xx, yy = reference, mic
+            else:
+                sos = signal.butter(4, bounds, fs=RATE, output="sos",
+                                    btype="bandpass")
+                xx = signal.sosfiltfilt(sos, reference)
+                yy = signal.sosfiltfilt(sos, mic)
+            result = lag_postmortem.correlation_probe(
+                xx, yy, (3.0, 4.5), lag)
+            self.assertAlmostEqual(
+                result["reported_original_lag_ms"],
+                1000*lag/RATE, places=4)
+            self.assertLess(abs(
+                result["diagnostic_top_separated_peaks"][0]["lag_ms"] -
+                1000*lag/RATE), .09)
+            self.assertGreater(result["absolute_correlation_at_original_lag"], .95)
+            self.assertTrue(result["diagnostic_not_a_retiming"])
+        with self.assertRaisesRegex(ValueError, "outside available PCM"):
+            lag_postmortem.correlation_probe(
+                reference, mic, (10, 12), lag)
+
+    def test_m5_failed_prospective_lag_postmortem_no_gate_override(self):
+        """Only immutable source hashes, early windows, numeric report."""
+        rng = np.random.default_rng(88115)
+        reference = rng.normal(0, .055, 32*RATE)
+        lag = round(.28*RATE)
+        mic = rng.normal(0, .001, 33*RATE)
+        mic[lag:lag+len(reference)] += .17*reference
+        with tempfile.TemporaryDirectory() as tmp:
+            audit = Path(tmp)/".audit"
+            capture_dir = audit/"voice-aec/M5-doubletalk-002"
+            prev_dir = audit/"voice-aec/M5-guarded-fir-prospective-002"
+            capture_dir.mkdir(parents=True)
+            prev_dir.mkdir(parents=True)
+            ref_path = capture_dir/"reference-sent.wav"
+            mic_path = capture_dir/"microphone-raw.wav"
+            pcm16_file(ref_path, reference)
+            pcm16_file(mic_path, mic)
+            meta = {
+                "schema": "cuewire-M5-paired-physical-capture-v1",
+                "status": "captured_for_offline_aec",
+                "requested_duration_s": 32,
+                "speaker_only_calibration_s": 12,
+                "mic_capture": {"mic_source_name": "alsa_input.usb-test"},
+                "speaker_sink_name": "alsa_output.pci-test",
+                "reference": {"sha256": aec.digest(ref_path), "frames": 32*RATE},
+                "microphone": {"sha256": aec.digest(mic_path)},
+            }
+            manifest_path = capture_dir/"manifest.json"
+            manifest_path.write_text(json.dumps(meta))
+            hashes = {
+                "capture_manifest": aec.digest(manifest_path),
+                "digital_reference": aec.digest(ref_path),
+                "physical_mic_raw": aec.digest(mic_path),
+            }
+            prior = {
+                "schema": "cuewire-M5-doubletalk-guarded-fir-ablation-v1",
+                "frozen_original_speaker_only_gate_passes": False,
+                "double_talk": None,
+                "estimated_alignment_lag_ms": round(lag*1000/RATE, 5),
+                "input_sha256": hashes,
+                "speaker_only": {"guarded_fir_erle_db": .67881}
+            }
+            old_file = prev_dir/"guarded-fir.json"
+            old_file.write_text(json.dumps(prior))
+            originals = [aec.digest(p) for p in
+                         (ref_path, mic_path, manifest_path, old_file)]
+            with mock.patch.object(lag_postmortem, "AUDIT", audit.resolve()):
+                out = audit/"voice-aec/M5-lag-postmortem-002"
+                result = lag_postmortem.analyze(
+                    capture_dir, old_file, out)
+                self.assertEqual(
+                    result["status"],
+                    "research_postmortem_no_model_or_gate_changes")
+                self.assertFalse(result["original_full_model_gate"])
+                self.assertEqual(
+                    result["original_reported_speaker_only_erle_db"], .67881)
+                self.assertEqual(len(result["bands"]), 3)
+                self.assertTrue((out/"lag-postmortem.json").exists())
+                self.assertTrue((out/"SHA256SUMS").exists())
+                self.assertEqual(list(out.glob("*.wav")), [])
+                with self.assertRaises(FileExistsError):
+                    lag_postmortem.analyze(capture_dir, old_file, out)
+                self.assertEqual(
+                    originals, [aec.digest(p) for p in
+                                (ref_path, mic_path, manifest_path, old_file)])
+                with mic_path.open("ab") as file:
+                    file.write(b"tamper")
+                with self.assertRaisesRegex(ValueError, "hashes"):
+                    lag_postmortem.analyze(
+                        capture_dir, old_file,
+                        audit/"voice-aec/M5-lag-postmortem-003")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

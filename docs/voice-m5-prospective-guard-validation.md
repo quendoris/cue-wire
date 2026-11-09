@@ -310,3 +310,84 @@ Please also provide the new capture's actual
 playback duration, physical microphone and timing
 metadata. No private WAV upload is needed for that
 manifest-level check.
+
+
+### Completed early-window postmortem: actual verified lag-postmortem.json (2026-11-09)
+
+The user supplied the real \`lag-postmortem.json\` and
+\`SHA256SUMS\`. Their SHA256 agrees:
+\`0c138d2934e90f05b0a88af2b2c114dc1b4bc46b77c502d12088d111e497e4b9\`.
+Its \`input_sha256.original_guarded_report\` is
+\`c6fb1cd3bf9275d1d7e0206e6dafebfe8ba57d4c8e7cfc6a247a2aa5bffe1106\`,
+identical to the original failed prospective report.
+New microphone and manifest SHA256s likewise match
+the original failed take. No new model coefficients or
+holdout estimate were computed.
+
+The frozen original lag is **281.29167 ms**.
+
+| Early digital reference interval | Fullband top lag / signed r | 500–1500Hz top lag / signed r | 1500–4000Hz top lag / signed r |
+| --- | --- | --- | --- |
+| 0.8–2.3 s | 281.31250ms / -0.121093 | 282.27083ms / +0.302411 | 281.29167ms / -0.388348 |
+| 3.0–4.5 s | 281.29167ms / -0.135409 | 282.20833ms / +0.250067 | 281.27083ms / -0.408608 |
+| 6.0–7.5 s | 281.00000ms / +0.132763 | 282.16667ms / +0.378132 | 281.25000ms / -0.351448 |
+
+The **1500–4000Hz** peak varies by only **0.04167ms**
+(two 48kHz PCM frames) across the three early windows.
+The **500–1500Hz** peaks span **0.10416ms** and sit
+about **0.92–0.98ms later** than the high-mid peaks.
+At the originally frozen 281.29167ms lag, the
+500–1500Hz normalized correlations are small
+\`-0.006273, +0.029120, -0.048520\`, although the
+best independently observed midband peak is
+\`0.250–0.378\`. Thus a single broadband lag does not
+necessarily maximize cross-correlation in every band.
+This frequency dependence could arise from room
+reflections, group delay, music periodicity or mic
+signal processing. It does NOT prove one physical cause.
+
+The **fullband** original-lag absolute correlation
+is low and stable, **0.11665, 0.135409, 0.116396**.
+The same three original-lag mic RMS levels are
+**-59.02826, -59.04974, -58.56572 dBFS**,
+even though digital reference fullband RMS stays
+around -27 to -28 dBFS. This supports the concern
+that overall broadband mic energy may contain large
+reference-independent components, but digital reference
+and physical mic have different signal-chain gains,
+so their absolute RMS difference is **not a measured
+acoustic attenuation factor or echo fraction**.
+
+**Interpretation:** on this take there is no evidence of
+a large, rapidly shifting high-mid correlation peak
+during early calibration. We have not ruled out
+small clock drift, time-varying phase/reverberation,
+microphone gain/DSP, weak echo-to-noise ratio,
+or an in-band fitting/regularization issue.
+This postmortem is NOT a retiming exercise. It
+does NOT rescue the previously failed **0.67881 dB**
+heldout speaker-only gate.
+
+**Diagnostic report completeness caveat:** the code version
+in GitHub is specified to return the top three lag peaks
+separated by at least 3ms, but every supplied
+\`diagnostic_top_separated_peaks\` array contains
+only **one** entry; consequently
+\`first_minus_second_peak_abs_correlation=null\`.
+This means we cannot infer that the reported top
+peak is unique or separated strongly from other
+competing lag candidates. A clean synthetic-input
+unit test returns multiple peaks using the intended
+algorithm, so the discrepancy is worth investigating
+without altering the historical JSON. Verify actual
+local code version before claiming peak uniqueness.
+
+The next useful evidence is the actual
+\`M5-doubletalk-002/manifest.json\` of this failed
+prospective take: compare physical endpoint, playback
+wall time, recorder diagnostics, mic peak/RMS and
+capture startup to previously successful runs.
+Even then the capture manifest alone cannot reveal
+the exact noise/echo origin. Neither a new audio
+recording nor any coefficient tuning is necessary
+for this metadata comparison.

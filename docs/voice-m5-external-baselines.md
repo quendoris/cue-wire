@@ -674,6 +674,188 @@ before live activation. Historical
 0.67881dB FAIL and M4 approved
 voice master remain untouched.
 
+## Actual synthetic M4 voice Speex study — verified; differential AEC hypothesis (2026-11-09)
+
+User supplied \`known-voice-speex.json\` and \`SHA256SUMS\`.
+Its complete JSON bytes independently verified SHA256:
+\`75e96c0ce587417738b0fb5bbca00040d3b85e85231ca281cc19fd2b7fcfeee7\`.
+All M5 capture/source digest IDs match the earlier
+audited 0.15 and 0.30 recordings; the new verified M4
+voice input is original \`M4-R0-ALSA-007\`,
+\`cuewire-M4-raw-alsa-v1\`,
+manifest SHA256
+\`2a64d28a403fbf8badc16b2fe6b59eade91c2d36d982160e5df48d988915970c\`,
+RAW SHA256
+\`aff66d0b3fadb45da122bf26036e7d92e68d20f3b0e33efdfe68f905ee155e9a\`.
+These physical WAVs were verified by the local
+SHA256-pinned analyzer, NOT independently rehashed
+by this review because their bytes weren't uploaded.
+
+Digital clean M4 voice excerpt was exactly 6s
+starting 6s into first M4 ALSA RAW and injected at
+two fixed PCM16 levels -50/-39dBFS into the physical
+speaker-only mic reference time 10..16s.
+Speex native was replayed from reset, both with
+real music reference and with zero far-end, for
+each condition. The CueWire guarded FIR served
+as a known-voice-algebra-preserving control.
+No real near-end speech or physical AGC under
+simultaneous music was tested.
+
+### Exact incremental synthetic voice transfer, all six seconds
+
+| Condition | Volume 0.15 at -50/-39dBFS | Volume 0.30 at -50/-39dBFS |
+| --- | --- | --- |
+| CueWire protected reference-only FIR | 1.000000 transfer gain, essentially exact stem; 0 algebraic error | identical |
+| Speex real far-end gain | 0.9596354 / 0.9596824 | 0.9594367 / 0.9596313 |
+| Speex ZERO far-end gain | 0.9596966 / 0.9596940 | 0.9596873 / 0.9596931 |
+| Speex real far-end incremental voice error SNR | 11.75288 / 11.76041dB | 11.70861 / 11.75304dB |
+| Speex ZERO far-end incremental error SNR | 11.76202 / 11.76274dB | 11.76191 / 11.76289dB |
+| Speex real far-end normalized MSE difference to stem | 0.066790 / 0.066674 | 0.067474 / 0.066788 |
+
+**This is a large and repeatable exact-waveform
+modification of the digital voice** (about
+6.7% normalized ERROR POWER). The transfer gain
+~0.9596 is the projection onto the original
+voice, NOT direct perceived loudness loss,
+intelligibility score or independent voice quality.
+The nearly identical error with all-zero render
+strongly indicates most distortion comes from
+a reference-INDEPENDENT microphone processing
+component within the native Speex AEC path.
+We have NOT isolated which exact code stage
+(e.g. DC notch, preemphasis, nonlinearity)
+accounts for the discrepancy.
+
+By frequency at volume 0.15, voice -50dBFS,
+real-far incremental transfer gains and error SNR:
+- 500–1500Hz: **0.9827322**, **15.228dB**;
+- 1500–4000Hz: **0.9982645**, **24.15406dB**;
+- 4000–8000Hz: **0.9996282**, **28.95032dB**;
+- 8000–16000Hz: **0.9998074**, **25.09001dB**.
+All are digital linear projection/error diagnostics,
+not perceptual scores.
+
+### End-output known-voice SNR — the tradeoff is decisive
+
+| Level | Raw mixture | CueWire protected FIR | Speex real reference | Speex ZERO reference |
+| --- | ---: | ---: | ---: | ---: |
+| Playback 0.15, voice -50dBFS | +7.93182dB | +8.16498dB | +7.54640dB | +7.27039dB |
+| Playback 0.30, voice -50dBFS | +5.82085dB | +6.70665dB | **+7.45729dB** | +6.20894dB |
+| Playback 0.15, voice -39dBFS | +18.93181dB | +19.16497dB | **+11.20191dB** | +11.15178dB |
+| Playback 0.30, voice -39dBFS | +16.82083dB | +17.70664dB | **+11.17893dB** | +10.92565dB |
+
+Speex wins over both raw and protected FIR for
+the quiet -50dB voice at louder 0.30 speaker
+volume in this *synthetic digital-only* SNR test.
+Yet with -39dB near-end voice Speex yields
+a markedly worse exact-stem output SNR than
+the protected FIR. This is **NOT** proof that
+Speex is perceptually inferior; the metric
+penalizes any intentional filtering and a
+real mic AGC interaction is not represented.
+It nevertheless demonstrates why ranking
+AEC engines solely by ERLE is unsafe.
+
+### New post-hoc candidate: differential Speex echo correction
+
+**Source-referenced dual-branch correction:**
+
+\`\`\`text
+S_real = Speex(microphone_PCM, real_speaker_reference)
+S_zero = Speex(microphone_PCM, exactly_zero_speaker_reference)
+output = microphone_PCM + (S_real - S_zero)
+\`\`\`
+
+Both engines must start in independent reset
+states on the same complete physical mic PCM.
+The source-independent Speex microphone front
+end should largely cancel if it behaves
+identically, retaining reference-dependent
+AEC correction while preserving original mic
+signal as the base. However stateful/nonlinear
+adaptation and doubletalk can introduce
+additional distortion and source-dependent
+front-end behavior. This formula does not
+algebraically guarantee signal preservation
+for non-linear Speex. Two native adaptive
+branches approximately double processing CPU
+cost and memory. This is *hypothesis*, not
+new result yet.
+
+Added \`tools/voice_m5_speex_delta.py\` for
+strict numeric-only offline tests of:
+(a) 0.15 and 0.30 music-only absolute/linked
+echo residual, including speaker-OFF unwanted
+changes; (b) exact known-stem incremental
+response at -50 and -39dBFS for the normal
+Speex, zero-Speex, raw differential and
+echo-only 3800Hz guarded differential.
+The guard is the PREEXISTING **offline
+513tap zero-phase noncausal** design; it is
+NOT approved for low-latency streaming.
+The original prior known-voice report SHA256
+is an immutable constant, together with
+all six M5 sources and two exact M4 SHA256
+identifiers. Any mutation refuses comparison.
+Original raw audio and previously accepted M4
+master remain untouched.
+
+Two synthetic tests were added for this new
+candidate: exact common-front-end cancellation
+and full two-volume/known-M4-voice integration
+with fake native DSP; **50 tests total**,
+requiring LOCAL execution. Those mock tests
+are not evidence of real native AEC quality.
+The old prospectively failed **0.67881dB**
+M5-doubletalk-002 remains FAIL.
+
+### Run only after local tests are green
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+VOICE_MANIFEST="$(find .audit -type f \
+  -path '*/M4-R0-ALSA-007/manifest.json' -print -quit)"
+if [ -z "$VOICE_MANIFEST" ]; then
+  echo 'M4-R0-ALSA-007 not found; stop; do not guess source path' >&2
+else
+  ~/.venvs/cuewire-voice-lab/bin/python \
+    tools/voice_m5_speex_delta.py \
+    --low-capture .audit/voice-aec/M5-level-015-001 \
+    --high-capture .audit/voice-aec/M5-level-030-001 \
+    --voice "$(dirname "$VOICE_MANIFEST")" \
+    --original-voice-report .audit/voice-aec/M5-speex-known-voice-001/known-voice-speex.json \
+    --out .audit/voice-aec/M5-speex-delta-001
+fi
+
+cd /data/cue-wire/.audit/voice-aec/M5-speex-delta-001
+sha256sum -c SHA256SUMS
+~~~
+
+\`M5-speex-known-voice-001\` is an example
+of the expected original report folder;
+if user's local naming differs use the
+REAL prior report with exact SHA256
+\`75e96c0c...\`. Do not invent or overwrite
+historical artifacts. Use a fresh output
+suffix if \`-001\` already exists.
+No new microphone recording, installation
+or routing changes are needed.
+
+Send \`speex-delta.json\` and \`SHA256SUMS\`.
+If this improves both reference-only echo
+cancellation and exact voice transfer,
+it remains a **post-hoc** promising lead,
+not production or real-doubletalk proof.
+The next independent physical trial
+will need a predeclared near-end protection
+metric and verified causal latency.
+
 ## Next engineering actions
 
 Implement two **offline adapters**, pinned to

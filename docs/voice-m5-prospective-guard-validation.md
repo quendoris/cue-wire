@@ -312,6 +312,111 @@ metadata. No private WAV upload is needed for that
 manifest-level check.
 
 
+### Actual M5 cross-take-calibration-001: strong loss of reference-linked mic level (2026-11-09)
+
+The user supplied the REAL \`cross-take-calibration.json\`
+and \`SHA256SUMS\`. Its complete JSON bytes were SHA256-checked
+independently:
+
+\`8ab28301e2012b00ba0eb06c24b432fed1d8325b36b930b8170d0bfe8f716a50\`.
+
+The report references the expected old/new capture SHA256s
+and exactly identical digital music PCM. The local analyzer
+verified all six original file hashes. This review only has
+the report, so it cannot independently rehash private
+mic/reference WAVs without their bytes.
+
+The earlier PASS was **M5-doubletalk-001**, and the new
+prospective **M5-doubletalk-002** remains **FAIL** at the
+predeclared guarded fullband speaker-only heldout
+**0.67881dB**. The cross-take diagnostic did not use
+the heldout, change lag, fit a model, or inspect voice.
+
+**Whole-microphone early speaker-only measurements:**
+
+| Same reference time | Old mic RMS | New mic RMS | New minus old |
+| --- | ---: | ---: | ---: |
+| 0.8–2.3s | -51.39608dBFS | -59.02826dBFS | **-7.63218dB** |
+| 3.0–4.5s | -51.72010dBFS | -59.04974dBFS | **-7.32964dB** |
+| 6.0–7.5s | -50.56382dBFS | -58.56572dBFS | **-8.00190dB** |
+
+**Per-band new minus old mic RMS levels, same digital reference:**
+
+| Hz | 0.8–2.3s | 3.0–4.5s | 6.0–7.5s |
+| --- | ---: | ---: | ---: |
+| 20–70 | -2.43455 | -0.14430 | +0.05824 |
+| 70–180 | -1.79214 | +0.17103 | -0.60485 |
+| 180–500 | -6.82025 | -6.10605 | -4.85842 |
+| **500–1500** | **-12.58800** | **-10.76857** | **-12.79904** |
+| **1500–4000** | **-11.65374** | **-12.38764** | **-11.76403** |
+| 4000–8000 | -8.20298 | -8.97368 | -8.90441 |
+| 8000–16000 | -10.70786 | -9.72192 | -12.02531 |
+
+Unlike the prior whole-take -1.598dB difference, which
+was contaminated by user speech, these comparisons use
+**only the SAME reference-timed early music-only portions**.
+The large 500–4000Hz losses recur across all three windows;
+the 20–70Hz component is approximately stationary on
+the latter two windows. Thus a simple uniform rescaling
+of ALL PCM mic components is not an adequate explanation.
+But mic gain plus persistent *post-gain* noise, physical
+speaker level, mic/speaker positions, or DSP/AGC could
+still account for the observed pattern.
+
+**Mic-power-weighted magnitude-squared coherence, old → new:**
+
+| Hz | 0.8–2.3s | 3.0–4.5s | 6.0–7.5s |
+| --- | --- | --- | --- |
+| 180–500 | 0.725446 → 0.086457 | 0.642432 → 0.066172 | 0.525789 → 0.070056 |
+| 500–1500 | 0.745118 → 0.220131 | 0.743148 → 0.189298 | 0.787391 → 0.424710 |
+| **1500–4000** | **0.827747 → 0.361807** | **0.845158 → 0.417306** | **0.801278 → 0.407426** |
+| 4000–8000 | 0.584555 → 0.115823 | 0.693179 → 0.121713 | 0.673463 → 0.124972 |
+
+Both power and reference-coherence fell in the
+same bands. Under a stationary linear reference/echo
+plus independent background interpretation, the crude
+band-correlated power *proxy*
+\`P_mic_band * weighted_MSC_band\`
+drops by roughly **15–18dB** between takes in
+500–4000Hz; the factor is not an independently measured
+acoustic echo SPL or exact removable fraction.
+It uses short finite-sample coherence estimates with
+different mic spectral weighting across takes.
+
+**The physical explanation remains unresolved.**
+Fixed \`pw-play --volume 0.30\` and identical digital
+pre-sink PCM do NOT establish identical actual
+speaker sound pressure/analog output volume.
+A louder earlier speaker, altered hardware/mixer
+volume, placement/direction, room effects, or
+microphone hardware gain/AGC could result in much less
+speaker-to-mic energy on the prospective take.
+The stable low-frequency near-background component
+makes a noise-floor-limited ERLE plausible.
+
+This makes a crucial evaluation point: a microphone
+with *less real speaker leakage* may show a lower
+wholeband ERLE yet already have a cleaner raw
+speech+echo mixture; lower ERLE alone does NOT
+demonstrate a worse acoustic listening experience.
+The **prospective trial is nevertheless a formal FAIL**
+under its predeclared gate. Do not retroactively
+lower the threshold or claim production voice quality.
+
+**Next falsifiable test (not yet executed):**
+inspect the PRESENT PipeWire source/sink mixer
+volumes/mute states and speaker hardware level,
+understanding that present settings are not
+historical snapshots. Then plan a new, single-session
+physical speaker-OFF/ON/OFF or controlled level
+sweep with fixed mic and speaker placement, first
+predeclaring a reference-correlated absolute echo
+metric and separately measuring unchanged noise
+floor. Do not attempt to fix this old FAIL by
+tuning a FIR or selecting an alternative old lag.
+Clean simultaneous near-end speech quality remains
+a separate, unproven requirement.
+
 ### Offline cross-take calibration comparison — fixed and source-hash-pinned
 
 Added \`tools/voice_m5_early_cross_take.py\` to compare

@@ -70,6 +70,86 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## M5-guarded-fir-001 actual numerical comparison — independently SHA-verified (2026-11-09)
+
+User supplied local `guarded-fir.json` and `SHA256SUMS`;
+their SHA256 **matches**:
+`7fcd052b80a046980e5b0ad87651088a7fff96f9ac54067c96246827a6220051`.
+Source SHA256s correspond to the previously audited physical
+M5-doubletalk-001 WAV (`f6ce01ba66b9e68121c535ff1ddd735001e4381f9028e9fcb7032da420ed24c8`)
+and 32s played reference
+(`7661d6412ec346a79db5781ed2bef20fa55a66578a00e5852c5b775451c8b685`).
+
+### Speaker-only heldout 10–11.5s: fullband vs 3800Hz echo-only guard
+
+Original frozen FIR fullband ERLE **5.73176 dB**;
+guarded FIR fullband ERLE **5.63696 dB**.
+Guard costs **0.09480 dB** in total speaker-only ERLE.
+Neither model was refit, and both retain the 1 dB minimum
+speaker-only gate.
+
+| Hz | Full FIR ERLE | Echo-only guard ERLE | Guard minus full |
+| --- | ---: | ---: | ---: |
+| 70–180 | +1.94803 | +1.92922 | -0.01881 |
+| 180–500 | +4.42384 | +4.42897 | +0.00513 |
+| **500–1500** | **+7.29838** | **+7.29855** | +0.00017 |
+| **1500–4000** | **+8.12994** | **+8.07607** | **-0.05387** |
+| 4000–8000 | +0.89860 | +0.02945 | -0.86915 |
+| 8000–16000 | **-1.55002** | **-0.00021** | **+1.54981** |
+
+The guard restores effectively unaltered raw mic for
+8–16kHz and sacrifices almost all previous positive
+speaker-only cancellation in 4–8kHz. No assumption
+that this is an *optimal* cutoff is supported.
+
+### Real doubletalk 13–28s: energy of a mixture (NOT echo-only ERLE)
+
+Whole-band energy reduction: original frozen FIR
+**+0.20075 dB**; guard **+0.25949 dB**. This is a
+**+0.05874 dB** improvement in the energy of the
+microphone's speech+music mixture, **NOT** a
+direct speech-quality or speaker-only echo metric.
+
+| Hz | Full model mixture ERLE | Guard mixture ERLE | Guard minus full |
+| --- | ---: | ---: | ---: |
+| 70–180 | -0.00489 | -0.00481 | +0.00008 |
+| 180–500 | +0.02389 | +0.02389 | 0 |
+| 500–1500 | +0.67287 | +0.67287 | 0 |
+| 1500–4000 | -0.14618 | -0.12640 | +0.01978 |
+| **4000–8000** | **-1.32869** | **-0.01202** | **+1.31667** |
+| **8000–16000** | **-1.08315** | **0.00000** | **+1.08315** |
+
+The upper-band **coherence increase** caused by the
+original frozen subtraction also disappears with the
+guarded echo. E.g., for 4–8kHz with operator speaking:
+original microphone/reference coherence 0.061247,
+full-FIR residual 0.224161, guarded residual **0.061247**.
+For 8–16kHz the same values are 0.024574, 0.164730
+and **0.024574**. This is EXPECTED from not
+subtracting anything in those bands: not proof that
+near-end speech fidelity has been measured.
+
+The 513-tap centered FIR is **noncausal/offline**;
+real-time streaming would require delay and an
+independently engineered causal processing schedule.
+The guard was deliberately selected AFTER discovering
+upper-band failures on this very dataset; **this is a
+reused holdout**, never independent proof of generalization.
+
+### Scientific next step
+
+A controlled **known clean-voice-stem injection** into a
+speaker-only *physical* microphone/reference recording can
+measure the interference remaining relative to the known
+clean stem. This validates the mathematics and immutable
+frozen-echo behavior **in a synthetic doubletalk mixture**.
+It is not a substitute for real simultaneous voice/music:
+physical microphone AGC, nonlinear behavior, room transfer,
+and perceptual voice preservation remain outside the
+synthetic model. Keep M4-approved speech originals immutable,
+and do not emit private audio or launch playback in the
+numeric synthetic analysis.
+
 ## M5 doubletalk-gate-001: VERIFIED numeric real take (2026-11-09)
 
 The user supplied the real \`doubletalk-gate.json\` and a matching

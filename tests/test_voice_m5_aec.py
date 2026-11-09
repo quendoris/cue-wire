@@ -32,6 +32,7 @@ import voice_m5_known_stem as known_stem
 import voice_m5_lag_postmortem as lag_postmortem
 import voice_m5_early_cross_take as cross_take
 import voice_m5_playback_coherence as playback_coherence
+import voice_m5_echo_floor as echo_floor
 
 RATE = aec.RATE
 
@@ -240,7 +241,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_known_stem.py",
                        "voice_m5_lag_postmortem.py",
                        "voice_m5_early_cross_take.py",
-                       "voice_m5_playback_coherence.py"):
+                       "voice_m5_playback_coherence.py",
+                       "voice_m5_echo_floor.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -1281,6 +1283,129 @@ class M5Tests(unittest.TestCase):
                     playback_coherence.analyze(
                         low, high,
                         audit/"voice-aec/M5-playback-coherence-002")
+
+    def test_echo_floor_synthetic_exact_subtraction_reduces_linked_proxy(self):
+        """Known echo removal reduces linked power without filtering the mic."""
+        rng = np.random.default_rng(903301)
+        x = rng.normal(0., .05, 6*RATE)
+        floor = rng.normal(0., .0015, 6*RATE)
+        mic = floor + .15*x
+        spectral = echo_floor.linear_spectral_proxy(
+            x, mic, floor)
+        self.assertEqual(len(spectral["bands"]), 6)
+        good = next(row for row in spectral["bands"]
+                    if row["band_hz"] == [1500, 4000])
+        self.assertGreater(good["mic_weighted_coherence"], .95)
+        self.assertLess(good["residual_mic_weighted_coherence"], .10)
+        self.assertGreater(
+            good["linked_proxy_before_minus_after_db"], 14.)
+        self.assertGreater(good["band_erle_db"], 14.)
+        self.assertAlmostEqual(
+            spectral["residual_total_rms_dbfs"], aec.db(aec.rms(floor)),
+            delta=.001)
+        with self.assertRaisesRegex(ValueError, "equal-length"):
+            echo_floor.linear_spectral_proxy(x, mic[:-1], floor)
+        with self.assertRaisesRegex(ValueError, ">=4 seconds"):
+            echo_floor.linear_spectral_proxy(
+                x[:RATE], mic[:RATE], floor[:RATE])
+
+    def test_echo_floor_two_existing_takes_hash_guard_and_json_only(self):
+        """Original two physical takes stay immutable, with OFF null control."""
+        rng = np.random.default_rng(903302)
+        ref = rng.normal(0., .05, 20*RATE)
+        lag = round(8.13*RATE)
+        original = []
+        with tempfile.TemporaryDirectory() as temp:
+            audit = Path(temp)/".audit"
+            digital = audit/"voice-aec/M5-006"
+            lo = audit/"voice-aec/M5-level-015-001"
+            hi = audit/"voice-aec/M5-level-030-001"
+            for folder in (digital, lo, hi):
+                folder.mkdir(parents=True)
+            ref_path = digital/"reference-sent.wav"
+            pcm16_file(ref_path, ref)
+            ref_mf = digital/"manifest.json"
+            ref_mf.write_text('{"synthetic_source":"fixed"}')
+            for folder, volume, coeff in ((lo, .15, .08), (hi, .30, .16)):
+                noise = rng.normal(0., .0009, 36*RATE)
+                noise[lag:lag+len(ref)] += coeff*ref
+                wav = folder/"microphone-aba-raw.wav"
+                pcm16_file(wav, noise)
+                m = {
+                    "schema": "cuewire-M5-continuous-ABA-control-v1",
+                    "status": "captured_aba_for_noise_diagnostics",
+                    "source_mic_sample_spec": "s16le 1ch 48000Hz",
+                    "source_mic_name": "alsa_input.usb-synthetic",
+                    "speaker_sink_name": "alsa_output.pci-synthetic",
+                    "speaker_play_volume": volume,
+                    "reference_source_capture": str(digital),
+                    "reference_source_manifest_sha256": aec.digest(ref_mf),
+                    "reference_wav_sha256": aec.digest(ref_path),
+                    "reference_duration_s": 20.,
+                    "requested_speaker_off_before_s": 8,
+                    "requested_speaker_off_after_s": 8,
+                    "microphone": {"sha256": aec.digest(wav)},
+                    "playback_start_after_recorder_launch_s": 8.0,
+                }
+                (folder/"manifest.json").write_text(json.dumps(m))
+            files = [ref_path, ref_mf,
+                     lo/"microphone-aba-raw.wav", lo/"manifest.json",
+                     hi/"microphone-aba-raw.wav", hi/"manifest.json"]
+            original = [aec.digest(p) for p in files]
+            corrections = [
+                mock.patch.object(echo_floor, "AUDIT", audit.resolve()),
+                mock.patch.object(playback_coherence, "AUDIT", audit.resolve()),
+                mock.patch.object(echo_floor, "LOW_MANIFEST_SHA",
+                                  aec.digest(lo/"manifest.json")),
+                mock.patch.object(echo_floor, "HIGH_MANIFEST_SHA",
+                                  aec.digest(hi/"manifest.json")),
+                mock.patch.object(echo_floor, "LOW_MIC_SHA",
+                                  aec.digest(lo/"microphone-aba-raw.wav")),
+                mock.patch.object(echo_floor, "HIGH_MIC_SHA",
+                                  aec.digest(hi/"microphone-aba-raw.wav")),
+                mock.patch.object(echo_floor, "REFERENCE_SHA",
+                                  aec.digest(ref_path)),
+                mock.patch.object(echo_floor, "SOURCE_MANIFEST_SHA",
+                                  aec.digest(ref_mf)),
+                mock.patch.object(playback_coherence, "REFERENCE_SHA",
+                                  aec.digest(ref_path)),
+                mock.patch.object(playback_coherence, "SOURCE_MANIFEST_SHA",
+                                  aec.digest(ref_mf)),
+            ]
+            with (corrections[0], corrections[1], corrections[2],
+                  corrections[3], corrections[4], corrections[5],
+                  corrections[6], corrections[7], corrections[8],
+                  corrections[9]):
+                dest = audit/"voice-aec/M5-echo-floor-001"
+                report = echo_floor.analyze(lo, hi, dest)
+                self.assertFalse(report["voice_preservation_tested"])
+                self.assertFalse(report["approved_for_virtual_microphone"])
+                self.assertTrue(report[
+                    "original_prospective_0_67881_db_gate_still_failed"])
+                self.assertEqual(list(dest.glob("*.wav")), [])
+                self.assertTrue((dest/"echo-floor.json").is_file())
+                self.assertTrue((dest/"SHA256SUMS").is_file())
+                self.assertEqual(len(report["low_volume"]["background"][
+                    "band_noise_and_null"]), 6)
+                self.assertGreater(
+                    report["high_volume"]["speech_band_proxies"][
+                        "full_fir"]["linked_proxy_before_dbfs"] -
+                    report["low_volume"]["speech_band_proxies"][
+                        "full_fir"]["linked_proxy_before_dbfs"], 5.5)
+                for take in (report["low_volume"], report["high_volume"]):
+                    self.assertGreater(
+                        take["unfiltered_fullband"]["full_band_erle_db"], 1.)
+                    self.assertGreater(
+                        take["speech_band_proxies"]["full_fir"][
+                            "linked_proxy_suppression_db"], 5.)
+                with self.assertRaises(FileExistsError):
+                    echo_floor.analyze(lo, hi, dest)
+                self.assertEqual(original, [aec.digest(p) for p in files])
+                with (hi/"microphone-aba-raw.wav").open("ab") as fd:
+                    fd.write(b"tampered")
+                with self.assertRaisesRegex(ValueError, "SHA256"):
+                    echo_floor.analyze(
+                        lo, hi, audit/"voice-aec/M5-echo-floor-002")
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

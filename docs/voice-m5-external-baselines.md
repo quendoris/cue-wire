@@ -856,6 +856,138 @@ The next independent physical trial
 will need a predeclared near-end protection
 metric and verified causal latency.
 
+## Verified dual-Speex differential M5 report — real native execution (2026-11-09)
+
+The user supplied actual numeric-only \`speex-delta.json\` and
+\`SHA256SUMS\`; independent SHA256 over uploaded report bytes matches:
+\`c7753dea1ff557bcd3e56073f3d57ad34c28ffb3ea0c7212bbdac9276d6e13cf\`.
+Reported native implementation: \`libspeexdsp.so.1\`.
+The report links exactly the previously pinned M5
+digital reference, two physical 0.15/0.30 mic takes,
+and original M4 RAW voice; raw WAV bytes were not
+uploaded in this turn, so their rehash was done by
+the local analyzer, not independently here.
+
+Formula implemented with two reset native Speex states:
+
+\`\`\`text
+delta = Speex(raw_pcm, real_far) - Speex(raw_pcm, zero_far)
+raw_delta = raw_pcm + delta
+guarded_delta = raw_pcm + offline_lowpass_3800Hz(delta)
+\`\`\`
+
+Both branches adapt continuously from beginning of recording.
+The optional **513-tap symmetric centered zero-phase guard**
+filters only the correction; it is noncausal and
+**not approved for low-latency streaming**.
+The experiment's speaker-only 10–16s reference region
+and synthetic M4 voice levels -50/-39dBFS are
+retrospectively reused, not a blinded prospective trial.
+
+### Measured speaker-only behavior on the same 6s interval
+
+| Metric | 0.15 native Speex | 0.15 raw delta | 0.15 guarded delta | 0.30 native Speex | 0.30 raw delta | 0.30 guarded delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fullband ERLE, dB | 1.79157 | 0.33942 | 0.33771 | 3.79385 | 1.16146 | 1.13593 |
+| Ref-linked 500–4000Hz suppression, dB | 5.88278 | **6.05415** | 6.03408 | 11.10253 | **11.72492** | 11.51636 |
+| Absolute ref-linked residual, dBFS | -74.92077 | -75.09214 | -75.07207 | -74.15756 | **-74.77995** | -74.57139 |
+| Total residual RMS, dBFS | -59.72337 | -58.27122 | -58.26951 | -59.61467 | -56.98228 | -56.95675 |
+
+**Wholeband ERLE is lower for delta not because the
+music-reference subtraction failed, but because it
+does not inherit Speex's reference-INDEPENDENT
+front-end filtering of low-frequency mic noise.**
+The reference-linked spectral suppression is
+slightly *better* in the raw differential mode
+on both previously examined captures; this
+does not establish general superiority.
+
+In each phase's speaker-OFF windows, 2–7s and
+30–35s of the mic recording, BOTH differential
+modes showed exactly zero correction in the
+report's numeric resolution (\`correction_rms_dbfs=-240\`
+sentinel; \`corrected_minus_raw_rms_db=0.0\`).
+This supports reference-conditioned bypass
+under these measured conditions, NOT all possible
+audio hardware states or onset/offset boundaries.
+
+### Digital near-end M4 voice transfer: four combinations
+
+| Playback | Target added voice | Raw mixture known-stem output SNR | Native Speex output SNR | Delta guarded output SNR | Native Speex incremental transfer error SNR | Delta guarded transfer error SNR | Delta guarded projection gain |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.15 | -50 dBFS | 7.93182 | 7.54640 | **8.25725** | 11.75288 | **38.89897** | 0.9999389 |
+| 0.15 | -39 dBFS | 18.93181 | 11.20191 | **19.24107** | 11.76041 | **45.99193** | 0.9999884 |
+| 0.30 | -50 dBFS | 5.82085 | **7.45729** | 6.92886 | 11.70861 | **31.16469** | 0.9997560 |
+| 0.30 | -39 dBFS | 16.82083 | 11.17893 | **17.87816** | 11.75304 | **38.59802** | 0.9999413 |
+
+**Critical distinction:** the guarded differential
+passes the known injected voice nearly unchanged
+in this exact digital perturbation test; its
+incremental speech error-power ratio drops
+by roughly 88×–2650× compared with standard
+Speex across four conditions. However at
+0.30 playback and quiet -50dBFS voice the
+ordinary native Speex output still has
+**0.52843dB better total known-stem SNR** than
+guarded delta: a real echo/noise vs voice
+preservation tradeoff remains.
+
+The prior CueWire guarded FIR known-stem SNRs
+on the same digital injections were:
+8.16498/19.16497 dB (0.15 voice -50/-39),
+6.70665/17.70664 dB (0.30 voice -50/-39).
+The new guarded delta adds only
+**+0.09227/+0.07610 dB** at 0.15,
+**+0.22221/+0.17152 dB** at 0.30
+to those total known-stem SNRs. These are
+modest gains; it is the **voice transfer
+distortion** vs plain Speex that exhibits
+a dramatic improvement. Do not conflate the
+two types of score.
+
+### Compute and uncertainty
+
+Two sequential native Speex passes on the
+full recording take **0.58351s/36.05333s**
+for volume 0.15 (RTF ~0.016184) and
+**0.62518s/36.07467s** for volume 0.30
+(RTF ~0.017330). These estimates exclude
+the guard's offline FFT convolution,
+disk IO, multithreaded scheduling, physical
+playback/mic delay, memory and worst-case
+frame deadlines. A future real-time
+implementation requires **two synchronized
+states**, 10ms frames and separate causal
+guard design; RTF is NOT a latency bound.
+
+**Limitations:** physical speaker-only recordings
+plus a separate digitally injected M4 voice
+are NOT real acoustic doubletalk. We cannot
+establish preservation of physically spoken
+voice, perceptual audio quality or microphone
+firmware/AGC interaction under actual music.
+The low-volume/high-volume samples and settings
+were previously inspected. The numbers are
+scientific post-hoc evidence that the dual
+reference-difference architecture is viable
+for further controlled tests, not a live
+virtual-microphone authorization.
+
+**Next engineering direction:** before further
+combining echo suppressors, test this fixed
+dual-branch formula on already existing
+physical M5-doubletalk-001 and -002 captures,
+with strict original SHA256 and history checks.
+Where no clean near-end speech truth exists,
+measure only echo-reference coherence/energy
+on speaker-only intervals and descriptive
+mixture changes during near-end speech; do
+not label it voice-preservation SNR or
+reclassify previously failed gates. Then
+design causal frames, state-transition/reset
+stress tests and an independent prospective
+physical doubletalk protocol.
+
 ## Next engineering actions
 
 Implement two **offline adapters**, pinned to

@@ -73,7 +73,9 @@ def correlation_probe(reference: np.ndarray, microphone: np.ndarray,
     abs_r = np.abs(signed_r)
     pool = abs_r.copy()
     peaks = []
-    separation = round(PEAK_SEPARATION_MS * RATE)
+    # PEAK_SEPARATION_MS is in milliseconds; RATE is samples/second.
+    # Omitting /1000 excluded 3 SECONDS and hid every alternative peak.
+    separation = round(PEAK_SEPARATION_MS * RATE / 1000)
     for _ in range(3):
         i = int(np.argmax(pool))
         if pool[i] < 1e-5:

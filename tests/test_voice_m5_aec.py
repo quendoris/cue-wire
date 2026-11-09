@@ -966,6 +966,12 @@ class M5Tests(unittest.TestCase):
                 result["diagnostic_top_separated_peaks"][0]["lag_ms"] -
                 1000*lag/RATE), .09)
             self.assertGreater(result["absolute_correlation_at_original_lag"], .95)
+            # A multi-second search has abundant alternatives outside the
+            # excluded +/-3ms peak neighborhood. Keep the top-three list
+            # complete instead of accidentally reporting unique peaks.
+            self.assertEqual(len(result["diagnostic_top_separated_peaks"]), 3)
+            self.assertIsNotNone(result["first_minus_second_peak_abs_correlation"])
+            self.assertGreaterEqual(result["first_minus_second_peak_abs_correlation"], 0)
             self.assertTrue(result["diagnostic_not_a_retiming"])
         with self.assertRaisesRegex(ValueError, "outside available PCM"):
             lag_postmortem.correlation_probe(

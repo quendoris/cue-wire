@@ -70,6 +70,107 @@ The new capture prints the end of `arecord.log` on failure.
 
 For this changed behavior, use **M5-002**, never overwrite M5-001.
 
+## Next M5 control: exact clean M4 speech stem digitally injected into physical ABA speaker-only take
+
+A new research-only, **JSON-only** tool,
+\`tools/voice_m5_known_stem.py\`, compares the same original
+frozen FIR and the already investigated 3800-Hz
+echo-prediction-only guard with an exact clean speech target
+known **by construction**. This addresses a limitation of
+the actual double-talk trial: the original near-end voice
+was not recorded independently as a sample-exact stem.
+
+**Inputs (all RAW and local, none uploaded or modified):**
+
+- \`M5-ABA-001/microphone-aba-raw.wav\`: physical continuous
+  speaker-only A/B/A microphone recording (the earlier verified
+  reference-linked music session). Its original digital
+  \`M5-006/reference-sent.wav\` is automatically located from
+  the ABA manifest, and both WAVs/manifests are SHA256-checked.
+- \`M4-R0-ALSA-007/raw.wav\`: an earlier, distinct M4
+  voice-only physical mic recording. Its M4 capture
+  \`manifest.json\` must exist, report
+  \`cuewire-M4-raw-capture-v2\`, have
+  status \`recorded_unprocessed_raw\`, and match the RAW WAV
+  SHA256. Use a different *valid M4 voice-only RAW
+  capture directory* if that folder is absent.
+- The voice is a pure digital additive stem at a
+  **predeclared -39 dBFS target RMS**. At most 6s
+  of the voice stem is mixed into the existing ABA
+  *heldout* music-only recording at 10–16s.
+  A voice input shorter than 3s or effectively silent
+  is rejected.
+- Frozen FIR 120ms / ridge .02 is fitted on ABA
+  3–9s only. The already predeclared offline symmetric
+  513-tap / 3800-Hz lowpass guard operates on the
+  **echo estimate**, never on the microphone/voice stem.
+  No model is fitted to injected speech. Original
+  heldout ERLE >=1dB is a prerequisite.
+
+**Reported exact-stem metrics:**
+
+- Baseline mixture / original FIR / guarded FIR
+  *error to the known clean speech stem*;
+- absolute clean-stem signal-to-interference ratio
+  and improvement relative to raw mixed recording;
+- the same statistics by six frequency bands;
+- an algebraic check that adding the stem and
+  applying frozen reference-only subtraction has
+  not altered the sample-level stem contribution.
+
+This test can show whether an error to a known clean
+voice stem decreases **in a digital linear mixture**,
+but it cannot demonstrate real physical voice preservation,
+perceptual quality or microphone firmware AGC behavior.
+The ABA heldout has been used in earlier experiments,
+so guarded improvements are not new independent
+validation of the guard's generalization.
+
+**Run on existing local files, no microphone or speaker:**
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+
+test -f .audit/voice-captures/M4-R0-ALSA-007/raw.wav
+test -f .audit/voice-captures/M4-R0-ALSA-007/manifest.json
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_known_stem.py \
+  --capture .audit/voice-aec/M5-ABA-001 \
+  --voice .audit/voice-captures/M4-R0-ALSA-007 \
+  --out .audit/voice-aec/M5-known-stem-001
+
+cd .audit/voice-aec/M5-known-stem-001
+sha256sum -c SHA256SUMS
+~~~
+
+If the voice folder name differs, use the actual
+M4 voice-only **RAW** folder; do not repurpose an
+M4 LEVEL-001 processed WAV without a corresponding
+SHA256-verified manifest. The \`test -f\` checks
+should succeed; if not, do not attempt the analysis
+with an invented path.
+
+Result: \`known-stem.json\` and \`SHA256SUMS\`
+only. No audio output, virtual microphone, recording,
+system changes or files added outside a fresh
+private audit folder. There are **28 unit-test methods**
+after these two additional source-immutability
+and known-stem-signal-recovery tests; the local
+run remains necessary.
+
+If these checks pass, the next *independent*
+physical study requires a new recording with a
+predeclared guard or a second clean close-talk mic
+reference for simultaneous double talk. A separate
+M4 voice-only recording used for synthetic injection
+is *not* a sample-exact truth for the earlier physical
+double-talk recording.
+
 ## M5-guarded-fir-001 actual numerical comparison — independently SHA-verified (2026-11-09)
 
 User supplied local `guarded-fir.json` and `SHA256SUMS`;

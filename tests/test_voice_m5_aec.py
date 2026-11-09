@@ -2030,7 +2030,7 @@ class M5Tests(unittest.TestCase):
     def test_speex_delta_frontend_cancellation_preserves_exact_pcm_voice(self):
         """Mathematical differential removes common frontend but not music."""
         rng=np.random.default_rng(777601)
-        signal_int=rng.integers(-8000,8000,6*RATE,dtype=np.int16)
+        signal_int=rng.integers(-8000,8000,12*RATE,dtype=np.int16)
         mic=signal_int.astype(np.float64)/32768
         echo=rng.normal(0,.0005,len(mic))
         prefiltered=.95*mic
@@ -2042,6 +2042,12 @@ class M5Tests(unittest.TestCase):
             signal_int,with_far,prefiltered,guard=True)
         self.assertTrue(policy["only_echo_estimate_is_filtered"])
         self.assertEqual(len(protected),len(mic))
+        # The existing zero-phase guard explicitly requires >=10s;
+        # do not weaken that production-facing input contract for a test.
+        with self.assertRaisesRegex(ValueError,"Invalid echo estimate"):
+            speex_delta.delta_from_native(
+                signal_int[:6*RATE],with_far[:6*RATE],
+                prefiltered[:6*RATE],guard=True)
         speech=rng.normal(0,.012,len(mic))
         voice_pcm=speex_baseline.exact_pcm16(mic+speech)
         raw_stem=(voice_pcm.astype(np.int32)-signal_int.astype(np.int32))/32768

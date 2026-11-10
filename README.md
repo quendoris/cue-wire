@@ -476,3 +476,28 @@ See [M6-006 physical harmonic/percussive listening audit](docs/voice-m6-physical
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_physical_percussive_ab.py' -v
 ~~~
+
+
+## M6 Physical-007 — residual keyboard click reduction, C006 FROZEN
+
+User selected **C_006_percussive_strong** as best real physical
+speech-preserving click attenuator after comparing B/C from M6-006.
+M6-007 preserves that exact C006 as A, then tests two *additional*
+anonymous keyboard-event-gated corrections: B short STFT residual
+attack; C stronger short attack plus protected ringing tail using
+pitch-harmonic notches. No key/button identity, new capture, live
+PipeWire processing, background services or autoplay.
+
+Preliminary repeated-on-same-physical-capture 1300–9000Hz full-R5
+reductions relative to C006 are about 0.45dB for B and 0.66dB for C;
+these are only descriptive energy changes, NOT new unbiased validation
+or guaranteed preservation of consonants. Off-keyboard-event PCM16
+must be EXACTLY C006, and A output should SHA256-match prior C006
+output. Operator listening is the next mandatory quality gate.
+
+See [M6 physical keyboard residual A/B and integrity audit](docs/voice-m6-physical-residual.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_*residual*.py' -v
+~~~

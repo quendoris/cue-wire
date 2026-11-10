@@ -330,3 +330,22 @@ See [short physical M6 anonymous event recording protocol](docs/voice-m6-physica
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_physical_event_capture.py' -v
 ~~~
+
+
+## M6 PHYSICAL-EVENT-ALIGN — independent heldout timestamp/acoustic audit
+
+The original 44.33s microphone and 364 anonymized input events were
+SHA256-verified. The new offline tool fits per-class effective temporal
+offsets ONLY on speaker-off/no-voice isolated mouse and keyboard stages,
+then validates on a heldout phase with both devices, testing against
+2000 phase-preserving circular timing permutations. It writes only a
+private audit JSON; no real audio or event timestamp series to GitHub.
+This verifies a physical **correlation**, not yet click cancellation,
+human speech preservation or absolute PCM sample-zero anchoring.
+
+See [M6 physical acoustic/event alignment reproducible audit](docs/voice-m6-physical-event-align.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_physical_event_align.py' -v
+~~~

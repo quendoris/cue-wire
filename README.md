@@ -421,3 +421,31 @@ See [M6 Physical-004 listening and regression audit](docs/voice-m6-physical-aggr
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_physical_aggressive_ab.py' -v
 ~~~
+
+
+## M6 Physical-005 — speech-locked vowel-end protection (OFFLINE)
+
+Physical-004 was the first perceptually effective keyboard attenuation,
+but the operator reported that aggressive B chopped the final part
+of sustained vowels such as "Аааа"; C was less aggressive but still
+damaged voice. This is a quality failure even with lower spectral RMS.
+
+M6 Physical-005 explicitly recognizes voiced periodicity using a 90–490Hz
+acoustic pitch cue calibrated ONLY on speech-free isolated phases.
+It maintains an exact PCM16 source bypass during voiced regions, holds
+120ms before/220ms after detected voice and gently releases over 50ms.
+Three local options: A former 004 guarded, B new exact vowel bypass,
+C new 90% vowel bypass (10% residual compensation). Speech-free
+keyboard attenuation remains strong; when clicks overlap vocal tones,
+their suppression will be deliberately WEAKER to protect speech.
+Speech not recognized by the detector is NOT certified preserved.
+
+See [M6 Physical-005 protected vowel tails and listening commands](docs/voice-m6-physical-vowel.md).
+Synthetic regression: 11 tests across two files with vowel in event
+overlap and strict off-event PCM16 invariants. No private WAV or input
+event timestamp is published. Processing remains OFFLINE/noncausal.
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_*vowel*.py' -v
+~~~

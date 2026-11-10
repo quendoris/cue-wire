@@ -90,11 +90,10 @@ def verify_physical(capture_dir:Path, initial_path:Path,
             any(p.parent.parent != out_parent for p in
                 (initial_path, consistency_path, previous_report))):
         raise ValueError("M6 output must be NEW sibling of M5 physical sources")
-    if any(p.is_symlink() for p in (manifest_path,raw_path)):
-        raise ValueError("Symlinked M5 source evidence not allowed")
-
     manifest_path = capture_dir / "manifest.json"
     raw_path = capture_dir / "microphone-chaos-raw.wav"
+    if any(p.is_symlink() for p in (manifest_path,raw_path)):
+        raise ValueError("Symlinked M5 source evidence not allowed")
     expected = {
         manifest_path: ACTUAL_MANIFEST_SHA256,
         raw_path: ACTUAL_MIC_SHA256,

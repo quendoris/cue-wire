@@ -194,7 +194,7 @@ class QuendorisCompactTUIChecks(unittest.TestCase):
         # erroneously required foreground/background to each start a CSI.
         self.assertRegex(
             ansi,
-            r"\x1b\[(?:1|22);38;2;(?:\d{1,3};){3}48;2;(?:\d{1,3};){3}m",
+            r"\x1b\[(?:1|22);38;2;\d{1,3};\d{1,3};\d{1,3};48;2;\d{1,3};\d{1,3};\d{1,3}m",
         )
         self.assertIn(";38;2;",ansi)
         self.assertIn(";48;2;",ansi)

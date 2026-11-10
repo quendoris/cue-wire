@@ -52,7 +52,7 @@ class M6EventClockTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid PCM timing"):
             clock.convert_events(row, -1, 0, m6.RATE)
         with self.assertRaisesRegex(ValueError, "outside"):
-            clock.convert_events(row, 1_000_000_000, 0, m6.RATE)
+            clock.convert_events(row, 100_000_000, 0, m6.RATE)
 
 
 if __name__ == "__main__":

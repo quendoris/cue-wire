@@ -12,6 +12,8 @@
 -- registration. To disable, remove the dofile and reload Hyprland.
 -- The keys also get consumed when CueWire is inactive; review first.
 -- Their exec commands fail without a running owned CueWire instance.
+-- Default keymap; new configurable assignments live in private .audit.
+-- Do NOT include both this file and generated .audit/cuewire-keymap-v1.lua.
 --
 -- Avoid blocking Lua callbacks. hl.dsp.exec_cmd dispatches asynchronously.
 -- A Lua hotkey does NOT prove Steam/game input-inhibitor behavior.
@@ -31,7 +33,7 @@ local handles = {}
 for n = 0, 9 do
     handles[#handles + 1] = hl.bind(
         "KP_" .. tostring(n),
-        hl.dsp.exec_cmd(bin .. " ctl play " .. tostring(n)),
+        hl.dsp.exec_cmd(bin .. " ctl toggle " .. tostring(n)),
         { ignore_mods = true, dont_inhibit = true }
     )
 end

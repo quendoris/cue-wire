@@ -89,6 +89,7 @@ git switch feature/m7-terminal-interface
 git pull --ff-only
 python3 -m unittest discover -s tests -p 'test_cuewire_console.py' -v
 python3 tools/cuewire_console.py --preview
+python3 tools/cuewire_console.py --demo  # simulate play/stop/status, no real audio
 ~~~
 
 Read-only check of an already running CueWire:
@@ -129,7 +130,7 @@ default source, configure a headset or create a virtual microphone.
 ## M7.0 validation checklist
 
 - Offline preview succeeds with no PipeWire and no existing socket.
-- 10 synthetic Python unit tests pass.
+- 11 synthetic Python unit tests pass.
 - Runtime panel is accurately OFFLINE when engine not running.
 - With an existing Rust engine running: status reflects its real
   microphone, virtual source, monitor and active cue.
@@ -144,3 +145,8 @@ default source, configure a headset or create a virtual microphone.
 Until live hardware tests actually pass, do not claim them green.
 The next development milestone is a Rust streaming DSP scheduler
 and a richer, versioned telemetry protocol for the console.
+
+The --demo mode is an interactive simulation: play N and stop only
+change ephemeral process-local state. It never connects to any socket,
+modifies audio or starts a CueWire runtime. It is designed for immediate
+user review of the interaction flow before hardware integration.

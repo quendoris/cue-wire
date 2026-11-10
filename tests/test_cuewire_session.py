@@ -117,6 +117,7 @@ class SessionDefaultsAndScope(unittest.TestCase):
         output=io.StringIO()
         with patch.object(s,"resolve_nodes",return_value=(
              "alsa_input.real_mic","alsa_output.real_speakers")), \
+             patch.object(s,"private_profile_cues",return_value=[]), \
              patch.object(s,"scope_active",return_value=False), \
              patch.object(s.subprocess,"run",
                           side_effect=AssertionError("must not start engine")), \
@@ -163,6 +164,54 @@ class SessionDefaultsAndScope(unittest.TestCase):
             s.stop_engine(child)
         sent.assert_called_once_with("quit")
         child.terminate.assert_not_called()
+
+    def test_configure_creates_private_0600_profile_without_runtime(self):
+        with tempfile.TemporaryDirectory() as root:
+            file=Path(root)/"cue.wav"
+            file.write_bytes(b"RIFF"+b"\x00"*4+b"WAVE"+b"\x00"*48)
+            profile=Path(root)/".audit"/"cuewire-session-v1.json"
+            with patch.object(s,"PROFILE",profile), \
+                 patch.object(s,"resolve_nodes",
+                              side_effect=AssertionError("no device reads")), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    s.main(["--configure","--cue","4="+str(file)]),0)
+            self.assertEqual(profile.stat().st_mode & 0o777,0o600)
+            self.assertEqual(s.private_profile_cues(),["4="+str(file)])
+            with patch.object(s,"PROFILE",profile), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(s.main(
+                    ["--configure","--cue","4="+str(file)]),2)
+            self.assertTrue(profile.is_file())
+
+    def test_private_profile_malformed_permissions_fail_closed(self):
+        with tempfile.TemporaryDirectory() as root:
+            file=Path(root)/"cue.wav"
+            file.write_bytes(b"RIFF"+b"\x00"*4+b"WAVE"+b"\x00"*48)
+            profile=Path(root)/".audit"/"cuewire-session-v1.json"
+            with patch.object(s,"PROFILE",profile):
+                s.write_private_profile(["4="+str(file)])
+                os.chmod(profile,0o644)
+                with self.assertRaisesRegex(s.SessionError,"0600"):
+                    s.private_profile_cues()
+                os.chmod(profile,0o600)
+                alias=profile.parent/"malicious.json"
+                alias.symlink_to(profile)
+                with patch.object(s,"PROFILE",alias), \
+                     self.assertRaisesRegex(s.SessionError,"symlink"):
+                    s.private_profile_cues()
+
+    def test_configure_rejects_profile_overwrite_without_explicit_flag(self):
+        with tempfile.TemporaryDirectory() as root:
+            file=Path(root)/"cue.wav"
+            file.write_bytes(b"RIFF"+b"\x00"*4+b"WAVE"+b"\x00"*48)
+            profile=Path(root)/".audit"/"cuewire-session-v1.json"
+            with patch.object(s,"PROFILE",profile):
+                s.write_private_profile(["4="+str(file)])
+                with self.assertRaisesRegex(s.SessionError,"replace-profile"):
+                    s.write_private_profile(["4="+str(file)])
+                s.write_private_profile(["4="+str(file)],replace=True)
+                self.assertEqual(profile.stat().st_mode & 0o777,0o600)
 
     def test_keyboard_profile_only_declares_opt_in_lua_binds(self):
         lua=(s.ROOT/"tools/cuewire_hyprland.lua").read_text()

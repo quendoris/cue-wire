@@ -588,3 +588,36 @@ command safety, terminal behaviors and preview isolation.
 See [M7.1 compact interface prototype and safety acceptance
 matrix](docs/m7-compact-tui.md). Real control via the separate
 tools/cuewire_console.py is NOT enabled in this visual demo.
+
+
+## M7.2: real CueWire engine behind the compact TUI (explicit opt-in)
+
+The same six-pane animated [Quendoris terminal TUI](tools/cuewire_tui.py)
+now supports **--live**, connecting to the existing manually started
+CueWire v0.1 Unix control socket. --demo and --snapshot remain
+strictly isolated; neither touches a socket, PipeWire or input devices.
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_cuewire_tui_live.py' -v
+python3 tools/cuewire_tui.py --live-check # read-only, exit 2 if engine/graph missing
+python3 tools/cuewire_tui.py --live       # real engine status and play/stop
+~~~
+
+The live Runtime/Devices/Cue panels show server-reported values, with
+fresh polling and no stale ONLINE if the socket disappears. The doctor
+command checks exact same-user socket mode 0600, strict v0.1 status,
+and via read-only pw-dump four expected graph nodes. It does not
+measure audible audio, gain, latency, process cleanup or M6 DSP.
+Play N and stop control the already configured cue players. quit
+requires exact CONFIRM and then requests the existing Rust runtime
+to shut down. exit or Ctrl+C closes the UI alone. No autostart,
+default-device changes, hotkey installation or microphone capture
+occur in the TUI. M6-007 remains a frozen OFFLINE reference.
+
+The user must manually launch the original Rust cuewire run
+with correct physical mic, monitor and audio cue WAVs from a separate
+terminal before --live can show a connected state. The new
+15 synthetic tests exercise a temporary mock Unix socket and mocked
+read-only pw-dump: they do not touch actual audio hardware.
+
+See [M7.2 live integration verification protocol](docs/m7-live-integration.md).

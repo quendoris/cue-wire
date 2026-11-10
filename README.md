@@ -501,3 +501,22 @@ See [M6 physical keyboard residual A/B and integrity audit](docs/voice-m6-physic
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_*residual*.py' -v
 ~~~
+
+
+## M6 Physical-007 — RESEARCH ACCEPTED (2026-11-10)
+
+Physical-007 is the accepted *offline research checkpoint* for
+anonymous event-driven keyboard-click attenuation while preserving
+voice as judged by the operator. Physical-007 sounded noticeably
+better in user listening; its family of A=C006 reference, B=short
+attack, and C=short attack+harmonic-protected tail is frozen together.
+The user did not explicitly specify B vs C as the individually
+selected 007 winner, so do not silently assign that preference.
+
+This does NOT certify objective clean voice quality, unseen-session
+generalization, causality or live PipeWire readiness. No further
+unsupervised changes to the accepted model. Physical source WAVs and
+anonymous event timestamps remain exclusively in private ignored
+.audit.
+
+See [M6-007 signed-off research freeze and next-stage gates](docs/voice-m6-physical-007-research-freeze.md).

@@ -97,6 +97,44 @@ class PhysicalPrivacyTests(unittest.TestCase):
                              capture.struct.pack(
                                  "i", capture.KERNEL_CLOCK_ID))
 
+    def test_empty_evdev_queue_exits_immediately_not_infinite_loop(self):
+        calls=[]
+        fake=SimpleNamespace(
+            fd=39,read=lambda: (calls.append(1) or []))
+        with patch.object(capture.fcntl,"ioctl"):
+            capture.set_kernel_monotonic(fake)
+        self.assertEqual(len(calls),1)
+
+    def test_evdev_generator_drains_old_events_and_then_stops(self):
+        calls=[]
+        def read():
+            calls.append(1)
+            if len(calls)==1:
+                return iter((object(),object()))
+            if len(calls)==2:
+                return iter((object(),))
+            return iter(())
+        fake=SimpleNamespace(fd=39,read=read)
+        with patch.object(capture.fcntl,"ioctl"):
+            capture.set_kernel_monotonic(fake)
+        self.assertEqual(len(calls),3)
+
+    def test_nonquiescing_evdev_queue_fails_closed_instead_of_hanging(self):
+        calls=[]
+        fake=SimpleNamespace(
+            fd=39,read=lambda: (calls.append(1) or [object()]))
+        with patch.object(capture.fcntl,"ioctl"):
+            with self.assertRaisesRegex(RuntimeError,"did not quiesce"):
+                capture.set_kernel_monotonic(fake)
+        self.assertEqual(len(calls),64)
+
+    def test_evdev_nonblocking_empty_queue_exception_exits(self):
+        def read():
+            raise BlockingIOError(11, "Resource temporarily unavailable")
+        fake=SimpleNamespace(fd=39,read=read)
+        with patch.object(capture.fcntl,"ioctl"):
+            capture.set_kernel_monotonic(fake)
+
     def test_wav_format_guard_on_synthetic_fixture(self):
         import wave
         with tempfile.TemporaryDirectory() as d:

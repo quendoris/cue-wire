@@ -90,11 +90,16 @@ def voicing_protection(waveform: np.ndarray, manifest: dict):
     np.add.at(diff, np.maximum(0,indices-PRE_HOLD_FRAMES),1)
     np.add.at(diff, np.minimum(len(frames),indices+POST_HOLD_FRAMES+1),-1)
     locked_frames = np.cumsum(diff[:-1])>0
-    outside_distance = ndimage.distance_transform_edt(~locked_frames)
-    protected = np.where(
-        locked_frames,1.0,
-        np.maximum(0.0,1.0-outside_distance/EDGE_FADE_FRAMES)
-    )
+    if np.any(locked_frames):
+        outside_distance = ndimage.distance_transform_edt(~locked_frames)
+        protected = np.where(
+            locked_frames,1.0,
+            np.maximum(0.0,1.0-outside_distance/EDGE_FADE_FRAMES)
+        )
+    else:
+        # EDT of an all-true array can invent a transition at the
+        # array boundary. No voiced frames means NEVER apply protection.
+        protected = np.zeros(len(frames),dtype=np.float64)
     at_sample=np.repeat(protected,hop_at_original_rate)
     if len(at_sample) < len(waveform):
         at_sample=np.pad(at_sample, (0,len(waveform)-len(at_sample)), mode='edge')

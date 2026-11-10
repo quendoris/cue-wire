@@ -43,6 +43,8 @@ python3 tools/cuewire_keymap.py reset
 python3 tools/cuewire_keymap.py preview
 python3 tools/cuewire_keymap.py check
 python3 tools/cuewire_keymap.py compile
+# After adding dofile and manually reloading Hyprland:
+python3 tools/cuewire_keymap.py verify
 ~~~
 
 Supported key families: KP_0..KP_9, KP_Decimal, F1..F24;
@@ -50,11 +52,15 @@ A..Z, digits and Space WITH an explicit modifier CTRL/ALT/SHIFT/SUPER.
 Invalid Lua, shell injection, unmodified game letters, duplicate
 physical combos and SUPER+C assigned to a cue are rejected.
 
-Current preflight deliberately flags ANY existing bind to the same
+Current preflight deliberately flags ANY foreign bind to the same
 base key, even with another modifier mask. This errs on the side of
 false positives rather than stealing other applications' shortcuts.
-For changing an existing CueWire mapping, first remove the previously
-opted-in CueWire Lua include and manually reload before re-check.
+Only existing binds with the exact verified CueWire M7.4 description
+AND exact CueWire command are exempted, allowing subsequent recompile
+of the same generated profile. Legacy static CueWire bindings do NOT
+qualify; remove the old static include and reload before installing
+the generated profile. The generated code unbinds only its own
+remembered Lua handles, never any foreign user shortcuts.
 
 After check succeeds, compile writes the local Lua and prints its
 manual include line:
@@ -85,7 +91,7 @@ cargo test --locked --offline
 cargo build --release --locked --offline
 ~~~
 
-14 new synthetic keymap tests check normalized safe chords, injection
+16 new synthetic keymap tests check normalized safe chords, injection
 resistance, reserved panic, duplicate prevention, rendering,
 read-only preview, 0600 files, symlinks, no overwrite, and conflict
 refusal. They are NOT proof of global hotkeys in real games.

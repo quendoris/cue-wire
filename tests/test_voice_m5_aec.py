@@ -2585,7 +2585,7 @@ class M5Tests(unittest.TestCase):
             song=rng.normal(0,.01,(32*RATE,2))
             with wave.open(str(music),"wb") as f:
                 f.setnchannels(2);f.setsampwidth(2);f.setframerate(RATE)
-                f.writeframes(speex_baseline.exact_pcm16(song).tobytes())
+                f.writeframes(np.rint(song*32768).astype("<i2").tobytes())
             mic_file=capture_dir/"microphone-chaos-raw.wav"
             pcm16_file(mic_file,np.zeros(60*RATE))
             mf=capture_dir/"manifest.json"

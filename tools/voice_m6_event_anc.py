@@ -176,7 +176,17 @@ def train_music_fir(mic: np.ndarray, ref: np.ndarray,
     coeff = np.linalg.solve(gram + ridge * energy * np.eye(taps), rhs)
     if not np.all(np.isfinite(coeff)) or float(np.max(np.abs(coeff))) > 8:
         raise ValueError("Ill-conditioned/unsafe music FIR")
+    fitted = predict_music(ref, coeff)
+    cal_energy = sum(float(np.dot(mic[a:b], mic[a:b])) for a, b in windows)
+    cal_error = sum(float(np.dot(
+        mic[a:b]-fitted[a:b], mic[a:b]-fitted[a:b]))
+        for a, b in windows)
+    fit_improvement_db = 10. * math.log10(
+        max(cal_energy, 1e-30) / max(cal_error, 1e-30))
     return coeff, {
+        "speaker_only_training_residual_reduction_db":
+            round(fit_improvement_db, 5),
+        "not_a_doubletalk_or_perceptual_quality_metric": True,
         "fir_taps": taps, "training_stride_samples": stride,
         "ridge_fraction": ridge, "training_windows_samples": windows,
         "training_frames_subsampled":
@@ -368,6 +378,8 @@ def run(args: argparse.Namespace) -> dict:
     os.umask(0o077)
     if not args.speech_free_calibration_confirmed:
         raise ValueError("Explicit isolated/no-voice calibration consent required")
+    if not args.reference_sample_clock_confirmed:
+        raise ValueError("Explicit microphone/reference sample-clock alignment required")
     repo = Path(__file__).resolve().parents[1]
     audit = (repo / ".audit").resolve(strict=True)
     cal_mic_p = assert_private(args.cal_mic, audit, existing=True)
@@ -465,6 +477,8 @@ def main() -> None:
                         metavar="START:END", help="Speaker-only, no speech, no clicks")
     parser.add_argument("--speech-free-calibration-confirmed",
                         action="store_true", help="Operator verified ALL calibration has no voice")
+    parser.add_argument("--reference-sample-clock-confirmed",
+                        action="store_true", help="Operator verified both farend WAVs share physical mic sample clock")
     parser.add_argument("--mic", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--events", type=Path, required=True)

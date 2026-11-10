@@ -94,6 +94,21 @@ class KeymapTests(unittest.TestCase):
         self.assertTrue(any("F8" in x for x in found))
         self.assertTrue(any("emergency" in x for x in found))
 
+    def test_previous_authenticated_cuewire_bind_is_safe_but_foreign_is_not(self):
+        own={
+            "key":"F8",
+            "dispatcher":"exec",
+            "description":"CueWire M7.4 cue:4",
+            "arg":str(k.ROOT/"target/release/cuewire")+" ctl toggle 4",
+        }
+        m=k.defaults()
+        m["cue:4"]="F8"
+        self.assertEqual(k.conflicts(m,[own]),[])
+        fake=dict(own,description="Other application")
+        self.assertEqual(len(k.conflicts(m,[fake])),1)
+        fake=dict(own,arg="other-cmd; injected")
+        self.assertEqual(len(k.conflicts(m,[fake])),1)
+
     def test_preview_and_dry_run_do_not_write_any_local_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory=Path(tmp)/".audit"

@@ -43,6 +43,7 @@ import voice_m5_listening_ab as listening_ab
 import voice_m5_mouse_click_control as mouse_control
 import voice_m5_chaos_capture as chaos
 import voice_m5_chaos_reference_probe as chaos_ref
+import voice_m5_chaos_reference_validate as chaos_validate
 import voice_m5_capture as capture_runtime
 from contextlib import ExitStack
 import ctypes
@@ -265,7 +266,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_listening_ab.py",
                        "voice_m5_mouse_click_control.py",
                        "voice_m5_chaos_capture.py",
-                       "voice_m5_chaos_reference_probe.py"):
+                       "voice_m5_chaos_reference_probe.py",
+                       "voice_m5_chaos_reference_validate.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -2636,6 +2638,35 @@ class M5Tests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,"SHA256"):
                     chaos_ref.analyze(
                         capture_dir,audit/"voice-aec/M5-chaos-alignment-002")
+    def test_chaos_later_music_windows_retain_true_prior_lag_and_detect_drift(self):
+        """Known synthetic farend arrival, validation independent of initial window."""
+        rng=np.random.default_rng(801129)
+        stereo=rng.normal(0,.01,(15*RATE,2))
+        music=stereo.mean(axis=1)
+        lag=int(.330*RATE)
+        observed=rng.normal(0,.00008,17*RATE)
+        observed[lag:lag+len(music)] += music*.25
+        report=chaos_validate.evaluate(
+            stereo,observed,lag,
+            ((1.,3.7),(5.,7.7),(9.,11.7)),
+            prefiltered=False)
+        self.assertEqual(len(report["windows"]),3)
+        for stage in report["windows"]:
+            scored=stage["channels"]["stereo_arithmetic_mean"]
+            self.assertGreater(scored["fixed_lag_abs_normalized_correlation"],.96)
+            self.assertLess(abs(scored["best_local_minus_prior_ms"]),.06)
+            self.assertLessEqual(
+                scored["best_local_abs_normalized_correlation"],1.001)
+        # A deliberately wrong prior +47ms is exposed by local search.
+        wrong=chaos_validate.lag_score(
+            music,observed,1.,3.7,lag+round(.047*RATE))
+        self.assertAlmostEqual(wrong["best_local_minus_prior_ms"],
+                               -47.,delta=.1)
+        self.assertLess(wrong["fixed_lag_abs_normalized_correlation"],.05)
+        self.assertGreater(wrong["best_local_abs_normalized_correlation"],.95)
+        with self.assertRaisesRegex(ValueError,"too short"):
+            chaos_validate.lag_score(music,observed,1.,1.3,lag)
+
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

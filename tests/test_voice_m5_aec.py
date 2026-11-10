@@ -2764,6 +2764,25 @@ class M5Tests(unittest.TestCase):
         self.assertFalse(control["processors"]["slight_residual"][
             "real_untouched_voice_truth_available"])
 
+    def test_chaos_clean_voice_pcm16_exact_despite_float_fft_residue(self):
+        """Sub-LSB FFT residue must not cause false failure or hide 1 LSB."""
+        baseline=np.array([0,1,-1024,4096,-25000,16000],dtype="<i2")
+        raw_float=baseline.astype(np.float64)/32768.
+        guarded=raw_float.copy()
+        guarded[1:]+=1e-12
+        self.assertFalse(np.array_equal(raw_float,guarded))
+        result=chaos_listen.verify_clean_pcm16(
+            baseline,guarded,0,len(baseline))
+        self.assertEqual(result["pcm16_changed_samples"],0)
+        self.assertFalse(result["raw_vs_guarded_strict_float_equal"])
+        self.assertGreater(result["max_abs_float_delta"],0.)
+        self.assertTrue(result["sample_exact_PCM16_before_gain"])
+        guarded[2]=raw_float[2]+1/32768.
+        with self.assertRaisesRegex(
+                RuntimeError,r"1 changed samples, max 1 LSB"):
+            chaos_listen.verify_clean_pcm16(
+                baseline,guarded,0,len(baseline))
+
     def test_chaos_private_listen_shared_gain_wav_and_no_overwrite(self):
         """All 12 actual listening previews share one attenuation-only gain."""
         rng=np.random.default_rng(801133)

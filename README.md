@@ -349,3 +349,26 @@ See [M6 physical acoustic/event alignment reproducible audit](docs/voice-m6-phys
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_physical_event_align.py' -v
 ~~~
+
+
+## M6 PHYSICAL-002 — event-triggered anti-click waveform A/B (OFFLINE)
+
+Following successful independently verified mouse/keyboard event-to-acoustic
+alignment, M6 can now build three private candidate WAVs per scene:
+A original, B conservative (.40) and C stronger (.75). Event markers
+serve only as time anchors; the compensating in-phase high-frequency
+wave is built from the ACTUAL physical microphone transient. Outside
+short triggered event masks, the original PCM16 samples are bit-exact
+preserved. The non-causal zero-phase filter is OFFLINE-only.
+
+This is a **prototype, not proved echo/noise removal or safe speech
+processing**. Initial parameter selection used this same recording, so
+its numerical heldout results are descriptive, not unbiased validation.
+No private WAV/event stream or key/button identity is published.
+
+See [M6 Physical-002 local commands and validity limits](docs/voice-m6-physical-click-ab.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_physical_click_ab.py' -v
+~~~

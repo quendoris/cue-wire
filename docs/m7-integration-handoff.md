@@ -150,3 +150,16 @@ The --demo mode is an interactive simulation: play N and stop only
 change ephemeral process-local state. It never connects to any socket,
 modifies audio or starts a CueWire runtime. It is designed for immediate
 user review of the interaction flow before hardware integration.
+
+
+## M7.1 visual milestone
+
+The actual compact six-pane TUI with faithful Quendoris SVG geometry,
+slow truecolor gradient and expanding single-row command dock is now
+implemented in tools/cuewire_tui.py and documented in
+[the M7.1 TUI specification](m7-compact-tui.md). It runs ONLY a
+simulated state machine, and is intentionally separate from both
+the M6 archived branch and the existing real-socket controller.
+Its 16 synthetic tests must pass on the user's Arch before live
+device integration. No genuine DSP, socket or runtime metrics are
+simulated as actual.

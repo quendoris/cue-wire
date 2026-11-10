@@ -372,3 +372,27 @@ See [M6 Physical-002 local commands and validity limits](docs/voice-m6-physical-
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_physical_click_ab.py' -v
 ~~~
+
+
+## M6 Physical-003 — duration-adaptive click anti-wave (OFFLINE)
+
+Physical-002 preserved speech outside event windows but audible keyboard
+clicks remained. Physical isolated-event analysis found median keyboard
+acoustic decay around 40ms (versus ~5.5ms for mouse); the previous
+~8ms suppression window missed much of the keyboard tail.
+
+New M6 Physical-003 learns per-device-class decay bounds ONLY from
+isolated speaker-off, speech-free training events, then predicts an
+event-limited, dynamically decaying anti-wave from current microphone
+highband. B = dynamic tail; C = same anti-wave with lowband voice guard.
+A = unmodified mic. Exactly THREE candidates; 5 scene exports.
+Privacy remains strict: no key/button identity, text or coordinates.
+Off-event PCM16 is exact. All processing is NONCAUSAL, OFFLINE,
+research-only; subjective voice safety is NOT proven by energy metrics.
+
+See [M6 physical adaptive-tail test and Arch commands](docs/voice-m6-physical-tail.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_physical_tail_ab.py' -v
+~~~

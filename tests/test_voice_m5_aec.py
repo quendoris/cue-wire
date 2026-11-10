@@ -2810,7 +2810,7 @@ class M5Tests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 chaos_listen.wav_write_exclusive(target,src)
         louder=dict(original)
-        louder["original_raw"]=raw*2.5
+        louder["original_raw"]=raw*2.0
         out,gain=chaos_listen.checked_pcm_variants(louder)
         self.assertLess(gain["gain_linear"],1.)
         self.assertEqual(len(out),4)

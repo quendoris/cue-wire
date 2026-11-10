@@ -32,6 +32,10 @@ class QuendorisCompactTUIChecks(unittest.TestCase):
         self.assertFalse(t.mark_at(0,0))
         self.assertFalse(t.mark_at(420,420))
         self.assertEqual(t.SITE_ACCENT,(211,224,139))
+        # Exact raster area from the verified accepted SVG in quendoris/site.
+        self.assertEqual(
+            sum(t.mark_at(x,y) for y in range(420) for x in range(420)),
+            89249)
 
     def test_raster_brand_mark_has_visible_lateral_eyes(self):
         width,height=120,38

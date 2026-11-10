@@ -109,6 +109,26 @@ class M6PredictiveTests(unittest.TestCase):
         self.assertLess(
             np.sqrt(np.mean((tracks["combined"] - voice)**2)), .002)
 
+    def test_explicit_acoustic_delay_restores_aligned_reference(self):
+        rng = np.random.default_rng(12007)
+        n = 3*m6.RATE
+        reference = np.zeros(n)
+        reference[int(.2*m6.RATE):int(2.3*m6.RATE)] = rng.normal(
+            0., .04, int(2.1*m6.RATE))
+        delayed = m6.delay_reference(reference, 480)
+        mic = .55*delayed
+        a, b = int(.5*m6.RATE), int(1.5*m6.RATE)
+        h, _ = m6.train_music_fir(
+            mic, delayed, [(a,b)], taps=24, ridge=1e-6)
+        estimate = m6.predict_music(delayed, h)
+        self.assertLess(
+            np.sqrt(np.mean((estimate-mic)**2)), 0.00005)
+        self.assertLess(abs(h[0]-.55), .003)
+        np.testing.assert_array_equal(
+            delayed[:480], np.zeros(480))
+        with self.assertRaisesRegex(ValueError, "measured nonnegative"):
+            m6.delay_reference(reference, -1)
+
     def test_gain_is_updated_after_certified_speech_free_window_only(self):
         n = 3 * m6.RATE
         predict = np.zeros(n)

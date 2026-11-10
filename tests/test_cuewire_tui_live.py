@@ -174,6 +174,19 @@ class M7LiveTests(unittest.TestCase):
             self.assertTrue(model.terminated)
             self.assertIn("quit",stub.commands)
 
+    def test_managed_exit_reports_owned_engine_cleanup_vs_standalone(self):
+        managed=ui.LiveModel(managed=True)
+        managed.execute("exit")
+        self.assertTrue(managed.terminated)
+        self.assertIn("cleanup follows",managed.feed[-1])
+        preview,_=ui.paint(ui.LiveModel(managed=True),100,32)
+        self.assertIn("end session",preview.plain())
+        standalone=ui.LiveModel()
+        standalone.execute("exit")
+        self.assertIn("engine left running",standalone.feed[-1])
+        with self.assertRaisesRegex(ValueError,"requires real"):
+            ui.run_demo(managed=True)
+
     def test_tab_cancels_live_shutdown_confirmation(self):
         m=ui.LiveModel()
         m.focus="command"

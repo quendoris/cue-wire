@@ -51,7 +51,7 @@ def read_live() -> LiveReport:
         return LiveReport(False, short(exc), socket_acl="FAIL",
                           protocol="SKIP")
     try:
-        response = protocol.request("status")
+        response = protocol.request("status",timeout_seconds=0.5)
         status = protocol.parse_status(response)
     except protocol.ConsoleError as exc:
         return LiveReport(False, short(exc), socket_acl="PASS",
@@ -77,7 +77,7 @@ def send_live(command: str) -> str:
     allowed, canonical = protocol.operator_command(command)
     if allowed != "remote" or canonical is None:
         raise protocol.ConsoleError("Not an existing CueWire control action")
-    response = protocol.request(canonical)
+    response = protocol.request(canonical,timeout_seconds=1.2)
     if not response.startswith("OK "):
         raise protocol.ConsoleError(short(response))
     return short(response, 150)

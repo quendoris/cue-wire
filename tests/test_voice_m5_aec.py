@@ -2612,6 +2612,9 @@ class M5Tests(unittest.TestCase):
             sources=(mf,mic_file,music)
             old_hashes=[aec.digest(f) for f in sources]
             with mock.patch.object(chaos_ref,"AUDIT",audit.resolve()), \
+                 mock.patch.object(chaos_ref,"ACTUAL_MANIFEST_SHA256",aec.digest(mf)), \
+                 mock.patch.object(chaos_ref,"ACTUAL_MIC_SHA256",aec.digest(mic_file)), \
+                 mock.patch.object(chaos_ref,"ACTUAL_SONG_SHA256",aec.digest(music)), \
                  mock.patch.object(chaos_ref,"probe_one",side_effect=[
                     {"status":"synthetic_11","valid_echo_lag":True},
                     {"status":"synthetic_44","valid_echo_lag":True}

@@ -189,8 +189,15 @@ class QuendorisCompactTUIChecks(unittest.TestCase):
         m=t.Model()
         canvas,_=t.paint(m,80,28,.25)
         ansi=canvas.ansi()
-        self.assertIn("\x1b[38;2;",ansi)
-        self.assertIn("\x1b[48;2;",ansi)
+        # SGR can combine weight, foreground and background in one CSI:
+        # ESC[22;38;2;R;G;B;48;2;R;G;Bm. The old assertion
+        # erroneously required foreground/background to each start a CSI.
+        self.assertRegex(
+            ansi,
+            r"\x1b\[(?:1|22);38;2;(?:\d{1,3};){3}48;2;(?:\d{1,3};){3}m",
+        )
+        self.assertIn(";38;2;",ansi)
+        self.assertIn(";48;2;",ansi)
         self.assertIn("\x1b[28;1H",ansi)
         self.assertFalse(ansi.endswith("\n"))
         self.assertEqual(len(canvas.plain().splitlines()),28)
@@ -232,7 +239,7 @@ class QuendorisCompactTUIChecks(unittest.TestCase):
              patch.object(t.tty,"setraw") as setraw, \
              patch.object(t.termios,"tcsetattr") as restored:
             with t.TerminalSession(stream=terminal,output=terminal):
-                self.assertIn("\\x1b[?1049h",repr(terminal.transcript))
+                self.assertIn("\x1b[?1049h","".join(terminal.transcript))
             saved.assert_called_once_with(77)
             setraw.assert_called_once_with(77)
             restored.assert_called_once_with(77,t.termios.TCSADRAIN,original)

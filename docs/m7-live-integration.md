@@ -122,7 +122,33 @@ cargo build --release --locked --offline
 
 The 25ms flag is a REQUEST, not a measured latency. The source name
 CueWire Microphone must be selected manually in Steam/game; never
-replace default OS devices. If it is desirable to tie emergency
+replace default OS devices.
+
+To use the existing separately implemented emergency cgroup mechanism
+instead of directly launching the engine, use an EXPLICIT supervised
+foreground scope (not a persistent service):
+
+~~~bash
+bash tools/cuewire_scope.sh check
+
+bash tools/cuewire_scope.sh run -- \
+  --mic 'REAL_MIC_NODE_NAME' \
+  --monitor 'REAL_OUTPUT_NODE_NAME' \
+  --cue '4=/absolute/path/to/test.wav' \
+  --latency-ms 25
+~~~
+
+Emergency from a separate terminal is limited to the correctly marked
+CueWire scope:
+
+~~~bash
+bash tools/cuewire_scope.sh emergency
+~~~
+
+This does NOT install or validate a global Hyprland Super+C binding,
+and does not include the separately launched TUI in that cgroup.
+Comprehensive cross-process Super+C acceptance remains pending.
+ If it is desirable to tie emergency
 Super+C to this live session, use the pre-existing opt-in supervised
 tools/cuewire_scope.sh and separately validated Hyprland binding,
 rather than assuming Ctrl+C in the TUI kills an external engine.

@@ -582,7 +582,7 @@ Use Tab/arrows to focus windows, Enter to expand command dock,
 play 4 to change the simulated Cue State, doctor to inspect
 skipped-vs-tested demo checks, and Esc/Tab to collapse. Ctrl+C
 restores the terminal. Minimum terminal size is 68x23.
-15 synthetic tests cover exact mark geometry, window/dock layout,
+16 synthetic tests cover exact mark geometry, window/dock layout,
 command safety, terminal behaviors and preview isolation.
 
 See [M7.1 compact interface prototype and safety acceptance

@@ -107,7 +107,10 @@ def operator_command(value: str) -> tuple[str, str | None]:
     raise ConsoleError("Unknown command; use help, status, play 0..9, stop, quit or exit")
 
 
-def request(command: str, destination: Path | None = None) -> str:
+def request(command: str, destination: Path | None = None,
+            *, timeout_seconds: float = SOCKET_TIMEOUT_S) -> str:
+    if not (0.05 <= timeout_seconds <= 3.0):
+        raise ConsoleError("Unsafe control socket timeout")
     kind, approved = operator_command(command)
     if kind != "remote" or approved is None:
         raise ConsoleError("Only allowlisted remote commands may be transmitted")
@@ -124,7 +127,7 @@ def request(command: str, destination: Path | None = None) -> str:
         if path != destination:
             raise ConsoleError("Unexpected CueWire destination")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(SOCKET_TIMEOUT_S)
+        client.settimeout(timeout_seconds)
         try:
             client.connect(str(path))
             client.sendall((approved + "\n").encode("ascii"))

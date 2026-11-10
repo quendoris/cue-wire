@@ -10,7 +10,7 @@ pub const HELP: &str = r#"CueWire 0.1 — foreground PipeWire virtual microphone
 Usage:
   cuewire doctor
   cuewire run --mic NODE --monitor SINK --cue N=FILE [--cue N=FILE ...] [--latency-ms 25]
-  cuewire ctl play N | stop | status | quit
+  cuewire ctl play N | toggle N | stop | status | quit
 
 Terminal commands: play N, stop, status, quit. Ctrl+C / SIGTERM cleans owned nodes.
 Use exact PipeWire node.name strings. Audio is not captured from system playback.
@@ -32,7 +32,7 @@ pub struct Config {
 pub enum Action { Help, Doctor, Run(Config), Control(Control) }
 
 #[derive(Debug,Clone,PartialEq,Eq)]
-pub enum Control { Play(u8), Stop, Status, Quit, Help }
+pub enum Control { Play(u8), Toggle(u8), Stop, Status, Quit, Help }
 
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct CommandSpec { pub program: &'static str, pub args:Vec<String> }
@@ -52,12 +52,12 @@ pub fn parse_control(parts:&[String])->Result<Control,String> {
         [s] if s=="status"=>Ok(Control::Status),
         [s] if s=="quit"=>Ok(Control::Quit),
         [s] if s=="help"=>Ok(Control::Help),
-        [s,n] if s=="play"=>{
+        [s,n] if s=="play" || s=="toggle"=>{
             let id=n.parse::<u8>().map_err(|_|"play needs integer 0..9".to_string())?;
             if id>9 {return Err("play needs integer 0..9".into());}
-            Ok(Control::Play(id))
+            Ok(if s=="play" { Control::Play(id) } else { Control::Toggle(id) })
         }
-        _=>Err("expected: play N, stop, status, quit, or help".into())
+        _=>Err("expected: play N, toggle N, stop, status, quit, or help".into())
     }
 }
 
@@ -223,6 +223,8 @@ mod tests{
     #[test] fn control_protocol_is_bounded(){
         assert_eq!(parse_control(&a(&["play","3"])),Ok(Control::Play(3)));
         assert_eq!(parse_control(&a(&["play","0"])),Ok(Control::Play(0)));
+        assert_eq!(parse_control(&a(&["toggle","4"])),Ok(Control::Toggle(4)));
+        assert!(parse_control(&a(&["toggle","10"])).is_err());
         assert!(parse_control(&a(&["play","10"])).is_err());
         assert!(parse_control(&a(&["quit","extra"])).is_err());
         assert_eq!(parse_control(&a(&["stop"])),Ok(Control::Stop));

@@ -135,7 +135,7 @@ def layout(width: int, height: int, expanded: bool = False) -> Layout:
     margin=2
     header=Rect(margin,1,width-2*margin,2)
     footer=Rect(margin,height-1,width-2*margin,1)
-    dock_h = min(9,max(6,height//4)) if expanded else 1
+    dock_h = min(9,max(5,height//4)) if expanded else 1
     dock = Rect(margin,height-2-dock_h,width-2*margin,dock_h)
     region_y=4
     usable_h=dock.y-region_y-1
@@ -276,6 +276,14 @@ class Canvas:
         self.cells=[
             [Cell(bg=field_color(x,y,width,height,seconds)) for x in range(width)]
             for y in range(height)]
+        # The actual Quendoris polygon is visible in monochrome snapshots
+        # too, not only as a truecolor background tint.
+        for y in range(height):
+            for x in range(width):
+                if mark_at_screen(x,y,width,height):
+                    cell=self.cells[y][x]
+                    cell.char="·"
+                    cell.fg=blend(cell.bg,SITE_ACCENT,.23)
 
     def cell(self,x:int,y:int,char:str=" ",fg=TEXT,bg=None,bold=False):
         if 0<=x<self.width and 0<=y<self.height:
@@ -317,7 +325,8 @@ class Canvas:
 
     def ansi(self)->str:
         out=["\x1b[H"]
-        for row in self.cells:
+        for row_number,row in enumerate(self.cells):
+            out.append(f"\x1b[{row_number+1};1H")
             prev=None
             for cell in row:
                 key=(cell.fg,cell.bg,cell.bold)
@@ -329,7 +338,7 @@ class Canvas:
                         f"48;2;{bg[0]};{bg[1]};{bg[2]}m")
                     prev=key
                 out.append(cell.char)
-            out.append("\x1b[0m\n")
+            out.append("\x1b[0m")
         return "".join(out)+"\x1b[0m"
 
 
@@ -414,6 +423,9 @@ def apply_key(model:Model,key:str)->None:
     if key=="ESC":
         model.focus="window"
         model.command=""
+        if model.waiting_quit:
+            model.waiting_quit=False
+            model.add("DEMO: shutdown confirmation cancelled")
         return
     if model.focus=="window":
         if key in ("ENTER", ":", "/"):
@@ -510,8 +522,10 @@ def run_demo(no_motion:bool=False,mono:bool=False)->int:
             w,h=shutil.get_terminal_size((100,32))
             if now-last_frame >= (FRAME_INTERVAL if state.motion else 5):
                 canvas,_=paint(state,w,h,now)
-                sys.stdout.write("\x1b[H" + (
-                    canvas.plain() if mono else canvas.ansi()))
+                sys.stdout.write((
+                    "".join(f"\x1b[{i+1};1H"+line
+                            for i,line in enumerate(canvas.plain().splitlines()))
+                    if mono else canvas.ansi()))
                 sys.stdout.flush()
                 last_frame=now
             ready,_,_=select.select([sys.stdin.fileno()],[],[],.045)

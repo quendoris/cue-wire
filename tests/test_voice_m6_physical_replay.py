@@ -101,6 +101,34 @@ class M6PhysicalReplayTests(unittest.TestCase):
             **phase,"clean_voice_reference":True},m6.TRAIN))
         self.assertFalse(m6.in_phase(phase,(12.,19.)))
 
+    def test_missing_or_changed_m5_sources_reach_hash_gate_without_unbound_path(self):
+        """Regression for old UnboundLocalError before manifest_path assignment."""
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as work:
+            audit=Path(work)/".audit"
+            parent=audit/"voice-aec"
+            parent.mkdir(parents=True)
+            capture=parent/"M5-chaos-001"
+            capture.mkdir()
+            (capture/"manifest.json").write_text("invalid source")
+            (capture/"microphone-chaos-raw.wav").write_bytes(b"invalid WAV")
+            inputs=[]
+            for folder,name in (
+                ("M5-chaos-alignment-001","music-alignment.json"),
+                ("M5-chaos-alignment-consistency-001",
+                 "alignment-consistency.json"),
+                ("M5-chaos-speex-real-001","physical-chaos-speex.json"),
+            ):
+                directory=parent/folder
+                directory.mkdir()
+                path=directory/name
+                path.write_text("{}")
+                inputs.append(path)
+            with patch.object(m6,"AUDIT",audit):
+                with self.assertRaisesRegex(ValueError,"M5 source hashes changed"):
+                    m6.verify_physical(
+                        capture,*inputs,parent/"M6-physical-replay-001")
+
     def test_explicit_input_failure_guards(self):
         with self.assertRaisesRegex(ValueError,"Invalid"):
             m6.gain_update_physical(np.ones(10),np.ones(9),(0,9))

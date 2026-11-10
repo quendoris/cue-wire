@@ -28,6 +28,8 @@ TRUTH_NAME = "synthetic-clean-voice-truth.wav"
 
 
 def sha(path: Path) -> str:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("Missing or linked private evidence: " + str(path))
     h = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):

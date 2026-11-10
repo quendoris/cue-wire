@@ -269,11 +269,32 @@ def describe_window(raw:np.ndarray, far:np.ndarray,
                     bounds:tuple[float,float])->dict:
     a,b = interval(bounds,len(raw))
     out = {}
+    # Hold fixed source-reference PSD weights for every output comparison.
+    # Magnitude-squared coherence is a reference-link proxy, NOT a clean
+    # voice truth metric. It can be biased by phase drift and other sources.
+    active_ref = rms(far[a:b]) > 1e-5
+    if active_ref:
+        frequency, reference_psd = signal.welch(
+            far[a:b], fs=RATE, nperseg=4096, noverlap=2048)
+        band = (frequency >= 200) & (frequency <= 4000)
+        weight = reference_psd[band]
+        weight_sum = float(np.sum(weight))
+        if weight_sum <= 1e-20:
+            active_ref = False
     for name,track in tracks.items():
-        out[name] = {
+        item = {
             "rms_dbfs":round(db(rms(track[a:b])),5),
             "change_rms_dbfs":round(db(rms(track[a:b]-raw[a:b])),5)
         }
+        if active_ref:
+            frequencies, coherence = signal.coherence(
+                far[a:b], track[a:b], fs=RATE,
+                nperseg=4096, noverlap=2048)
+            if not np.array_equal(frequencies, frequency):
+                raise ValueError("Incompatible reference coherence frequency grid")
+            item["source_psd_weighted_coherence_200_4000hz"] = round(
+                float(np.dot(coherence[band], weight) / weight_sum), 6)
+        out[name] = item
     # On mixed sound this is NOT ERLE nor speaker-only echo removal.
     out["reference_presence_rms_dbfs"] = round(db(rms(far[a:b])),5)
     out["source_bound_seconds"] = list(bounds)

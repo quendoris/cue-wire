@@ -25,7 +25,7 @@ from scipy import signal
 
 import voice_m6_physical_aggressive_ab as old
 import voice_m6_physical_tail_ab as tail
-from voice_m6_physical_vowel_guard import (
+from voice_m6_vowel_guard import (
     integer_dry_wet, phase_samples, voicing_protection,
 )
 from voice_m6_physical_event_align import RATE, read_capture, digest

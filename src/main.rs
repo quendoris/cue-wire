@@ -229,6 +229,17 @@ impl Supervisor {
                 Ok(x)=>(format!("OK {x}"),false),
                 Err(e)=>(format!("ERROR {e}"),false)
             },
+            Control::Toggle(n)=>{
+                if self.cue_active==Some(n){
+                    self.stop_cue();
+                    (format!("OK cue {n} stopped by toggle"),false)
+                }else{
+                    match self.play(n){
+                        Ok(x)=>(format!("OK {x}"),false),
+                        Err(e)=>(format!("ERROR {e}"),false)
+                    }
+                }
+            },
             Control::Stop=>{
                 self.stop_cue();
                 ("OK cue stopped".into(),false)
@@ -242,7 +253,7 @@ impl Supervisor {
             ),
             Control::Quit=>("OK shutting down".into(),true),
             Control::Help=>(
-                "OK commands: play 0..9 | stop | status | quit".into(),false
+                "OK commands: play 0..9 | toggle 0..9 | stop | status | quit".into(),false
             ),
         }
     }
@@ -353,6 +364,7 @@ fn ctl(action:Control)->Result<(),String>{
     s.set_read_timeout(Some(Duration::from_secs(3))).map_err(|e|e.to_string())?;
     let cmd=match action{
         Control::Play(id)=>format!("play {id}"),
+        Control::Toggle(id)=>format!("toggle {id}"),
         Control::Stop=>"stop".into(),
         Control::Status=>"status".into(),
         Control::Quit=>"quit".into(),

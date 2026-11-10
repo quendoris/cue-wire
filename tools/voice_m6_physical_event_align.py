@@ -183,6 +183,14 @@ def align(manifest: dict, mic: np.ndarray, events: list[dict],
           n_perm: int = N_PERM) -> dict:
     if not 100 <= n_perm <= 20000:
         raise ValueError("Unsupported permutation count")
+    if manifest.get("schema") != "cuewire-M6-physical-anonymous-events-v1":
+        raise ValueError("Missing/invalid physical capture schema")
+    checks = manifest.get("capture_files_sha256", {})
+    if (not isinstance(checks, dict) or
+            not all(isinstance(checks.get(key), str)
+                    and len(checks[key]) == 64
+                    for key in ("microphone.wav", "anonymous-events.jsonl"))):
+        raise ValueError("Missing physical capture SHA256 metadata")
     feature = transient_feature(mic)
     base_ns = manifest["session_start_monotonic_ns"]
     held = next(x for x in manifest["phases"]

@@ -76,6 +76,24 @@ def build_farend_reference(
         or not .05<=volume<=.60
         or len(channel_names)!=2):
         raise ValueError("Bad source stereo, sample clock, or two restarts")
+    # The real capture manifest has exact monotonic launch/stop markers.
+    # A synthetic fixture omitted the second launch marker in an earlier
+    # regression: reject incomplete evidence explicitly instead of KeyError.
+    required_event_fields=(
+        "instance", "music_file_start_s",
+        "start_since_recorder_launch_s", "end_since_recorder_launch_s",
+    )
+    for i,event in enumerate(events):
+        for field in required_event_fields:
+            if field not in event:
+                raise ValueError(f"Playback event {i+1} missing required {field}")
+        launch=event["start_since_recorder_launch_s"]
+        stop=event["end_since_recorder_launch_s"]
+        if (not isinstance(launch,(int,float)) or
+            not isinstance(stop,(int,float)) or
+            not math.isfinite(launch) or not math.isfinite(stop) or
+            launch < 0 or stop <= launch):
+            raise ValueError(f"Playback event {i+1} invalid launch/stop times")
     far=np.zeros(n_mic,dtype=np.float64)
     spans=[]
     for i,(trial,event,chan) in enumerate(zip(trials,events,channel_names)):

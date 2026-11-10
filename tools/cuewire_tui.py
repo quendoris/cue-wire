@@ -346,8 +346,9 @@ def paint(model:Model,width:int,height:int,seconds:float=0.0)->tuple[Canvas,Layo
     result=Canvas(width,height, seconds if model.motion else 0.0)
     geometry=layout(width,height,model.focus=="command")
     if not geometry.adequate:
-        result.write(1,1,"CueWire M7.1 / terminal too small",SITE_ACCENT,bold=True)
-        result.write(1,3,f"Minimum {MIN_WIDTH}x{MIN_HEIGHT}; resize or press Ctrl+C",MUTED)
+        result.write(1,1,"CueWire M7.1",SITE_ACCENT,bold=True)
+        result.write(1,2,"terminal too small",WARN)
+        result.write(1,3,f"Minimum {MIN_WIDTH}x{MIN_HEIGHT}; resize or Ctrl+C",MUTED)
         return result,geometry
     result.write(2,1,"QUENDORIS   /   CUEWIRE  M7.1",SITE_ACCENT,True)
     mode=f"[ {model.mode} / NO LIVE DSP ]"

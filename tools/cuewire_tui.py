@@ -12,6 +12,8 @@ Use:
     python3 tools/cuewire_tui.py --demo           # interactive, TTY required
     python3 tools/cuewire_tui.py --demo --no-motion
     python3 tools/cuewire_tui.py --demo --mono
+    python3 tools/cuewire_tui.py --live           # EXPLICIT real v0.1 controls
+    python3 tools/cuewire_tui.py --live-check     # read-only diagnostic
 """
 from __future__ import annotations
 
@@ -227,7 +229,165 @@ class Model:
             self.add("REFUSED: unrecognized command; see help")
 
 
+class LiveModel(Model):
+    """Presentation state of an EXPLICITLY selected existing-engine session.
+
+    No audio nodes are created here. All connection status is re-read from the
+    server on every refresh; never reuse a stale online result.
+    """
+    def __init__(self, motion: bool = True, mono: bool = False):
+        super().__init__(mode="LIVE", motion=motion, mono=mono,
+                         checks=("SKIP / socket unchecked",
+                                 "SKIP / protocol unchecked",
+                                 "SKIP / graph not checked",
+                                 "SKIP / live DSP not wired"),
+                         feed=["M7.2: existing CueWire v0.1 control only",
+                               "No audio graph or defaults changed by UI"])
+        import cuewire_tui_live as backend
+        self.backend = backend
+        self.report = backend.LiveReport(False, "not yet checked")
+        self.graph_checks: tuple = ()
+        self.last_refresh = 0.0
+
+    def refresh(self, announce: bool = False) -> None:
+        was_online = self.report.connected
+        self.report = self.backend.read_live()
+        self.last_refresh = time.monotonic()
+        self.checks = (
+            f"{self.report.socket_acl} / socket ACL 0600",
+            f"{self.report.protocol} / control v0.1",
+            "SKIP / graph (run doctor)",
+            "SKIP / M6 DSP + latency",
+        )
+        self.graph_checks = ()
+        if announce or was_online != self.report.connected:
+            if self.report.connected:
+                self.add("LIVE: control socket responded; DSP remains offline")
+            else:
+                self.add("OFFLINE: " + self.backend.short(self.report.message, 74))
+
+    def execute(self, cmd: str) -> None:
+        """Fail-closed real remote actions, NEVER simulate successful playback."""
+        entered = cmd.strip()
+        self.command = ""
+        if self.waiting_quit:
+            self.waiting_quit = False
+            if entered != "CONFIRM":
+                self.add("LIVE: shutdown cancelled; runtime unchanged")
+                return
+            # Fresh connection check right before the destructive command.
+            self.refresh()
+            if not self.report.connected:
+                self.add("REFUSED: disconnected; cannot send quit")
+                return
+            try:
+                self.backend.send_live("quit")
+            except self.backend.protocol.ConsoleError as exc:
+                self.refresh()
+                self.add("ERROR quit: " + self.backend.short(exc, 62))
+                return
+            self.add("LIVE: engine acknowledged quit; process cleanup not verified")
+            self.terminated = True
+            return
+        if entered in ("", "status"):
+            self.refresh(announce=True)
+        elif entered in ("help", "?"):
+            self.add("TAB/ARROWS panels | ENTER command | ESC collapse")
+            self.add("status | doctor | play 0..9 | stop | research | quit | exit")
+        elif entered == "research":
+            self.selected = 2
+            self.add("M6-007 ACCEPTED OFFLINE; NOT ENABLED in live CueWire")
+        elif entered == "doctor":
+            self.selected = 5
+            self.refresh()
+            audit = self.backend.doctor(self.report)
+            self.graph_checks = audit
+            for check in audit:
+                self.add(f"{check.result} / {check.name}: {check.detail}")
+            # Summarize after a full audit. A missing graph is NOT success.
+            graph = [x for x in audit if x.name not in (
+                "same-user socket 0600", "CueWire v0.1 protocol",
+                "live M6 / latency")]
+            failures = sum(x.result == "FAIL" for x in graph)
+            passed = sum(x.result == "PASS" for x in graph)
+            if failures:
+                graph_summary = f"FAIL / graph ({failures} errors)"
+            elif passed == 4:
+                graph_summary = "PASS / 4 nodes registered"
+            else:
+                graph_summary = "SKIP / graph incomplete"
+            self.checks = (
+                f"{self.report.socket_acl} / socket ACL 0600",
+                f"{self.report.protocol} / control v0.1",
+                graph_summary,
+                "SKIP / audio/DSP/latency",
+            )
+        elif entered == "exit":
+            self.add("LIVE: operator console closing; engine left running")
+            self.terminated = True
+        elif entered == "quit":
+            self.refresh()
+            if not self.report.connected:
+                self.add("REFUSED: CueWire is offline; quit not sent")
+            else:
+                self.waiting_quit = True
+                self.add("LIVE SHUTDOWN: type CONFIRM to stop owned CueWire")
+        elif (entered.startswith("play ") and len(entered) == 6
+              and entered[5] in "0123456789") or entered == "stop":
+            # This controls an existing engine only; it doesn't start one.
+            self.refresh()
+            if not self.report.connected:
+                self.add("REFUSED: CueWire not connected; no audio command sent")
+                return
+            try:
+                response = self.backend.send_live(entered)
+            except self.backend.protocol.ConsoleError as exc:
+                self.refresh()
+                self.add("ERROR: " + self.backend.short(exc, 72))
+                return
+            self.add("LIVE ACK: " + self.backend.short(response, 74))
+            self.refresh()
+        else:
+            self.add("REFUSED: unknown or unsupported LIVE command")
+
+
 def panel_lines(model: Model, name: str) -> list[str]:
+    if isinstance(model, LiveModel):
+        r = model.report
+        if name == "Runtime":
+            return [
+                "Mode      LIVE / RAW",
+                "Engine    " + ("responding" if r.connected else "OFFLINE"),
+                "Socket    " + r.socket_acl,
+                "DSP       M6 not live",
+            ]
+        if name == "Devices":
+            return [
+                "Mic       " + (r.mic if r.connected else "unknown"),
+                "Monitor   " + (r.monitor if r.connected else "unknown"),
+                "Virtual   " + (r.virtual_source if r.connected else "unknown"),
+                "Graph     see doctor",
+            ]
+        if name == "Research":
+            return ["M4        offline", "M5        research",
+                    "M6-007    ACCEPTED", "M7        live controls"]
+        if name == "Cue State":
+            return [
+                "Active    " + (r.active_cue if r.connected else "unknown"),
+                "Playback  " + ("reported" if r.connected else "unverified"),
+                "Output    not confirmed",
+                "Gain      not measured",
+            ]
+        if name == "Safety":
+            return [
+                "UI startup  no",
+                "Socket ACL  " + r.socket_acl,
+                "Default set no (UI)",
+                "Cleanup    untested",
+            ]
+        if name == "Audit / Checks":
+            return list(model.checks)
+        raise ValueError("Unknown Live panel")
     if name=="Runtime":
         return ["Mode      DEMO / OFFLINE",
                 "Engine    not started",
@@ -416,6 +576,9 @@ def apply_key(model:Model,key:str)->None:
             if key in ("TAB","BACKTAB"):
                 model.focus="window"
                 model.command=""
+                if model.waiting_quit:
+                    model.waiting_quit=False
+                    model.add("Shutdown confirmation cancelled")
             return
         model.selected=focus_index(model.selected,
                                    "tab" if key=="TAB"
@@ -427,7 +590,7 @@ def apply_key(model:Model,key:str)->None:
         model.command=""
         if model.waiting_quit:
             model.waiting_quit=False
-            model.add("DEMO: shutdown confirmation cancelled")
+            model.add("Shutdown confirmation cancelled")
         return
     if model.focus=="window":
         if key in ("ENTER", ":", "/"):
@@ -513,8 +676,11 @@ class TerminalSession:
                 self.output.flush()
 
 
-def run_demo(no_motion:bool=False,mono:bool=False)->int:
-    state=Model(motion=not no_motion,mono=mono)
+def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False)->int:
+    state=LiveModel(motion=not no_motion,mono=mono) if live else Model(
+        motion=not no_motion,mono=mono)
+    if live:
+        state.refresh(announce=True)
     reader=KeyReader()
     last_key=time.monotonic()
     last_frame=0.0
@@ -531,6 +697,9 @@ def run_demo(no_motion:bool=False,mono:bool=False)->int:
         with TerminalSession():
             while not state.terminated:
                 now=time.monotonic()
+                if (live and not state.waiting_quit
+                        and now-state.last_refresh>=3.0):
+                    state.refresh()
                 w,h=shutil.get_terminal_size((100,32))
                 if (w,h)!=last_size:
                     sys.stdout.write("\x1b[2J")
@@ -569,9 +738,13 @@ def main(argv:Iterable[str]|None=None)->int:
     parser=argparse.ArgumentParser(description=__doc__)
     mode=parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--demo",action="store_true",
-                      help="full-screen interactive TUI, no device/socket access")
+                      help="isolated interactive simulator, no device/socket access")
     mode.add_argument("--snapshot",action="store_true",
-                      help="static 100x32 uncolored text preview, no TTY required")
+                      help="static uncolored demo snapshot, no TTY required")
+    mode.add_argument("--live",action="store_true",
+                      help="EXPLICIT existing-engine control only; never starts CueWire")
+    mode.add_argument("--live-check",action="store_true",
+                      help="read-only socket and PipeWire node audit; no TTY required")
     parser.add_argument("--no-motion",action="store_true",
                         help="freeze gradient for reduced motion")
     parser.add_argument("--mono",action="store_true",
@@ -581,9 +754,25 @@ def main(argv:Iterable[str]|None=None)->int:
         canvas,_=paint(Model(motion=False),100,32)
         print(canvas.plain())
         return 0
+    if a.live_check:
+        import cuewire_tui_live as backend
+        snapshot = backend.read_live()
+        checks = backend.doctor(snapshot)
+        print("CueWire M7.2 / read-only live diagnostic")
+        for check in checks:
+            print(f"{check.result:4} {check.name}: {check.detail}")
+        # Report FAIL if any actual required live check fails OR is skipped;
+        # offline M6/latency checks are expected SKIP and not a false PASS.
+        required = [check for check in checks
+                    if check.name != "live M6 / latency"]
+        return 0 if snapshot.connected and all(
+            check.result == "PASS" for check in required) else 2
     no_color=bool(os.environ.get("NO_COLOR"))
     mono=a.mono or no_color or os.environ.get("TERM")=="dumb"
-    try:return run_demo(a.no_motion or mono,mono)
+    try:
+        if a.live:
+            return run_demo(a.no_motion or mono,mono,live=True)
+        return run_demo(a.no_motion or mono,mono)
     except (OSError,RuntimeError) as exc:
         print(f"cuewire-tui: {exc}",file=sys.stderr)
         return 2

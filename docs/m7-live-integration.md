@@ -194,3 +194,34 @@ For a strictly non-audio demonstration, use --demo.
 
 No physical-test boxes are pre-checked in GitHub. The user should
 report failures; do not bypass any safety gate just to gain green tests.
+
+## Physical M7.2 interaction observation — 2026-11-10
+
+The operator supplied actual Arch Linux / Hyprland screenshots showing
+the six-pane LIVE interface, the expanded command dock and a separately
+running Rust CueWire engine. This is real interaction evidence, not
+synthetic test success.
+
+Observed:
+- Read-only live-check passed same-user socket 0600, strict v0.1 status,
+  physical mic, monitor, virtual source and mix input (four registered
+  PipeWire nodes). M6/latency correctly remained SKIP.
+- The LIVE Runtime panel shows engine responding / socket PASS and the
+  Devices panel shows actual (sometimes truncated) node names.
+- The expanded dock displayed the acknowledgement
+  LIVE ACK: OK cue stopped. This verifies a supervisor response to
+  stop, not independently the resulting sound at every endpoint.
+- After doctor the Audit panel showed PASS / 4 nodes registered, while
+  DSP/latency remained SKIP.
+- The operator described the interactive interface as working.
+
+Still UNVERIFIED: audible play on both monitor and virtual mic, audio
+quality, measured latency, preservation of system defaults, all child
+process cleanup, global Super+C, and causal M6-007.
+
+Next UI polish: long PipeWire node names and diagnostic details are
+visibly truncated in compact panels. Add an explicit focused-pane
+detail view without abandoning the six-panel overview.
+
+No private recording, event timing or device-specific identifiers
+have been committed to this public research note.

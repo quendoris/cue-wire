@@ -89,7 +89,7 @@ python3 -m unittest discover -s tests -p 'test_cuewire_console.py' -v
 cargo test --locked --offline
 ~~~
 
-The 15 new integration tests use an entirely synthetic private
+The 16 new integration tests use an entirely synthetic private
 Unix socket server and MOCKED pw-dump; they do NOT open any
 real microphone, launch PipeWire, play sounds or alter system audio.
 The 17 prior M7.1 TUI tests and 11 previous console tests must remain
@@ -153,7 +153,7 @@ For a strictly non-audio demonstration, use --demo.
 
 ## Acceptance gates and explicit limits
 
-- [ ] New 15 synthetic socket/doctor tests PASS on user's Arch.
+- [ ] New 16 synthetic socket/doctor tests PASS on user's Arch.
 - [ ] 17 TUI tests, 11 console tests and cargo tests remain green.
 - [ ] Safe --live-check OFFLINE failure behaves as expected.
 - [ ] Existing engine starts manually without changing defaults.

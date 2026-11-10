@@ -40,6 +40,7 @@ import voice_m5_speex_zero_reference as speex_zero
 import voice_m5_speex_known_voice as speex_voice
 import voice_m5_speex_delta as speex_delta
 import voice_m5_listening_ab as listening_ab
+import voice_m5_mouse_click_control as mouse_control
 from contextlib import ExitStack
 import ctypes
 
@@ -258,7 +259,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_speex_zero_reference.py",
                        "voice_m5_speex_known_voice.py",
                        "voice_m5_speex_delta.py",
-                       "voice_m5_listening_ab.py"):
+                       "voice_m5_listening_ab.py",
+                       "voice_m5_mouse_click_control.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -2391,6 +2393,37 @@ class M5Tests(unittest.TestCase):
                         audit/"voice-aec/M5-listening-002",
                         native_loader=lambda:(FakeSpeex(),"fake-lib"))
 
+    def test_mouse_click_control_separates_phases_and_13khz_bursts(self):
+        """Synthetic click-like 13kHz transients in intended M5 mouse phase."""
+        rng=np.random.default_rng(130001)
+        mic=rng.normal(0., .00016, 44*RATE)
+        # Captured within 3s recorder warmup + 2*8s phases.
+        for when in (22.25,24.25):
+            a=round(when*RATE)
+            n=round(.07*RATE)
+            t=np.arange(n)/RATE
+            mic[a:a+n]+=.018*np.sin(2*np.pi*13000*t)
+        phases=[
+            {"name":label,"prompt":desc,
+             "wall_start_after_launch_s":3+8*i,
+             "wall_end_after_launch_s":3+8*(i+1)}
+            for i,(label,desc) in enumerate(mouse_control.PHASES)
+        ]
+        result=mouse_control.analyze_samples(mic,phases)
+        quiet=result["quiet_median_8_16khz_dbfs"]
+        mouse=result["all_phases"]["mouse_clicks"]
+        moving=result["all_phases"]["mouse_move_only"]
+        self.assertGreater(mouse["max_highband_dbfs"]-quiet, 15.)
+        self.assertGreater(
+            mouse["half_second_windows_over_quiet_median_plus_6db"],0)
+        self.assertEqual(
+            moving["half_second_windows_over_quiet_median_plus_6db"],0)
+        loud=max(mouse["windows"],key=lambda w:w["8000_16000_power_dbfs"])
+        self.assertGreater(loud["share_of_8_16khz_power_in_12_14khz"],.7)
+        self.assertAlmostEqual(loud["peak_frequency_8_16khz_hz"],13000,
+                               delta=20)
+        with self.assertRaisesRegex(ValueError,"exactly 0.5"):
+            mouse_control.analyze_window(mic[:1000])
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

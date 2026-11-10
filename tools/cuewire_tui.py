@@ -19,6 +19,7 @@ import argparse
 from dataclasses import dataclass, field
 import math
 import os
+import signal
 import select
 import shutil
 import sys
@@ -517,31 +518,50 @@ def run_demo(no_motion:bool=False,mono:bool=False)->int:
     reader=KeyReader()
     last_key=time.monotonic()
     last_frame=0.0
-    with TerminalSession():
-        while not state.terminated:
-            now=time.monotonic()
-            w,h=shutil.get_terminal_size((100,32))
-            if now-last_frame >= (FRAME_INTERVAL if state.motion else 5):
-                canvas,_=paint(state,w,h,now)
-                sys.stdout.write((
-                    "".join(f"\x1b[{i+1};1H"+line
-                            for i,line in enumerate(canvas.plain().splitlines()))
-                    if mono else canvas.ansi()))
-                sys.stdout.flush()
-                last_frame=now
-            ready,_,_=select.select([sys.stdin.fileno()],[],[],.045)
-            if ready:
-                data=os.read(sys.stdin.fileno(),256)
-                if not data:break
-                for key in reader.feed(data):
-                    apply_key(state,key)
-                    last_key=now
-                last_frame=0.0
-            elif now-last_key>=.06:
-                for key in reader.flush_esc():
-                    apply_key(state,key)
-                    last_key=now
+    last_size=None
+    # Normal termination, Ctrl+C in the raw TTY, SIGTERM and SIGHUP
+    # all restore the terminal. SIGKILL is inherently uncatchable.
+    def end_from_signal(_signum,_frame):
+        raise KeyboardInterrupt
+    prior={}
+    for sig in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP):
+        prior[sig]=signal.getsignal(sig)
+        signal.signal(sig,end_from_signal)
+    try:
+        with TerminalSession():
+            while not state.terminated:
+                now=time.monotonic()
+                w,h=shutil.get_terminal_size((100,32))
+                if (w,h)!=last_size:
+                    sys.stdout.write("\x1b[2J")
+                    last_size=(w,h)
                     last_frame=0.0
+                if now-last_frame >= (FRAME_INTERVAL if state.motion else 5):
+                    canvas,_=paint(state,w,h,now)
+                    sys.stdout.write((
+                        "".join(f"\x1b[{i+1};1H"+line
+                                for i,line in enumerate(canvas.plain().splitlines()))
+                        if mono else canvas.ansi()))
+                    sys.stdout.flush()
+                    last_frame=now
+                ready,_,_=select.select([sys.stdin.fileno()],[],[],.045)
+                if ready:
+                    data=os.read(sys.stdin.fileno(),256)
+                    if not data:break
+                    for key in reader.feed(data):
+                        apply_key(state,key)
+                        last_key=now
+                    last_frame=0.0
+                elif now-last_key>=.06:
+                    for key in reader.flush_esc():
+                        apply_key(state,key)
+                        last_key=now
+                        last_frame=0.0
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        for sig,previous in prior.items():
+            signal.signal(sig,previous)
     return 0
 
 

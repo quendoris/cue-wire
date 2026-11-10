@@ -69,6 +69,23 @@ class VowelGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'PCM16'):
             g.integer_dry_wet(raw,np.array([0.,1.]),np.array([0.,.2]))
 
+    def test_no_voice_yields_zero_protection_even_at_file_boundary(self):
+        rng=np.random.default_rng(250)
+        n=8*g.RATE
+        x=rng.normal(0,.0004,n)
+        t0=1_000_000_000_000
+        bounds=[
+            ('mouse_isolated',0,2),('keyboard_isolated',2,4),
+            ('both_holdout',4,6),('voice_clicks_holdout',6,8)]
+        manifest={'session_start_monotonic_ns':t0,
+                  'phases':[{'phase':k,
+                             'start_monotonic_ns':t0+round(a*1e9),
+                             'end_monotonic_ns':t0+round(b*1e9)}
+                            for k,a,b in bounds]}
+        protected,locked,_=g.voicing_protection(x,manifest)
+        self.assertFalse(np.any(locked))
+        self.assertEqual(int(np.count_nonzero(protected)),0)
+
     def test_training_only_speech_free_and_metadata(self):
         self.assertEqual(self.metadata['speech_free_calibration_phases'],['mouse_isolated','keyboard_isolated'])
         self.assertEqual(self.metadata['post_hold_ms'],220)

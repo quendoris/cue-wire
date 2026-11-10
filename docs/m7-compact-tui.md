@@ -123,7 +123,7 @@ audio node or process or change your existing PipeWire defaults.
 
 ## Test contract
 
-16 synthetic unit tests:
+17 synthetic unit tests:
 1. Exact SVG geometry and 89,249-pixel filled area.
 2. Recognizable logo cutouts in terminal raster.
 3. Six nonoverlapping, responsive panels at multiple sizes,
@@ -141,6 +141,7 @@ audio node or process or change your existing PipeWire defaults.
 14. Safe tiny-terminal fallback.
 15. Normal-exit restoration of termios, cursor and alternate-screen state.
 16. Non-TTY rejection before TTY mutation.
+17. NO_COLOR disables colors and needless animation.
 
 *These tests are committed, but must be executed on the user's Arch
 before being described as passing there.*

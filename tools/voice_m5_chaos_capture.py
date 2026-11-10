@@ -168,6 +168,7 @@ def run(args: argparse.Namespace) -> dict:
     stopped_by_user=False
     music_events_counter=0
     joke_index=0
+    free_start=None
     capture_log=out/"pw-record.log"
 
     def timecode()->float:
@@ -295,7 +296,7 @@ def run(args: argparse.Namespace) -> dict:
         print("\n[FREE_STRESS] ГОЛОС + МУЗЫКА + КЛИКИ + КЛАВИАТУРА."
               "\nЧитай анекдоты, смейся естественно."
               "\nЗАВЕРШЕНИЕ: Ctrl+C в этом терминале.",flush=True)
-        start=timecode()
+        free_start=timecode()
         next_joke_at=time.monotonic()
         while True:
             alive(True)
@@ -317,11 +318,11 @@ def run(args: argparse.Namespace) -> dict:
         print("\nERROR:",failure,file=sys.stderr,flush=True)
     finally:
         end=timecode()
-        if active=="free_stress":
+        if active=="free_stress" and free_start is not None:
             phases.append({
                 "name":"free_stress",
                 "prompt":"Music vocals, near-end voice/laughter, keyboard+mouse; Ctrl+C ends",
-                "start_since_recorder_launch_s":start,
+                "start_since_recorder_launch_s":free_start,
                 "end_since_recorder_launch_s":end,
                 "music_requested":True,
                 "clean_voice_reference":False,
@@ -349,7 +350,7 @@ def run(args: argparse.Namespace) -> dict:
         "default_sink_or_source_changed":False,
         "microphone_self_monitoring":False,
         "new_continuous_physical_mic_capture":True,
-        "source_music_has_vocals_checked_by_human_not_analyzer":True,
+        "music_with_vocals_required_but_not_automatically_verified":True,
         "record_command":rec_cmd,
         "recorder_returncode_after_owned_shutdown":
             recorder.returncode if recorder else None,
@@ -412,10 +413,35 @@ def main()->None:
     parser.add_argument("--volume",type=float,default=MUSIC_STREAM_VOLUME)
     parser.add_argument("--jokes",type=Path,default=JOKES)
     parser.add_argument("--out",type=Path,required=True)
+    parser.add_argument("--check-only",action="store_true",
+                        help="Only verify physical devices, PCM16 music, jokes and private output; DO NOT record/play")
     args=parser.parse_args()
+    if args.check_only:
+        try:
+            for exe in ("pw-record","pw-play","pactl"):
+                checked_program(exe)
+            if not args.source.startswith("alsa_input.") or not args.speaker.startswith("alsa_output."):
+                raise ValueError("Choose explicit physical microphone and speaker")
+            selected_mic=choose_source(args.source)
+            selected_speaker=checked_speaker(args.speaker)
+            song=validate_music(args.music)
+            jokes,jokes_sha=load_jokes(args.jokes)
+            private_output(args.out)
+            if not math.isclose(args.volume,MUSIC_STREAM_VOLUME,abs_tol=1e-9):
+                raise ValueError("This protocol requires 0.60 stream volume")
+            print("PRECHECK OK; NOTHING RECORDED OR PLAYED.")
+            print("Microphone:",selected_mic["name"])
+            print("Speaker:",selected_speaker["name"])
+            print("Music:",song["path"],song["duration_s"],"seconds; SHA256",song["sha256"])
+            print("Stream volume:",args.volume,"= previous .30 x2 amplitude")
+            print("Jokes:",len(jokes),"SHA256",jokes_sha)
+            print("Fresh private output:",args.out)
+            return
+        except (ValueError,RuntimeError,OSError,wave.Error) as error:
+            parser.exit(1,"PRECHECK ERROR: "+str(error)+"\n")
     try:
         run(args)
-    except (ValueError,RuntimeError,FileNotFoundError,OSError) as exc:
+    except (ValueError,RuntimeError,FileNotFoundError,OSError,wave.Error) as exc:
         parser.exit(1,"ERROR: "+str(exc)+"\n")
 
 

@@ -186,6 +186,24 @@ def train_music_fir(mic: np.ndarray, ref: np.ndarray,
     }
 
 
+def delay_reference(reference: np.ndarray, lag_samples: int) -> np.ndarray:
+    """Apply known nonnegative acoustic delay BEFORE the short causal FIR.
+
+    For example, a far-end reference intentionally advanced by 10ms
+    relative to the physical echo requires lag_samples=480 at 48kHz.
+    No fitting on the user's speech and no hidden lag search.
+    """
+    if (reference.ndim != 1 or type(lag_samples) is not int
+            or not 0 <= lag_samples <= RATE // 2):
+        raise ValueError("Need a measured nonnegative <=500ms reference lag")
+    result = np.zeros_like(reference)
+    if lag_samples == 0:
+        result[:] = reference
+    else:
+        result[lag_samples:] = reference[:-lag_samples]
+    return result
+
+
 def predict_music(ref: np.ndarray, fir: np.ndarray) -> np.ndarray:
     if (ref.ndim != 1 or fir.ndim != 1 or
             len(fir) < 1 or not np.all(np.isfinite(fir))):
@@ -373,6 +391,8 @@ def run(args: argparse.Namespace) -> dict:
     mic, ref = pcm16_read(mic_p), pcm16_read(ref_p)
     check_signal(cmic, cref)
     check_signal(mic, ref)
+    cref = delay_reference(cref, args.acoustic_lag_samples)
+    ref = delay_reference(ref, args.acoustic_lag_samples)
     c_events = read_events(cal_events_p, len(cmic))
     events = read_events(events_p, len(mic))
     m_windows = windows_from_strings(args.music_only, len(cmic))
@@ -391,6 +411,8 @@ def run(args: argparse.Namespace) -> dict:
         "calibration_speech_free_certified_by_operator": True,
         "references_aligned_by_operator_to_mic_sample_clock": True,
         "timestamp_alignment_independently_verified": False,
+        "explicit_acoustic_lag_samples": args.acoustic_lag_samples,
+        "lag_pinned_by_operator_not_fitted_on_doubletalk": True,
         "calibration_audio": {
             "physical_mic_sha256": sha256(cal_mic_p),
             "playback_reference_sha256": sha256(cal_ref_p),
@@ -448,6 +470,8 @@ def main() -> None:
     parser.add_argument("--events", type=Path, required=True)
     parser.add_argument("--speech-free-update", action="append", default=[],
                         metavar="START:END", help="Explicit speech+click-free gain updates")
+    parser.add_argument("--acoustic-lag-samples", type=int, default=0,
+                        help="Measured nonnegative delay from farend samples to microphone, 0..24000")
     parser.add_argument("--taps", type=int, default=128)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()

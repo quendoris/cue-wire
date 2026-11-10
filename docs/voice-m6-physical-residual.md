@@ -137,3 +137,22 @@ A stays the preferred benchmark even if a dB metric improves.
 A genuinely unseen physical capture is eventually needed for robust
 generalization; a separately measured CAUSAL implementation is needed
 before live virtual microphone operation.
+
+
+## Acceptance decision — 2026-11-10
+
+**RESEARCH ACCEPTED:** Following listening to the actual Physical-007
+results, the operator reported that generation 007 is **noticeably
+better** and explicitly requested that the model be frozen and this
+research branch considered sufficiently successful to move to the
+next development effort.
+
+This is an **offline acoustic research acceptance**, not a claim of
+real-time readiness, unseen-session robustness or objective clean
+speech. The operator did not distinguish B_007 vs C_007 by name
+in the final acceptance; freeze both as well as the exact old C_006
+reference. Do not overwrite the original source or any private WAVs.
+
+The formal research exit record, exact current DSP Git blob IDs,
+limitations and future development gates are in
+[Physical-007 research freeze](voice-m6-physical-007-research-freeze.md).

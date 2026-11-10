@@ -102,6 +102,41 @@ def checked_pcm_variants(samples:dict[str,np.ndarray],
     }
 
 
+def verify_clean_pcm16(raw_pcm:np.ndarray, guarded:np.ndarray,
+                       start:int, end:int)->dict:
+    """Require actual PCM16 sample identity, not float FFT bit identity.
+
+    The guard uses fftconvolve, which can introduce sub-LSB float
+    roundoff even in mathematically zero correction intervals.
+    Never smooth, clamp or substitute the corrected speech: fail if
+    even one quantized sample differs from the physical microphone.
+    """
+    if (raw_pcm.dtype!=np.dtype("<i2") or raw_pcm.ndim!=1
+        or guarded.ndim!=1 or len(raw_pcm)!=len(guarded)
+        or not 0<=start<end<=len(raw_pcm)):
+        raise ValueError("Invalid clean physical voice PCM16 comparison")
+    baseline=raw_pcm[start:end]
+    clean=guarded[start:end]
+    candidate=exact_pcm16(clean)
+    difference=candidate.astype(np.int32)-baseline.astype(np.int32)
+    changed=int(np.count_nonzero(difference))
+    if changed:
+        raise RuntimeError(
+            "Clean physical voice not sample-exact in PCM16: "
+            f"{changed} changed samples, "
+            f"max {int(np.max(np.abs(difference)))} LSB")
+    float_baseline=baseline.astype(np.float64)/32768.
+    return {
+        "sample_count":len(baseline),
+        "pcm16_changed_samples":0,
+        "sample_exact_PCM16_before_gain":True,
+        "raw_vs_guarded_strict_float_equal":
+            bool(np.array_equal(float_baseline,clean)),
+        "max_abs_float_delta":
+            float(np.max(np.abs(clean-float_baseline))),
+    }
+
+
 def wav_write_exclusive(path:Path,samples:np.ndarray):
     """Never overwrite; Wave does not support 'xb' directly."""
     if (samples.dtype!=np.dtype("<i2") or
@@ -218,12 +253,21 @@ def export(capture_dir:Path,initial_path:Path,consistency_path:Path,
             "prior_physical_stage_bounds_s":truth["approx_original_mic_wav_s"],
             "output_rms_reproduced_within_0_002db":True,
         }
-    # On the clean real voice stage, both branches MUST cancel exactly
-    # after reverting to farend=0: not just similar RMS.
+    # Validate the actual PCM16 information invariant. FFT-based
+    # guarded_echo can leave sub-LSB floating-point residue in OFF
+    # intervals without changing even one original PCM16 sample.
     aa,bb=round(36.76171*RATE),round(43.26181*RATE)
-    if not np.array_equal(raw[aa:bb],guarded[aa:bb]):
-        raise RuntimeError("Clean physical voice no longer sample-exact preserved")
+    clean_pcm16=verify_clean_pcm16(raw_pcm,guarded,aa,bb)
     waves,gain=checked_pcm_variants(signal)
+    # Also verify the complete 37..43s exported clean speech segment,
+    # after applying the same global attenuation to all 12 WAVs.
+    clean_tracks=waves["03_real_voice_no_music"]
+    postgain_changed=int(np.count_nonzero(clean_tracks[0]!=clean_tracks[2]))
+    if postgain_changed:
+        raise RuntimeError(
+            "Clean physical voice changed in shared-gain PCM16 export: "
+            f"{postgain_changed} differing samples")
+    clean_pcm16["sample_exact_PCM16_after_shared_gain"]=True
     # Rehash all pinned sources BEFORE writing any audio.
     accepted["source_music"]=(song_path,ACTUAL_SONG_SHA256)
     if any(digest(p)!=expected for p,expected in accepted.values()):
@@ -260,6 +304,7 @@ def export(capture_dir:Path,initial_path:Path,consistency_path:Path,
         "listening_segments":list(SEGMENTS),
         "files":filelist,
         "prior_numeric_phase_checks":phase_data,
+        "clean_voice_pcm16_preservation":clean_pcm16,
         "physical_speech_during_music":True,
         "same_utterance_clean_reference_in_music":False,
         "local_speech_quality_proved":False,

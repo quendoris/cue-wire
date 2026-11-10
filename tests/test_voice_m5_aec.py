@@ -44,6 +44,7 @@ import voice_m5_mouse_click_control as mouse_control
 import voice_m5_chaos_capture as chaos
 import voice_m5_chaos_reference_probe as chaos_ref
 import voice_m5_chaos_reference_validate as chaos_validate
+import voice_m5_chaos_speex_real as chaos_real
 import voice_m5_capture as capture_runtime
 from contextlib import ExitStack
 import ctypes
@@ -267,7 +268,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_mouse_click_control.py",
                        "voice_m5_chaos_capture.py",
                        "voice_m5_chaos_reference_probe.py",
-                       "voice_m5_chaos_reference_validate.py"):
+                       "voice_m5_chaos_reference_validate.py",
+                       "voice_m5_chaos_speex_real.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -2666,6 +2668,75 @@ class M5Tests(unittest.TestCase):
         self.assertGreater(wrong["best_local_abs_normalized_correlation"],.95)
         with self.assertRaisesRegex(ValueError,"too short"):
             chaos_validate.lag_score(music,observed,1.,1.3,lag)
+
+    def test_chaos_real_farend_two_starts_have_clean_speech_zero_reference(self):
+        """Two source spans, no far-end in actual physical clean-voice phase."""
+        rng=np.random.default_rng(801131)
+        stereo=rng.normal(0,.01,(47*RATE,2))
+        trials=[
+            {"playback_instance":1,"estimate":{
+                "valid_echo_lag":True,
+                "lag_samples_from_mic_start":round(11.28954167*RATE)}},
+            {"playback_instance":2,"estimate":{
+                "valid_echo_lag":True,
+                "lag_samples_from_mic_start":round(44.10879167*RATE)}},
+        ]
+        events=[
+            {"instance":1,"music_file_start_s":0.,
+             "end_since_recorder_launch_s":35.01153},
+            {"instance":2,"music_file_start_s":0.,
+             "end_since_recorder_launch_s":90.01614},
+        ]
+        n=round(89.96267*RATE)
+        far,details=chaos_real.build_farend_reference(
+            stereo,n,trials,events,
+            ("stereo_arithmetic_mean","left"),.60)
+        self.assertEqual(far.dtype,np.dtype("<i2"))
+        self.assertEqual(len(far),n)
+        self.assertEqual(len(details["reference_events"]),2)
+        self.assertTrue(np.all(far[36*RATE:44*RATE]==0))
+        self.assertTrue(np.any(far[12*RATE:18*RATE]!=0))
+        self.assertTrue(np.any(far[45*RATE:70*RATE]!=0))
+        self.assertTrue(np.all(far[3*RATE:10*RATE]==0))
+        self.assertNotEqual(
+            details["reference_events"][0]["pinned_prior_lag_samples"],
+            details["reference_events"][1]["pinned_prior_lag_samples"])
+        with self.assertRaisesRegex(ValueError,"Unknown stereo"):
+            chaos_real.build_farend_reference(
+                stereo,n,trials,events,
+                ("stereo_arithmetic_mean","invalid"),.60)
+
+    def test_chaos_real_mixed_voice_metric_no_invalid_clean_stem_claim(self):
+        """Speaker-reference proxy only when music ON; clean voice compares raw."""
+        rng=np.random.default_rng(801132)
+        samples=round(8*RATE)
+        mic_float=rng.normal(0,.01,samples)
+        source=rng.normal(0,.04,samples)
+        raw=speex_baseline.exact_pcm16(mic_float)
+        far=speex_baseline.exact_pcm16(source)
+        original=raw.astype(np.float64)/32768.
+        speaker_only={
+            "name":"mouse_music",
+            "start_since_recorder_launch_s":0.,
+            "end_since_recorder_launch_s":8.,
+            "music_requested":True,
+        }
+        variants={
+            "original_raw":original,
+            "slight_residual":original*.91
+        }
+        values=chaos_real.numeric_metrics(raw,variants,far,speaker_only)
+        self.assertIn("reference_linked_500_4000hz",
+            values["processors"]["slight_residual"])
+        self.assertEqual(values["processors"]["original_raw"][
+            "processed_minus_input_rms_dbfs"],-240.)
+        quiet={**speaker_only,"name":"clean_voice","music_requested":False}
+        control=chaos_real.numeric_metrics(
+            raw,variants,np.zeros_like(far),quiet)
+        self.assertNotIn("reference_linked_500_4000hz",
+                         control["processors"]["slight_residual"])
+        self.assertFalse(control["processors"]["slight_residual"][
+            "real_untouched_voice_truth_available"])
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -29,6 +29,14 @@ def synthetic_alignment(with_impulses: bool = True):
         ("voice_clicks_holdout",13.4,14),
     ]
     manifest={
+        # Mirror the real capture metadata contract expected by align().
+        # The hashes here are synthetic placeholders; file integrity
+        # belongs to the separate read_capture() entry-point gate.
+        "schema":"cuewire-M6-physical-anonymous-events-v1",
+        "capture_files_sha256":{
+            "microphone.wav":"0"*64,
+            "anonymous-events.jsonl":"1"*64,
+        },
         "session_start_monotonic_ns":base,
         "phases":[{
             "phase":name,
@@ -73,6 +81,13 @@ def synthetic_alignment(with_impulses: bool = True):
 
 
 class PhysicalEventAlignmentTests(unittest.TestCase):
+    def test_missing_source_metadata_fails_explicitly(self):
+        manifest,mic,events,feature,_=synthetic_alignment()
+        del manifest["schema"]
+        with patch.object(sync,"transient_feature",return_value=feature):
+            with self.assertRaisesRegex(ValueError,"schema"):
+                sync.align(manifest,mic,events,n_perm=100)
+
     def test_heldout_recovers_exact_class_effective_offsets(self):
         manifest,mic,events,feature,offsets=synthetic_alignment()
         with patch.object(sync,"transient_feature",return_value=feature):

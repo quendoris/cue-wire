@@ -112,7 +112,7 @@ class OperatorConsoleTests(unittest.TestCase):
             mock.close()
 
     def test_refuses_socket_permissions_and_symlink(self):
-        mock = MockSocket(b"OK test\n").start()
+        mock = MockSocket(b"OK test\n")
         try:
             environment = {"XDG_RUNTIME_DIR": str(mock.root)}
             os.chmod(mock.endpoint, 0o666)
@@ -142,7 +142,8 @@ class OperatorConsoleTests(unittest.TestCase):
 
     def test_quit_needs_confirmation_and_exit_never_stops_runtime(self):
         out = io.StringIO()
-        with patch.object(ui.sys.stdin, "isatty", return_value=True), \
+        from types import SimpleNamespace
+        with patch.object(ui.sys, "stdin", SimpleNamespace(isatty=lambda: True)), \
              patch.object(ui, "read_snapshot",
                           return_value=ui.Snapshot(False, "OFFLINE")), \
              patch.object(ui, "request",

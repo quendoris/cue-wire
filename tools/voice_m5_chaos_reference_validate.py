@@ -134,8 +134,8 @@ def analyze(capture:Path, prior:Path, out:Path)->dict:
     if out.exists() or out.is_symlink():
         raise FileExistsError("Refuse overwrite prior evidence")
     parent=out.expanduser().parent.resolve(strict=True)
-    if capture.parent!=parent or prior.parent!=parent:
-        raise ValueError("New report must be sibling of prior private M5 captures")
+    if capture.parent!=parent or prior.parent.parent!=parent:
+        raise ValueError("New report must be a sibling of prior private M5 captures")
     mf=capture/"manifest.json"
     if digest(mf)!=ACTUAL_MANIFEST_SHA256:
         raise ValueError("Capture manifest changed since original SHA audit")

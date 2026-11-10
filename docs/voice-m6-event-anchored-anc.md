@@ -66,6 +66,7 @@ git pull --ff-only
   --music-only 0.35:1.05 \
   --acoustic-lag-samples 0 \
   --speech-free-calibration-confirmed \
+  --reference-sample-clock-confirmed \
   --mic .audit/voice-aec/M6-synthetic-001/eval-mic.wav \
   --reference .audit/voice-aec/M6-synthetic-001/eval-reference.wav \
   --events .audit/voice-aec/M6-synthetic-001/eval-events.jsonl \

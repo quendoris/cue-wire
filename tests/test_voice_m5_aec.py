@@ -2700,12 +2700,21 @@ class M5Tests(unittest.TestCase):
         self.assertTrue(np.any(far[12*RATE:18*RATE]!=0))
         self.assertTrue(np.any(far[45*RATE:70*RATE]!=0))
         self.assertTrue(np.all(far[3*RATE:10*RATE]==0))
-        self.assertAlmostEqual(
+        # Wall-clock stop timestamps are converted to integer PCM
+        # frames; compare to that sample-quantized value, not a higher
+        # precision wall-clock time (1/48000 s = 20.83 microseconds).
+        self.assertEqual(
             details["reference_events"][0]["reference_end_process_stop_approx_s"],
-            35.01153,places=5)
-        self.assertAlmostEqual(
+            round(round(events[0]["end_since_recorder_launch_s"]*RATE)/RATE,7))
+        self.assertEqual(
             details["reference_events"][1]["reference_end_process_stop_approx_s"],
-            n/RATE,places=4)
+            round(n/RATE,7))
+        # For the first restart, the quantization discrepancy itself
+        # must be strictly smaller than half an audio sample.
+        self.assertLess(
+            abs(details["reference_events"][0]["reference_end_process_stop_approx_s"]
+                - events[0]["end_since_recorder_launch_s"]),
+            0.5/RATE + 0.00000005)
         # Missing launch event must fail early, not silently guess a timing.
         malformed=[dict(x) for x in events]
         del malformed[1]["start_since_recorder_launch_s"]

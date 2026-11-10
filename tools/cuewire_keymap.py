@@ -85,8 +85,17 @@ def validate(mapping:dict[str,str])->dict[str,str]:
         if not isinstance(key,str):
             raise KeymapError("Key must be a string")
         combo=parse_key(key)
-        if combo in taken:
-            raise KeymapError(f"Conflict: {action} and {taken[combo]} both use {combo}")
+        base=combo.split(" + ")[-1]
+        for previous,owner in taken.items():
+            prev_base=previous.split(" + ")[-1]
+            # An unmodified NumPad bind uses ignore_mods=true.
+            # Therefore it also captures combinations with Shift/Ctrl/Alt,
+            # even though those chord strings are different.
+            if (combo==previous or
+                (base==prev_base and
+                 (previous in KEYS or combo in KEYS))):
+                raise KeymapError(
+                    f"Conflict: {action} and {owner} overlap on {base}")
         taken[combo]=action
         canonical[action]=combo
     return canonical

@@ -120,6 +120,23 @@ class QuendorisCompactTUIChecks(unittest.TestCase):
         self.assertTrue(any("socket ACL (offline)" in v for v in m.checks))
         self.assertNotIn("LIVE DSP", " ".join(m.checks))
 
+    def test_demo_keymap_staging_never_reads_or_writes_user_files(self):
+        import cuewire_keymap as keymap
+        m=t.Model()
+        with patch.object(keymap,"read_profile",
+                          side_effect=AssertionError("demo cannot read files")), \
+             patch.object(keymap,"save_profile",
+                          side_effect=AssertionError("demo cannot write files")):
+            m.execute("keys")
+            self.assertIn("LOCAL PROFILE",m.feed[-1])
+            m.execute("bind cue:4 F8")
+            self.assertEqual(m.demo_keymap["cue:4"],"F8")
+            self.assertIn("DEMO ONLY",m.feed[-1])
+            m.execute("unbind cue:4")
+            self.assertNotIn("cue:4",m.demo_keymap)
+            m.execute("bind cue:9 SUPER+C")
+            self.assertIn("REFUSED KEYMAP",m.feed[-1])
+
     def test_invalid_command_does_not_trigger_audio_or_remote_execution(self):
         m=t.Model()
         before=m.active_cue

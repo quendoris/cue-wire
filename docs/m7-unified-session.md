@@ -176,3 +176,21 @@ but never unbinds unrelated user shortcuts.
 The accepted M7.2 physical PASSes for socket and graph registration
 remain valid prior evidence, but do not automatically prove M7.3
 single-scope cleanup or live audio fidelity.
+
+
+## M7.4 handoff: configurable action-to-key mapping
+
+The former static Lua NumPad example still exists for compatibility,
+but the recommended user-configurable workflow is now in
+[remappable hotkey design and audit](m7-remappable-hotkeys.md).
+
+New source modules: tools/cuewire_keymap.py, tools/cuewire_tui.py
+(read-only keys and staged bind/unbind commands), and the
+backward-compatible Rust ctl toggle N command.
+
+The previously described static source tools/cuewire_hyprland.lua
+and the new generated .audit/cuewire-keymap-v1.lua must **NOT** be
+included simultaneously. Neither is installed by this application.
+The generated private Lua is applied only by a deliberate manual
+include and Hyprland reload; verify reads live registered binds.
+The global Super+C emergency remains fixed.

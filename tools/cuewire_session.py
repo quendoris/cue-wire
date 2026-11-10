@@ -282,7 +282,8 @@ def run_inside(mic:str,monitor:str,cues:list[str],latency_ms:int,
         import cuewire_tui
         # We are in the single emergency-kill cgroup with all engine
         # child processes; TUI stays in THIS foreground process.
-        return cuewire_tui.run_demo(no_motion=no_motion,mono=mono,live=True)
+        return cuewire_tui.run_demo(no_motion=no_motion,mono=mono,
+                                    live=True,managed=True)
     finally:
         if child is not None:stop_engine(child)
         os.close(logfd)

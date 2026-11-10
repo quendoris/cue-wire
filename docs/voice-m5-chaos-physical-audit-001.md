@@ -281,3 +281,135 @@ Send \`alignment-consistency.json\` and its
 \`SHA256SUMS\`. Do not upload private voice/music
 WAVs or alter existing capture/manifest files.
 No audio playback or PipeWire changes occur.
+
+
+## Actual uploaded multiwindow lag consistency (2026-11-10)
+
+The user supplied the original numeric-only
+\`alignment-consistency.json\` and its \`SHA256SUMS\`;
+SHA256 of uploaded file verified independently:
+\`c3d89762d5fc3147876ab45af1546f117ab342960396cd41df3be5d98d13f3e7\`.
+The report confirms original physical mic/manifest,
+stereo song, and prior alignment report hashes.
+Previous offsets (541898 and 2117222 samples)
+were **NOT refitted** to the later music windows.
+
+Previously selected initial channel was
+L/R average for playback #1 and left channel
+for #2. Absolute normalized correlation at
+these fixed lags on distinct 2.7s song windows:
+
+| Digital song time (s) | First L/R mean | Second left |
+| --- | ---: | ---: |
+| 1–3.7 (initial fit, not later holdout) | .449889 | .139972 |
+| 5–7.7 | .269492 | .092906 |
+| 10–12.7 | .322385 | .104390 |
+| 18–20.7 | .087669 | .142579 |
+| 27–29.7 | — | .023940 |
+| 38–40.7 | — | .011873 |
+
+In separately fitted local +/-120ms descriptive
+search, the first L/R mean reference's
+candidate shifts are approximately
+0, -0.250, -0.042 and -0.104ms.
+Second, initial left channel:
+0, -0.229, -0.063, -0.104, -0.146 and
+-0.229ms.
+But these are NOT independently measured
+true sampling-clock drift! Several local
+maxima change SIGN compared with the
+original lag due to the use of *absolute*
+correlation; narrowband/periodic music
+makes nearby positive and negative peaks
+compete on ~0.2–0.3ms scales.
+The second start has substantially more
+real physical near-end speech and clicking.
+
+Crucial **false drift caution:** at second
+song time 38–40.7s the L/R-average (and R)
+local search picks -96.27083ms with
+absolute normalized correlation
+ONLY 0.0350. This is under the original
+0.06 minimum and is **not a reliable
+timing correction**. The original left
+channel has maximum ~0.0284 near
+-0.229ms, likewise too weak for
+a confident end-of-record alignment.
+Do not auto-adjust adaptive AEC delays
+based on those late "peaks".
+A strongly correlated second-window
+example remains 18–20.7s, with left
+local 0.4700 at -0.10417ms.
+This proves the digital song remains
+statistically recognizable amid some
+real doubletalk, but does not establish
+reliable high-frequency clean speech
+transfer.
+
+**Next physical comparison** is a new
+offline NUMERIC experiment reusing
+native SpeexDSP and our previously tested
+dual Speex real-minus-zero cancellation
+on the exact same real chaotic recording.
+Inputs are the physical WAV + locally
+SHA-verified stereo music with a separate
+fixed lag for each recorded playback.
+The fixed 10ms digital reference prelead
+follows the earlier Speex experiment and
+is NOT a newly optimized causal delay.
+Reference variants: L/R arithmetic mean
+on both restarts and first-peaks selected
+mean for #1/left for #2. The latter
+channel-selection experiment is
+post-hoc and exploratory. For every
+original physical stage, report output
+RMS/changes from input. Where the music
+reference is active, compare 500–4000Hz
+reference-linked coherence proxies.
+Where music is silent, compare direct
+changes to the original unprocessed
+mic/clean-speech recording. True acoustic
+same-utterance clean voice during doubletalk
+does not exist; do not claim exact speech
+quality or perceptual SNR there.
+
+Code:
+\`tools/voice_m5_chaos_speex_real.py\`.
+Two synthetic controls were added:
+exact physical two-restart music windows
+with zero source during 8s clean speech,
+and no misleading ground-truth speech
+claim in numeric stage comparison.
+**60 M5 unit test methods total**,
+yet to run on user's local Arch.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~~~
+
+If green, use the existing local immutable
+\`M5-chaos-001\` raw and the exact previous
+local numerical reports:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_chaos_speex_real.py \
+  --capture .audit/voice-aec/M5-chaos-001 \
+  --initial-alignment .audit/voice-aec/M5-chaos-alignment-001/music-alignment.json \
+  --consistency .audit/voice-aec/M5-chaos-alignment-consistency-001/alignment-consistency.json \
+  --out .audit/voice-aec/M5-chaos-speex-real-001
+
+cd .audit/voice-aec/M5-chaos-speex-real-001
+sha256sum -c SHA256SUMS
+~~~
+
+Share \`physical-chaos-speex.json\` and
+\`SHA256SUMS\`, not RAW voice or commercial
+music WAV. No audio capture, playback,
+export or PipeWire changes, only native
+SpeexDSP offline analysis. This does not
+deploy a live microphone; any next step
+will be grounded in actual results.

@@ -685,3 +685,49 @@ python3 -m unittest discover -s tests -p 'test_cuewire_tui_live.py' -v
 See [M7.3 unified operator workflow and audit gates](docs/m7-unified-session.md).
 M7.3 physical device, emergency cleanup, Steam route and global
 hotkey tests are pending: no production-ready claims until completed.
+
+
+## M7.4: remappable hotkeys (private profile, explicit Lua apply)
+
+The original NumPad 0..9 and decimal defaults now have a configurable
+LOCAL-only keymap. The Rust v0.1 compatible server adds a separate
+toggle N command for keyboard use: pressing the same assigned cue
+again stops the cue only; a different cue replaces it. Explicit
+play N remains unchanged.
+
+~~~bash
+python3 tools/cuewire_keymap.py show
+python3 tools/cuewire_keymap.py set cue:4 F8 --dry-run
+python3 tools/cuewire_keymap.py set cue:4 F8
+python3 tools/cuewire_keymap.py check
+python3 tools/cuewire_keymap.py compile
+# After the user explicitly includes the generated .audit Lua
+# in their active Hyprland Lua config and manually reloads it:
+python3 tools/cuewire_keymap.py verify
+~~~
+
+The CueWire TUI command dock also supports keys, keys cue:4,
+bind cue:4 F8 and unbind cue:4. These only STAGE local settings;
+they never silently reload Hyprland or install a shortcut. In DEMO
+they affect memory only. The compiled Lua and profile are owner-only
+0600 files in ignored .audit; personal mappings do not enter Git.
+
+**Never paste dofile(...) into Bash.** It is a Lua directive for the
+active Hyprland Lua config (commonly ~/.config/hypr/hyprland.lua).
+Do NOT simultaneously load the older static tools/cuewire_hyprland.lua
+and the new .audit-generated keymap. The original Super+C remains a
+reserved, not user-remappable scope emergency. No keypress events
+are captured, and generated global binds are OPT-IN and may continue
+to consume keys while CueWire is offline.
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_cuewire_keymap.py' -v
+python3 -m unittest discover -s tests -p 'test_cuewire_tui_live.py' -v
+python3 -m unittest discover -s tests -p 'test_cuewire_tui.py' -v
+cargo test --locked --offline
+cargo build --release --locked --offline
+~~~
+
+See [M7.4 remappable hotkey acceptance](docs/m7-remappable-hotkeys.md).
+Compilation and unit tests have NOT yet been independently confirmed
+on user hardware. Do not enable shortcuts after a failed preflight.

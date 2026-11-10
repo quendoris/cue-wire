@@ -210,11 +210,25 @@ def print_research() -> None:
     print("No live DSP toggle exists yet; enabling it would misrepresent the engine.")
 
 
-def interactive() -> int:
+def interactive(demo: bool = False) -> int:
     if not sys.stdin.isatty():
         raise ConsoleError("Interactive console requires a real terminal; use --preview or --once")
-    print(render(read_snapshot()))
+    demo_cue: int | None = None
+
+    def snapshot() -> Snapshot:
+        if not demo:
+            return read_snapshot()
+        return Snapshot(
+            online=False, mode="DEMO / SIMULATED • no PipeWire access",
+            mic="simulated_input", virtual_source="simulated_output",
+            monitor="simulated_monitor",
+            cue="none" if demo_cue is None else str(demo_cue),
+            note="SIMULATION ONLY • no socket or audio devices accessed")
+
+    print(render(snapshot()))
     print("\n"+HELP_TEXT)
+    if demo:
+        print("DEMO MODE: play, stop and status change only simulated state.")
     while True:
         try:
             command = input("cuewire> ")
@@ -231,20 +245,34 @@ def interactive() -> int:
                 print("Console closed. Running CueWire engine left untouched.")
                 return 0
             elif action == "status":
-                print(render(read_snapshot()))
+                print(render(snapshot()))
             elif kind == "remote" and action is not None:
                 if action == "quit":
                     answer = input(
-                        "Stop RUNNING CueWire and its owned processes? Type QUIT: ")
+                        "Stop RUNNING CueWire and its owned processes? Type QUIT: "
+                        if not demo else
+                        "End SIMULATED session? Type QUIT: ")
                     if answer != "QUIT":
                         print("Cancelled; CueWire continues running.")
                         continue
+                    if demo:
+                        print("Simulated session closed. Real CueWire not contacted.")
+                        return 0
+                if demo:
+                    if action.startswith("play "):
+                        demo_cue = int(action[-1])
+                        print(f"SIMULATED: cue {demo_cue} selected (no sound played)")
+                    elif action == "stop":
+                        demo_cue = None
+                        print("SIMULATED: cue stopped (no engine command sent)")
+                    print(render(snapshot()))
+                    continue
                 response = request(action)
                 print(visible(response, 160))
                 if action == "quit" and response.startswith("OK "):
                     print("Runtime shutdown requested; wait for the engine's own cleanup.")
                     return 0
-                print(render(read_snapshot()))
+                print(render(snapshot()))
         except (ConsoleError, EOFError, KeyboardInterrupt) as exc:
             if isinstance(exc, ConsoleError):
                 print("Refused:", visible(str(exc), 140))
@@ -262,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
                       help="render UI with NO socket, mic or PipeWire access")
     mode.add_argument("--once", action="store_true",
                       help="read-only snapshot from a running CueWire; then exit")
+    mode.add_argument("--demo", action="store_true",
+                      help="interactive simulated session; NO socket or audio access")
     opts = parser.parse_args(argv)
     try:
         if opts.preview:
@@ -273,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
             snapshot = read_snapshot()
             print(render(snapshot))
             return 0 if snapshot.online else 2
-        return interactive()
+        return interactive(demo=opts.demo)
     except ConsoleError as exc:
         print("cuewire-ui:", visible(str(exc), 140), file=sys.stderr)
         return 2

@@ -172,6 +172,7 @@ class Model:
     terminated: bool = False
     motion: bool = True
     mono: bool = False
+    demo_keymap: dict[str,str] | None = None
     checks: tuple[str,...] = (
         "PASS / demo isolation",
         "PASS / no device access",
@@ -206,6 +207,9 @@ class Model:
         elif entered in ("help", "?"):
             self.add("Tab = windows / Enter = command / Esc = collapse")
             self.add("play 0..9 | stop | status | research | doctor | quit | exit")
+            self.add("keys | bind cue:4 F8 | unbind cue:4 (demo only)")
+        elif entered=="keys" or entered.startswith(("bind ","unbind ")):
+            keymap_command(self,entered,persistent=False)
         elif entered=="research":
             self.selected=2
             self.add("M6-007 frozen; not loaded into a live microphone")
@@ -227,6 +231,59 @@ class Model:
             self.add("Type CONFIRM to exit demo, or anything else to cancel")
         else:
             self.add("REFUSED: unrecognized command; see help")
+
+
+def keymap_command(model: Model, command: str, persistent: bool) -> bool:
+    """Inspect/stage explicitly typed keymap names, never capture key events.
+
+    This does NOT call hyprctl, change a live bind, reload Hyprland, send
+    audio commands or claim an assignment is already active.
+    """
+    if not (command=="keys" or command.startswith(("bind ","unbind "))):
+        return False
+    import cuewire_keymap as keymap
+    try:
+        mapping=(keymap.read_profile() if persistent else
+                 (model.demo_keymap or keymap.defaults()))
+        if command=="keys":
+            model.selected=4
+            for group in (range(0,5),range(5,10)):
+                model.add("KEYS "+", ".join(
+                    f"{n}:{mapping.get(f'cue:{n}','—')}" for n in group))
+            model.add("STOP "+mapping.get("stop","—")+
+                      " | PANIC SUPER+C (fixed)")
+            model.add("LOCAL PROFILE / not proof binds are applied")
+            return True
+        fields=command.split()
+        if (len(fields)==3 and fields[0]=="bind"
+                and fields[1] in keymap.ACTIONS):
+            updated=dict(mapping)
+            updated[fields[1]]=keymap.parse_key(fields[2])
+            updated=keymap.validate(updated)
+            action=fields[1]
+            summary=f"{action} -> {updated[action]}"
+        elif (len(fields)==2 and fields[0]=="unbind"
+              and fields[1] in keymap.ACTIONS):
+            updated=dict(mapping)
+            updated.pop(fields[1],None)
+            updated=keymap.validate(updated)
+            summary=f"{fields[1]} unassigned"
+        else:
+            model.add("REFUSED: bind cue:4 F8 | unbind cue:4 | keys")
+            return True
+        if persistent:
+            keymap.save_profile(updated)
+        else:
+            model.demo_keymap=updated
+        model.selected=4
+        model.add(("STAGED local: " if persistent else "DEMO memory: ")+summary)
+        if persistent:
+            model.add("NOT ACTIVE: run keymap check + compile; manual Lua reload")
+        else:
+            model.add("DEMO ONLY: no profile/config/device changed")
+    except keymap.KeymapError as exc:
+        model.add("REFUSED KEYMAP: "+str(exc)[:72])
+    return True
 
 
 class LiveModel(Model):
@@ -314,6 +371,9 @@ class LiveModel(Model):
         elif entered in ("help", "?"):
             self.add("TAB/ARROWS panels | ENTER command | ESC collapse")
             self.add("status | doctor | play 0..9 | stop | research | quit | exit")
+            self.add("keys | bind cue:4 F8 | unbind cue:4 (STAGED only)")
+        elif entered=="keys" or entered.startswith(("bind ","unbind ")):
+            keymap_command(self,entered,persistent=True)
         elif entered == "research":
             self.selected = 2
             self.add("M6-007 ACCEPTED OFFLINE; NOT ENABLED in live CueWire")

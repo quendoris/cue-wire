@@ -449,3 +449,30 @@ event timestamp is published. Processing remains OFFLINE/noncausal.
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_*vowel*.py' -v
 ~~~
+
+
+## M6 Physical-006 — stronger keyboard separation while preserving C_005
+
+The user's preferred M6 Physical-005 C sounded like natural uninterrupted
+speech and clearly quieter keyboard clicks, but remaining clicks were
+still audible. M6-006 keeps that exact C_005_vowel_soft as A and adds
+a noncausal harmonic-percussive spectral correction **only** where an
+anonymous key/button event overlaps recognized voiced speech. Two
+strengths (B .65, C 1.0) permit an explicit maximum-three-candidate
+comparison. All already validated speech-free click processing remains
+exactly equal to M6-005; all physical PCM16 outside events is exact.
+
+Exploratory real physical 44s pilot yielded additional ~1.49 and
+~2.12dB attenuation of total 1.3–9kHz band RMS during R5 voice+
+clicks, with only very small 90–650Hz level changes. These are NOT
+clean speech/click-source measurements or perceptual guarantees;
+higher-frequency consonants may still change. Parameters were
+explored on the same physical recording. No key/button ID is read,
+nothing is recorded or auto-played, and no live PipeWire processing.
+
+See [M6-006 physical harmonic/percussive listening audit](docs/voice-m6-physical-percussive.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_physical_percussive_ab.py' -v
+~~~

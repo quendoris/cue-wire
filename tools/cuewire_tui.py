@@ -235,7 +235,8 @@ class LiveModel(Model):
     No audio nodes are created here. All connection status is re-read from the
     server on every refresh; never reuse a stale online result.
     """
-    def __init__(self, motion: bool = True, mono: bool = False):
+    def __init__(self, motion: bool = True, mono: bool = False,
+                 managed: bool = False):
         super().__init__(mode="LIVE", motion=motion, mono=mono,
                          checks=("SKIP / socket unchecked",
                                  "SKIP / protocol unchecked",
@@ -245,6 +246,7 @@ class LiveModel(Model):
                                "No audio graph or defaults changed by UI"])
         import cuewire_tui_live as backend
         self.backend = backend
+        self.managed = managed
         self.report = backend.LiveReport(False, "not yet checked")
         self.graph_checks: tuple = ()
         self.graph_checked_at = 0.0
@@ -344,7 +346,9 @@ class LiveModel(Model):
                 "SKIP / audio/DSP/latency",
             )
         elif entered == "exit":
-            self.add("LIVE: operator console closing; engine left running")
+            self.add("MANAGED: session ending; engine cleanup follows"
+                     if self.managed else
+                     "LIVE: operator console closing; engine left running")
             self.terminated = True
         elif entered == "quit":
             self.refresh()
@@ -570,7 +574,9 @@ def paint(model:Model,width:int,height:int,seconds:float=0.0)->tuple[Canvas,Layo
         result.write(dock.x+11,dock.y,short,MUTED)
         result.write(max(dock.x+16,dock.x+dock.w-19),dock.y,
                      "[ Enter to expand ]",SITE_ACCENT)
-    foot="TAB/ARROWS windows   ENTER command   ESC collapse   CTRL+C close"
+    foot=("TAB/ARROWS panels   ENTER command   ESC collapse   CTRL+C end session"
+          if isinstance(model,LiveModel) and model.managed else
+          "TAB/ARROWS windows   ENTER command   ESC collapse   CTRL+C close")
     result.write(2,geometry.footer.y,crop(foot,width-4),MUTED)
     return result,geometry
 
@@ -697,8 +703,12 @@ class TerminalSession:
                 self.output.flush()
 
 
-def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False)->int:
-    state=LiveModel(motion=not no_motion,mono=mono) if live else Model(
+def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False,
+             managed:bool=False)->int:
+    if managed and not live:
+        raise ValueError("Managed UI requires real authenticated live backend")
+    state=LiveModel(motion=not no_motion,mono=mono,
+                    managed=managed) if live else Model(
         motion=not no_motion,mono=mono)
     if live:
         state.refresh(announce=True)

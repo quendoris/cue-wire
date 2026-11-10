@@ -173,3 +173,45 @@ voice and exact anti-track summation, detect nearend contamination by
 unapproved update intervals, reject incorrectly aligned/private input
 markers, enforce clipping refusal and verify synthetic WAV roundtrips.
 A real user's listening preference is the independent final gate.
+
+
+## Independent synthetic ground-truth acceptance (M6 after successful run)
+
+The standalone verifier below reads the frozen synthetic fixture WAVs,
+the FIVE output WAVs, both SHA256SUMS files and the result report. It
+does NOT import the estimator module, does not recompute FIR weights
+or learn from clean truth, and performs no audio playback/capture.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests \
+  -p 'test_voice_m6_independent_audit.py' -v
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m6_independent_audit.py \
+  --fixture .audit/voice-aec/M6-synthetic-001 \
+  --result .audit/voice-aec/M6-synthetic-result-001
+~~~
+
+Hard acceptance gates are: exact 144000-sample PCM16 sums
+(raw+anti_music and raw+both anti-tracks), identical original mic WAV
+to evaluation fixture, verified SHA256 and provenance, at least
+40 dB RMS reduction of interference measured AGAINST the known
+synthetic clean voice, and at most 1 PCM16 LSB RMS residual.
+These are deliberately TEST-FIXTURE-specific engineering gates,
+NOT general requirements or claimed real-world voice quality.
+The verifier produces an explicit accepted boolean or nonzero error,
+and does not write output files.
+
+Independent analysis of the first M6-synthetic-001 uploaded exports:
+67.96 dB speaker-only training error reduction (as logged by FIR);
+67.89 dB music model error reduction on the DIFFERENT synthetic eval
+segment; 64.60 dB click estimate reduction relative to deterministic
+known injected click shapes; 65.83 dB total raw-to-final error
+reduction against synthetic clean voice; 0.397 LSB PCM16 final RMS
+error versus the non-quantized generated voice; 0 LSB mismatch in
+both PCM16 summation identities, all 144000 samples. These are
+synthetic observations and do not establish physical suppression.

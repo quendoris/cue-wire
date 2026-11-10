@@ -243,7 +243,7 @@ class SessionDefaultsAndScope(unittest.TestCase):
              patch.object(s,"private_profile_cues",
                           side_effect=AssertionError("should be INSIDE scope")), \
              patch.object(s,"refuse_existing"), \
-             patch.object(s.BIN,"is_file",return_value=True), \
+             patch.object(s.Path,"is_file",return_value=True), \
              patch.object(s.os,"access",return_value=True), \
              patch.object(s,"TTYGuardian") as guard, \
              patch.object(s.subprocess,"run",return_value=complete) as go:

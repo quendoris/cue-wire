@@ -183,10 +183,11 @@ def render_lua(mapping:dict[str,str])->str:
         # The server handles all playback semantics, including toggling.
         ctl=("stop" if action=="stop" else
              "toggle "+action.split(":")[1])
+        desc="CueWire M7.4 "+action
         flags=(
-            "{ ignore_mods = true, dont_inhibit = true }"
+            '{ ignore_mods = true, dont_inhibit = true, description = "'+desc+'" }'
             if " + " not in combo and combo in KEYS else
-            "{ dont_inhibit = true }"
+            '{ dont_inhibit = true, description = "'+desc+'" }'
         )
         lines.append(
             f'handles[#handles + 1] = hl.bind("{combo}", '
@@ -196,11 +197,35 @@ def render_lua(mapping:dict[str,str])->str:
     lines.extend([
         'handles[#handles + 1] = hl.bind("SUPER + C",',
         f'    hl.dsp.exec_cmd("/usr/bin/bash {emergency} emergency"),',
-        "    { dont_inhibit = true })",
+        '    { dont_inhibit = true, description = "CueWire M7.4 emergency" })',
         "_G.__cuewire_keymap_handles = handles",
         "",
     ])
     return "\n".join(lines)
+
+
+def is_our_active_binding(binding:dict)->bool:
+    """Ignore ONLY authenticated self-identifying old M7.4 dispatchers.
+
+    A matching description alone is insufficient: exact dispatcher and
+    exact fixed shell-free command must also match this implementation.
+    Foreign or old static CueWire binds are never silently exempted.
+    """
+    if str(binding.get("dispatcher","")).lower()!="exec":
+        return False
+    descriptor=binding.get("description")
+    arg=str(binding.get("arg","")).strip()
+    bin_path=ROOT/"target/release/cuewire"
+    emergency=ROOT/"tools/cuewire_scope.sh"
+    if descriptor=="CueWire M7.4 emergency":
+        return arg==f"/usr/bin/bash {emergency} emergency"
+    if not isinstance(descriptor,str) or not descriptor.startswith("CueWire M7.4 "):
+        return False
+    action=descriptor[len("CueWire M7.4 "):]
+    if action not in ACTIONS:
+        return False
+    cmd="stop" if action=="stop" else "toggle "+action.split(":")[1]
+    return arg==f"{bin_path} ctl {cmd}"
 
 
 def conflicts(mapping:dict[str,str],existing:list[dict])->list[str]:
@@ -225,8 +250,10 @@ def conflicts(mapping:dict[str,str],existing:list[dict])->list[str]:
         upper=key.strip().upper()
         if upper not in key_bases:
             continue
-        # Do not ignore 'our own' for now: installing a new map requires
-        # explicit review/removal of prior CueWire Lua include first.
+        if is_our_active_binding(b):
+            # Existing handles belong to our previous M7.4 compiled
+            # map. The generated Lua only unbinds these own handles.
+            continue
         hazards.append(
             f"{upper}: existing {str(b.get('dispatcher','unknown'))[:32]} "
             f"bind conflicts with {', '.join(key_bases[upper])}"

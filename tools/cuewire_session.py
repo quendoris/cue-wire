@@ -22,6 +22,7 @@ import socket
 import stat
 import subprocess
 import sys
+import termios
 import time
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -37,6 +38,30 @@ MAX_GRAPH_BYTES=6*1024*1024
 
 class SessionError(RuntimeError):
     pass
+
+
+class TTYGuardian:
+    """Outside-scope TTY restorer survives SIGKILL of inner raw-mode TUI."""
+    def __init__(self):
+        self.attributes=None
+        self.fd=None
+
+    def __enter__(self):
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            self.fd=sys.stdin.fileno()
+            self.attributes=termios.tcgetattr(self.fd)
+        return self
+
+    def __exit__(self,exc_type,exc,tb):
+        if self.attributes is None:
+            return
+        try:
+            termios.tcsetattr(self.fd,termios.TCSADRAIN,self.attributes)
+        finally:
+            # If the interior TUI was SIGKILLed, its alternate screen and
+            # hidden cursor must be restored by THIS surviving shell owner.
+            sys.stdout.write("\x1b[0m\x1b[?25h\x1b[?1049l")
+            sys.stdout.flush()
 
 
 def command(argv:list[str],timeout:float=3.0)->subprocess.CompletedProcess:
@@ -354,7 +379,8 @@ def main(argv:list[str]|None=None)->int:
         # Entire engine + TUI belong to the same emergency cgroup.
         # The invoker stays outside and does not modify other processes.
         try:
-            outcome=subprocess.run(args,check=False)
+            with TTYGuardian():
+                outcome=subprocess.run(args,check=False)
             return outcome.returncode
         except KeyboardInterrupt:
             if scope_active() and scope_marked():

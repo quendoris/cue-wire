@@ -2683,8 +2683,10 @@ class M5Tests(unittest.TestCase):
         ]
         events=[
             {"instance":1,"music_file_start_s":0.,
+             "start_since_recorder_launch_s":11.00758,
              "end_since_recorder_launch_s":35.01153},
             {"instance":2,"music_file_start_s":0.,
+             "start_since_recorder_launch_s":44.01799,
              "end_since_recorder_launch_s":90.01614},
         ]
         n=round(89.96267*RATE)
@@ -2698,6 +2700,19 @@ class M5Tests(unittest.TestCase):
         self.assertTrue(np.any(far[12*RATE:18*RATE]!=0))
         self.assertTrue(np.any(far[45*RATE:70*RATE]!=0))
         self.assertTrue(np.all(far[3*RATE:10*RATE]==0))
+        self.assertAlmostEqual(
+            details["reference_events"][0]["reference_end_process_stop_approx_s"],
+            35.01153,places=5)
+        self.assertAlmostEqual(
+            details["reference_events"][1]["reference_end_process_stop_approx_s"],
+            n/RATE,places=4)
+        # Missing launch event must fail early, not silently guess a timing.
+        malformed=[dict(x) for x in events]
+        del malformed[1]["start_since_recorder_launch_s"]
+        with self.assertRaisesRegex(ValueError,"start_since_recorder_launch_s"):
+            chaos_real.build_farend_reference(
+                stereo,n,trials,malformed,
+                ("stereo_arithmetic_mean","left"),.60)
         self.assertNotEqual(
             details["reference_events"][0]["pinned_prior_lag_samples"],
             details["reference_events"][1]["pinned_prior_lag_samples"])

@@ -537,6 +537,7 @@ play sound. A no-device preview works even without an active engine:
 ~~~bash
 python3 -m unittest discover -s tests -p 'test_cuewire_console.py' -v
 python3 tools/cuewire_console.py --preview
+python3 tools/cuewire_console.py --demo   # interactive, NO socket/audio contact
 ~~~
 
 While a manually launched existing cuewire run is active, use:

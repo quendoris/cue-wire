@@ -135,3 +135,35 @@ If the click remains too loud under actual simultaneous speech, a
 second independent mechanical reference (for example an optional
 contact microphone/accelerometer) may be needed; do NOT compromise
 the strict privacy boundary by identifying individual keys.
+
+
+## Human listening result — November 10, 2026
+
+The operator explicitly compared the new Physical-006 listening WAVs
+with previous generations and reported in Russian:
+
+> "6 намного сильнее убрал звуки клавиш (они различимы, но уже
+> существенно тише), полностью сохранив голос, это определённо
+> нужное направление"
+
+Interpretation with strict limits:
+- The keyboard clicks are still perceptible, but **substantially quieter**
+  than earlier M6 physical versions.
+- In the operator's hearing, the voice was **fully preserved**;
+  unlike the elongated-vowel truncation reported for Physical-004.
+- This is a **positive subjective result on the current recording**,
+  not objective proof of voice source separation or generalization.
+- The operator did NOT specify whether B_006 or C_006 was their favored
+  new candidate. Do not record a winner or select C unilaterally.
+
+Decision:
+1. Preserve C_005 as the known successful earlier voice baseline, and
+   preserve both M6-006 spectral candidates byte-for-byte.
+2. Continue the *event-gated harmonic/percussive separation* approach,
+   rather than indiscriminately extending broadband click suppression.
+3. The next research focus should be residual clicks and any transient
+   speech consonant artifacts, measured on a wholly independent
+   recording when making efficacy claims.
+4. Do not alter live PipeWire routes, install services, collect key
+   identities, overwrite previous private WAVs, or silently deploy
+   the noncausal STFT processor.

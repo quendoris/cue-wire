@@ -99,7 +99,7 @@ class AggressivePhysicalAntiWaveTests(unittest.TestCase):
                 {"session_start_monotonic_ns":1_000_000_000_000},
                 [event],offsets,envelope,
                 {"mouse":41,"keyboard":59})
-        with self.assertRaisesRegex(ValueError,"calibration"):
+        with self.assertRaisesRegex(ValueError,"training"):
             m6.aggressive_mask(
                 {"session_start_monotonic_ns":1_000_000_000_000},
                 [],offsets,envelope,
@@ -140,7 +140,7 @@ class AggressivePhysicalAntiWaveTests(unittest.TestCase):
             m6.aggressive_mask(
                 manifest,[],offsets,envelope,
                 {"mouse":41,"keyboard":59})
-        with self.assertRaisesRegex(ValueError,"unit"):
+        with self.assertRaisesRegex(ValueError,"unsafe/clipped"):
             m6.to_pcm16(np.array([.99]))
         wrong={**offsets,"keyboard_press":200}
         with self.assertRaises(ValueError):

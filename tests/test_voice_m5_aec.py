@@ -41,6 +41,8 @@ import voice_m5_speex_known_voice as speex_voice
 import voice_m5_speex_delta as speex_delta
 import voice_m5_listening_ab as listening_ab
 import voice_m5_mouse_click_control as mouse_control
+import voice_m5_chaos_capture as chaos
+import voice_m5_capture as capture_runtime
 from contextlib import ExitStack
 import ctypes
 
@@ -260,7 +262,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_speex_known_voice.py",
                        "voice_m5_speex_delta.py",
                        "voice_m5_listening_ab.py",
-                       "voice_m5_mouse_click_control.py"):
+                       "voice_m5_mouse_click_control.py",
+                       "voice_m5_chaos_capture.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -2424,6 +2427,130 @@ class M5Tests(unittest.TestCase):
                                delta=20)
         with self.assertRaisesRegex(ValueError,"0.5 seconds"):
             mouse_control.analyze_window(mic[:1000])
+    def test_chaos_voice_control_music_preflight_and_phase_metrics(self):
+        """One local PCM16 vocal music reference; no automatic playback."""
+        rng=np.random.default_rng(801125)
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)
+            music=folder/"music.wav"
+            pcm16_file(music,rng.normal(0,.015,12*RATE))
+            info=chaos.validate_music(music)
+            self.assertAlmostEqual(info["duration_s"],12.,delta=.001)
+            self.assertEqual(info["channels"],1)
+            self.assertEqual(info["sha256"],aec.digest(music))
+            text=folder/"jokes.txt"
+            text.write_text("\n".join(f"Русская шутка №{i}" for i in range(25)))
+            jokes,checksum=chaos.load_jokes(text)
+            self.assertEqual(len(jokes),25)
+            self.assertEqual(checksum,aec.digest(text))
+            pcm=rng.normal(0,.0002,44*RATE)
+            pcm[21*RATE:26*RATE] += rng.normal(0,.03,5*RATE)
+            wav=folder/"mic.wav"
+            pcm16_file(wav,pcm)
+            phases=[{
+                "name":"quiet_before",
+                "start_since_recorder_launch_s":3.,
+                "end_since_recorder_launch_s":11.,
+            },{
+                "name":"mouse_music",
+                "start_since_recorder_launch_s":19.,
+                "end_since_recorder_launch_s":27.,
+            }]
+            metrics=chaos.inspect_audio(wav,phases)
+            self.assertEqual(metrics["clipped_samples"],0)
+            self.assertGreater(
+                metrics["phase_stats"]["mouse_music"]["rms_dbfs"],
+                metrics["phase_stats"]["quiet_before"]["rms_dbfs"]+20.)
+            self.assertTrue(metrics["mic_and_pw_play_not_sample_synchronized"])
+            with self.assertRaisesRegex(ValueError,"PCM16"):
+                chaos.validate_music(folder/"jokes.txt")
+
+    def test_chaos_mocked_capture_ctrl_c_stops_all_and_saves_one_wav(self):
+        """Full user Ctrl+C lifecycle: music OFF for 8s clean voice."""
+        with tempfile.TemporaryDirectory() as tmp:
+            audit=Path(tmp)/".audit"
+            base=audit/"voice-aec"
+            base.mkdir(parents=True)
+            music=base/"vocal.wav"
+            pcm16_file(music,np.zeros(14*RATE))
+            jokes=base/"jokes.txt"
+            jokes.write_text("\n".join(f"Анекдот {i}: бип" for i in range(25)))
+            out=base/"M5-chaos-synthetic-001"
+            class FakeProc:
+                def __init__(self):
+                    self.returncode=None
+                def poll(self):
+                    return self.returncode
+                def wait(self,*args,**kwargs):
+                    if self.returncode is None:
+                        self.returncode=-15
+                    return self.returncode
+            processes=[]
+            def fake_spawn(cmd,log):
+                log.write_text("mock process")
+                process=FakeProc()
+                processes.append((cmd,process))
+                if cmd[0]=="pw-record":
+                    pcm16_file(Path(cmd[-1]),np.zeros(48*RATE))
+                return process
+            def terminate(p):
+                p.returncode=-15
+            def stop_owned():
+                for _,process in processes:
+                    terminate(process)
+            clock=[0.]
+            def time_advance(delta):
+                if clock[0]>=46.:
+                    raise KeyboardInterrupt()
+                clock[0]+=delta
+            opts=SimpleNamespace(
+                source="alsa_input.mock-physical",
+                speaker="alsa_output.mock-physical",
+                music=music,volume=.60,jokes=jokes,out=out)
+            patches=[
+                mock.patch.object(chaos,"AUDIT",audit.resolve()),
+                mock.patch.object(capture_runtime,"AUDIT",audit.resolve()),
+                mock.patch.object(chaos,"checked_program",return_value="available"),
+                mock.patch.object(chaos,"choose_source",
+                                  return_value={"name":opts.source}),
+                mock.patch.object(chaos,"checked_speaker",
+                                  return_value={"name":opts.speaker}),
+                mock.patch.object(chaos,"spawn",side_effect=fake_spawn),
+                mock.patch.object(chaos,"terminate_group",side_effect=terminate),
+                mock.patch.object(chaos,"stop_children",side_effect=stop_owned),
+                mock.patch.object(chaos.time,"monotonic",
+                                  side_effect=lambda:clock[0]),
+                mock.patch.object(chaos.time,"sleep",side_effect=time_advance),
+                mock.patch("builtins.print"),
+            ]
+            with ExitStack() as stack:
+                for patch in patches:
+                    stack.enter_context(patch)
+                result=chaos.run(opts)
+            self.assertEqual(result["status"],"captured_ctrl_c_at_free_stress")
+            self.assertTrue(result["manual_ctrl_c"])
+            self.assertEqual(len(result["recorded_phases"]),6)
+            self.assertEqual([p["name"] for p in result["recorded_phases"]],[
+                "quiet_before","mouse_music","keyboard_music",
+                "both_music","clean_voice","free_stress"])
+            clean=result["recorded_phases"][4]
+            self.assertFalse(clean["music_requested"])
+            self.assertTrue(clean["clean_voice_reference"])
+            self.assertEqual(len(result["playback_software_start_stop_events"]),2)
+            self.assertEqual(len([p for p in processes if p[0][0]=="pw-record"]),1)
+            self.assertEqual(len([p for p in processes if p[0][0]=="pw-play"]),2)
+            self.assertTrue(all(proc.returncode is not None
+                                for _,proc in processes))
+            self.assertTrue((out/"microphone-chaos-raw.wav").is_file())
+            self.assertEqual(list(out.glob("microphone-*.wav")),
+                             [out/"microphone-chaos-raw.wav"])
+            self.assertTrue((out/"manifest.json").is_file())
+            with (out/"SHA256SUMS").open() as f:
+                for row in f:
+                    hashcode,filename=row.strip().split("  ",1)
+                    self.assertEqual(hashcode,aec.digest(out/filename))
+            self.assertEqual(result["physical_microphone_analysis"]["clipped_samples"],0)
+            self.assertFalse(result["sink_volume_changed"])
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

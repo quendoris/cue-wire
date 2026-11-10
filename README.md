@@ -396,3 +396,28 @@ See [M6 physical adaptive-tail test and Arch commands](docs/voice-m6-physical-ta
 ~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
   -s tests -p 'test_voice_m6_physical_tail_ab.py' -v
 ~~~
+
+
+## M6 Physical-004 — aggressively event-gated multi-band click reduction (OFFLINE)
+
+The operator confirmed Physical-003 preserved voice on two replayed
+scenes, but audible keyboard suppression remained minimal. The new
+M6 Physical-004 expands keyboard transient/tail coverage, lowers
+event confirmation thresholds and adds wideband 650–12000 Hz plus
+low-mid 260–650 Hz inverted event-local corrections. Two NEW variants:
+B aggressive, C similar with speech-aware guard; the third A
+regenerates the previous M6-003 stronger processing for direct A/B.
+
+Exploratory real WAV measurements show a larger RMS decrease but
+speech protection MUST be rechecked by listening. Because these
+choices were explored on the same recording, the reported changes
+are NOT unbiased heldout speech/click SNR estimates. The processing
+is still zero-phase NONCAUSAL and OFFLINE ONLY; no new audio or input
+capture, keycode, button identity, defaults or background processes.
+
+See [M6 Physical-004 listening and regression audit](docs/voice-m6-physical-aggressive.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_physical_aggressive_ab.py' -v
+~~~

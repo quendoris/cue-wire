@@ -289,6 +289,30 @@ class M7LiveTests(unittest.TestCase):
             self.assertEqual(demo.active_cue,4)
             self.assertIn("SIMULATED",demo.feed[-1])
 
+    def test_graph_audit_persists_briefly_then_expires_without_false_pass(self):
+        report=live.LiveReport(
+            True,"ok",mic="mic",monitor="monitor",
+            virtual_source="vmic",mix_input="mix",
+            socket_acl="PASS",protocol="PASS")
+        checks=tuple(
+            [live.Check("same-user socket 0600","PASS","ok"),
+             live.Check("CueWire v0.1 protocol","PASS","ok")]
+            +[live.Check(name,"PASS","ok") for name in (
+                "physical mic reported","monitor reported",
+                "virtual source","mix input")]
+            +[live.Check("live M6 / latency","SKIP","not measured")]
+        )
+        m=ui.LiveModel()
+        with patch.object(live,"read_live",return_value=report), \
+             patch.object(live,"doctor",return_value=checks):
+            m.execute("doctor")
+            m.refresh()
+            self.assertIn("PASS / 4 nodes registered",m.checks)
+            m.graph_checked_at-=21.0
+            m.refresh()
+            self.assertIn("SKIP / graph (run doctor)",m.checks)
+            self.assertFalse(m.graph_checks)
+
     def test_status_poll_and_commands_have_distinct_bounded_timeouts(self):
         with patch.object(live.protocol,"validate_socket_location"), \
              patch.object(live.protocol,"request",

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import tempfile
 from pathlib import Path
 import re
 import signal
@@ -28,6 +29,7 @@ SCOPE="cuewire-hotkeys.scope"
 DESCRIPTION="CueWire Hotkeys Scoped Foreground"
 BIN=ROOT/"target/release/cuewire"
 SCRIPT=Path(__file__).resolve()
+PROFILE=ROOT/".audit"/"cuewire-session-v1.json"
 NODENAME=re.compile(r"[A-Za-z0-9._-]{1,160}\Z")
 MAX_WPCTL_TEXT=32768
 MAX_GRAPH_BYTES=6*1024*1024
@@ -122,6 +124,55 @@ def parse_cues(items:list[str])->list[str]:
         # No user audio data are loaded or logged by this supervisor.
         parsed.append(f"{i}={p}")
     return parsed
+
+
+def private_profile_cues()->list[str]:
+    """Only a user-owned 0600 JSON file in ignored .audit is accepted."""
+    if PROFILE.is_symlink():
+        raise SessionError("Refuse symlink local profile")
+    try:meta=PROFILE.lstat()
+    except FileNotFoundError:return []
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid!=os.getuid()
+            or (meta.st_mode & 0o777)!=0o600 or meta.st_size>16384):
+        raise SessionError("Local profile must be user-owned regular 0600")
+    try:
+        data=json.loads(PROFILE.read_text(encoding="utf-8"))
+    except (OSError,UnicodeError,ValueError) as exc:
+        raise SessionError("Corrupt local cue profile") from exc
+    if (not isinstance(data,dict) or set(data)!={"schema","cues"}
+            or data["schema"]!="cuewire-local-cues-v1"
+            or not isinstance(data["cues"],list)
+            or not all(isinstance(x,str) for x in data["cues"])):
+        raise SessionError("Unsupported cue profile schema")
+    return parse_cues(data["cues"])
+
+
+def write_private_profile(cues:list[str],replace:bool=False)->None:
+    """Explicit manual action; atomic private file, never checked into Git."""
+    parsed=parse_cues(cues)
+    directory=PROFILE.parent
+    if directory.is_symlink():
+        raise SessionError("Refuse symlink .audit")
+    directory.mkdir(mode=0o700,exist_ok=True)
+    meta=directory.lstat()
+    if not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid() or meta.st_mode&0o022:
+        raise SessionError("Unsafe .audit ownership or permissions")
+    if PROFILE.is_symlink() or (PROFILE.exists() and not replace):
+        raise SessionError("Profile exists; explicitly use --replace-profile")
+    # An owner-only temporary file is atomically renamed into place.
+    fd,name=tempfile.mkstemp(prefix=".cuewire-profile-",dir=directory)
+    try:
+        os.fchmod(fd,0o600)
+        with os.fdopen(fd,"w",encoding="utf-8") as output:
+            json.dump({"schema":"cuewire-local-cues-v1","cues":parsed},
+                      output,ensure_ascii=True,indent=2)
+            output.write("\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(name,PROFILE)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
 
 
 def scope_active()->bool:
@@ -240,6 +291,7 @@ def run_inside(mic:str,monitor:str,cues:list[str],latency_ms:int,
 def main(argv:list[str]|None=None)->int:
     ap=argparse.ArgumentParser(description=__doc__)
     modes=ap.add_mutually_exclusive_group(required=True)
+    modes.add_argument("--configure",action="store_true",help="explicitly save local 0600 cue profile under ignored .audit")
     modes.add_argument("--check",action="store_true",help="read-only device auto-detect and scope preflight")
     modes.add_argument("--run",action="store_true",help="explicit single foreground scoped engine+TUI")
     modes.add_argument("--inside-scope",action="store_true",help=argparse.SUPPRESS)
@@ -249,20 +301,32 @@ def main(argv:list[str]|None=None)->int:
     ap.add_argument("--latency-ms",type=int,default=25)
     ap.add_argument("--no-motion",action="store_true")
     ap.add_argument("--mono",action="store_true")
+    ap.add_argument("--replace-profile",action="store_true",
+                    help="allow explicit overwrite only together with --configure")
     a=ap.parse_args(argv)
     try:
         if not 5<=a.latency_ms<=150:
             raise SessionError("latency-ms must be 5..150")
+        if a.replace_profile and not a.configure:
+            raise SessionError("--replace-profile requires --configure")
+        if a.configure:
+            write_private_profile(a.cue,replace=a.replace_profile)
+            print("Private local cue profile saved (0600) in ignored .audit")
+            print("No PipeWire, socket or Hyprland settings changed")
+            return 0
+        cues=parse_cues(a.cue) if a.cue else private_profile_cues()
         mic,monitor=resolve_nodes(a.mic,a.monitor)
         if a.check:
             print("Default audio selection (READ ONLY; does NOT change defaults)")
             print("  mic:    "+mic)
             print("  output: "+monitor)
             print("  scope:  "+("ACTIVE" if scope_active() else "inactive"))
-            print("  cue:    "+str(len(a.cue))+" provided")
-            if a.cue:parse_cues(a.cue)
+            print("  cues:   "+str(len(cues))+" validated")
+            if not cues:
+                print("  setup:  --configure --cue N=/absolute/audio.wav")
             return 0
-        cues=parse_cues(a.cue)
+        if not cues:
+            raise SessionError("No cues configured; use --configure --cue N=/absolute/audio.wav")
         if not BIN.is_file() or not os.access(BIN,os.X_OK):
             raise SessionError("Missing compiled target/release/cuewire")
         if a.inside_scope:

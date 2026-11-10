@@ -296,13 +296,13 @@ def export(capture_dir: Path, voice_dir: Path,
     with report_file.open("x",encoding="utf-8") as f:
         json.dump(report,f,sort_keys=True,ensure_ascii=False,indent=2)
         f.write("\n")
-    output_files.append({
+    checksum_files = output_files + [{
         "relative_path":"listening-manifest.json",
         "sha256":digest(report_file),
-    })
+    }]
     # All locally emitted files except SHA256SUMS, which is self-referential.
     with (final_dir/"SHA256SUMS").open("x",encoding="utf-8") as f:
-        for file in output_files:
+        for file in checksum_files:
             f.write(file["sha256"]+"  "+file["relative_path"]+"\n")
     print("Private CueWire M5 listening A/B: physical echo + digitally mixed M4 voice")
     for item in output_files:

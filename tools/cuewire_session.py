@@ -22,7 +22,6 @@ import stat
 import subprocess
 import sys
 import time
-import wave
 
 ROOT=Path(__file__).resolve().parents[1]
 SCOPE="cuewire-hotkeys.scope"
@@ -113,13 +112,14 @@ def parse_cues(items:list[str])->list[str]:
         if not p.is_absolute() or not p.is_file() or p.is_symlink():
             raise SessionError("Cue must be an existing, non-symlink absolute file")
         try:
-            with wave.open(str(p),"rb") as wav:
-                if (wav.getnchannels() not in (1,2)
-                        or wav.getnframes()<1
-                        or wav.getframerate()<8000):
-                    raise SessionError("Invalid audio WAV header")
-        except (OSError,ValueError,wave.Error) as exc:
-            raise SessionError("Cue must be a readable PCM WAV") from exc
+            with p.open("rb") as source:
+                header=source.read(12)
+            if p.stat().st_size<=44 or header[:4] not in (b"RIFF",b"RF64") or header[8:12]!=b"WAVE":
+                raise SessionError("Cue must be a nonempty WAV container")
+        except OSError as exc:
+            raise SessionError("Cannot read cue WAV header") from exc
+        # Extended RF64/WAVE_FORMAT_EXTENSIBLE are left to pw-play.
+        # No user audio data are loaded or logged by this supervisor.
         parsed.append(f"{i}={p}")
     return parsed
 
@@ -264,8 +264,20 @@ def main(argv:list[str]|None=None)->int:
         for cue in cues:args.extend(["--cue",cue])
         if a.no_motion:args.append("--no-motion")
         if a.mono:args.append("--mono")
-        outcome=subprocess.run(args,check=False)
-        return outcome.returncode
+        # Keep the caller outside the scope. If its foreground session
+        # is interrupted before the TUI can clean up, kill ONLY a scope
+        # whose marker belongs to CueWire, never a guessed process tree.
+        try:
+            outcome=subprocess.run(args,check=False)
+            return outcome.returncode
+        except KeyboardInterrupt:
+            if scope_active() and scope_marked():
+                killed=command(["systemctl","--user","kill",
+                                "--kill-whom=cgroup","--signal=SIGKILL",
+                                SCOPE],timeout=2.0)
+                if killed.returncode:
+                    raise SessionError("Interrupted; scoped cgroup kill failed")
+            return 130
     except (SessionError,OSError) as exc:
         print("cuewire-session: "+str(exc),file=sys.stderr)
         return 2

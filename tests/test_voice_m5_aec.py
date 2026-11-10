@@ -45,6 +45,7 @@ import voice_m5_chaos_capture as chaos
 import voice_m5_chaos_reference_probe as chaos_ref
 import voice_m5_chaos_reference_validate as chaos_validate
 import voice_m5_chaos_speex_real as chaos_real
+import voice_m5_chaos_listen_ab as chaos_listen
 import voice_m5_capture as capture_runtime
 from contextlib import ExitStack
 import ctypes
@@ -269,7 +270,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_chaos_capture.py",
                        "voice_m5_chaos_reference_probe.py",
                        "voice_m5_chaos_reference_validate.py",
-                       "voice_m5_chaos_speex_real.py"):
+                       "voice_m5_chaos_speex_real.py",
+                       "voice_m5_chaos_listen_ab.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -2761,6 +2763,59 @@ class M5Tests(unittest.TestCase):
                          control["processors"]["slight_residual"])
         self.assertFalse(control["processors"]["slight_residual"][
             "real_untouched_voice_truth_available"])
+
+    def test_chaos_private_listen_shared_gain_wav_and_no_overwrite(self):
+        """All 12 actual listening previews share one attenuation-only gain."""
+        rng=np.random.default_rng(801133)
+        n=90*RATE
+        raw=np.zeros(n,dtype=np.float64)
+        # Different physical moments, including quiet speech, without
+        # injecting any additional synthetic voice into the export.
+        for _,start,end in chaos_listen.SEGMENTS:
+            a,b=round(start*RATE),round(end*RATE)
+            raw[a:b]=.08*rng.standard_normal(b-a)
+        native=raw*.5
+        guarded=raw*.8
+        original={
+            "original_raw":raw,
+            "native_speex":native,
+            "dual_speex_delta_guarded_offline":guarded,
+        }
+        exported,info=chaos_listen.checked_pcm_variants(original)
+        self.assertEqual(len(exported),4)
+        self.assertEqual(sum(map(len,exported.values())),12)
+        self.assertEqual(info["gain_linear"],1.)
+        self.assertTrue(info["one_gain_for_ALL_files_in_ALL_segments"])
+        self.assertFalse(info["per_variant_or_per_segment_normalization"])
+        label=chaos_listen.SEGMENTS[0][0]
+        src,classic,guarded_pcm=exported[label]
+        self.assertEqual(
+            (len(src),src.dtype),
+            (6*RATE,np.dtype("<i2")))
+        pwr=lambda x:float(np.mean(x.astype(np.float64)**2))
+        self.assertAlmostEqual(
+            10*math.log10(pwr(src)/pwr(classic)),
+            20*math.log10(2),delta=.002)
+        self.assertAlmostEqual(
+            10*math.log10(pwr(src)/pwr(guarded_pcm)),
+            20*math.log10(1.25),delta=.002)
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp)/"test-private.wav"
+            chaos_listen.wav_write_exclusive(target,src)
+            with wave.open(str(target),"rb") as wav:
+                self.assertEqual(
+                    (wav.getframerate(),wav.getnchannels(),
+                     wav.getsampwidth(),wav.getnframes()),
+                    (RATE,1,2,6*RATE))
+            with self.assertRaises(FileExistsError):
+                chaos_listen.wav_write_exclusive(target,src)
+        louder=dict(original)
+        louder["original_raw"]=raw*2.5
+        out,gain=chaos_listen.checked_pcm_variants(louder)
+        self.assertLess(gain["gain_linear"],1.)
+        self.assertEqual(len(out),4)
+        with self.assertRaisesRegex(ValueError,"Expected exactly"):
+            chaos_listen.checked_pcm_variants({"original_raw":raw})
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

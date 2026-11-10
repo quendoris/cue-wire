@@ -42,6 +42,7 @@ import voice_m5_speex_delta as speex_delta
 import voice_m5_listening_ab as listening_ab
 import voice_m5_mouse_click_control as mouse_control
 import voice_m5_chaos_capture as chaos
+import voice_m5_chaos_reference_probe as chaos_ref
 import voice_m5_capture as capture_runtime
 from contextlib import ExitStack
 import ctypes
@@ -263,7 +264,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_speex_delta.py",
                        "voice_m5_listening_ab.py",
                        "voice_m5_mouse_click_control.py",
-                       "voice_m5_chaos_capture.py"):
+                       "voice_m5_chaos_capture.py",
+                       "voice_m5_chaos_reference_probe.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -2551,6 +2553,86 @@ class M5Tests(unittest.TestCase):
                     self.assertEqual(hashcode,aec.digest(out/filename))
             self.assertEqual(result["physical_microphone_analysis"]["clipped_samples"],0)
             self.assertFalse(result["sink_volume_changed"])
+    def test_chaos_two_farend_restart_known_synthetic_lags(self):
+        """Both independently restarted speaker references are realigned."""
+        rng=np.random.default_rng(801127)
+        digital=rng.normal(0,.018,(5*RATE,2))
+        digital_mean=digital.mean(axis=1)
+        mic=rng.normal(0,.0005,58*RATE)
+        for launch,delay in ((11.,.121),(44.,.249)):
+            i=round((launch+delay)*RATE)
+            mic[i:i+len(digital_mean)] += .25*digital_mean
+        first=chaos_ref.probe_one(digital,mic,11.)
+        second=chaos_ref.probe_one(digital,mic,44.)
+        self.assertTrue(first["valid_echo_lag"])
+        self.assertTrue(second["valid_echo_lag"])
+        self.assertGreater(first["peak_highmid_normalized_correlation"],.1)
+        self.assertGreater(second["peak_highmid_normalized_correlation"],.1)
+        self.assertAlmostEqual(
+            first["lag_after_process_launch_ms"],121.,delta=4.)
+        self.assertAlmostEqual(
+            second["lag_after_process_launch_ms"],249.,delta=4.)
+        self.assertEqual(first["best_channel"],"stereo_arithmetic_mean")
+
+    def test_chaos_reference_probe_sha_pins_new_private_numeric_only(self):
+        """All original WAVs, music and manifest protected against mutation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            audit=Path(tmp)/".audit"
+            capture_dir=audit/"voice-aec/M5-chaos-001"
+            capture_dir.mkdir(parents=True)
+            music=capture_dir/"song.wav"
+            rng=np.random.default_rng(801128)
+            song=rng.normal(0,.01,(32*RATE,2))
+            with wave.open(str(music),"wb") as f:
+                f.setnchannels(2);f.setsampwidth(2);f.setframerate(RATE)
+                f.writeframes(speex_baseline.exact_pcm16(song).tobytes())
+            mic_file=capture_dir/"microphone-chaos-raw.wav"
+            pcm16_file(mic_file,np.zeros(60*RATE))
+            mf=capture_dir/"manifest.json"
+            mf.write_text(json.dumps({
+                "schema":"cuewire-M5-chaos-physical-doublestress-v1",
+                "status":"captured_ctrl_c_at_free_stress",
+                "music_stream_volume":.6,
+                "manual_ctrl_c":True,
+                "sink_volume_changed":False,
+                "raw_wav_file":"microphone-chaos-raw.wav",
+                "source_mic_sha256":aec.digest(mic_file),
+                "physical_microphone_analysis":{"recorded_frames":60*RATE},
+                "music_source":{"path":str(music),"sha256":aec.digest(music),
+                                "rate":RATE,"channels":2},
+                "playback_software_start_stop_events":[
+                    {"instance":1,"music_file_start_s":0.,
+                     "start_since_recorder_launch_s":11.,
+                     "end_since_recorder_launch_s":35.},
+                    {"instance":2,"music_file_start_s":0.,
+                     "start_since_recorder_launch_s":44.,
+                     "end_since_recorder_launch_s":59.},
+                ]
+            }))
+            sources=(mf,mic_file,music)
+            old_hashes=[aec.digest(f) for f in sources]
+            with mock.patch.object(chaos_ref,"AUDIT",audit.resolve()), \
+                 mock.patch.object(chaos_ref,"probe_one",side_effect=[
+                    {"status":"synthetic_11","valid_echo_lag":True},
+                    {"status":"synthetic_44","valid_echo_lag":True}
+                 ]) as probe:
+                out=audit/"voice-aec/M5-chaos-alignment-001"
+                result=chaos_ref.analyze(capture_dir,out)
+                self.assertEqual(probe.call_count,2)
+                self.assertEqual(
+                    result["separate_process_restarts"][0]["estimate"]["status"],
+                    "synthetic_11")
+                self.assertTrue((out/"music-alignment.json").is_file())
+                self.assertTrue((out/"SHA256SUMS").is_file())
+                self.assertEqual(list(out.glob("*.wav")),[])
+                self.assertEqual([aec.digest(f) for f in sources],old_hashes)
+                with self.assertRaises(FileExistsError):
+                    chaos_ref.analyze(capture_dir,out)
+                with music.open("ab") as f:
+                    f.write(b"tamper")
+                with self.assertRaisesRegex(ValueError,"SHA256"):
+                    chaos_ref.analyze(
+                        capture_dir,audit/"voice-aec/M5-chaos-alignment-002")
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -39,6 +39,7 @@ import voice_m5_speex_baseline as speex_baseline
 import voice_m5_speex_zero_reference as speex_zero
 import voice_m5_speex_known_voice as speex_voice
 import voice_m5_speex_delta as speex_delta
+import voice_m5_listening_ab as listening_ab
 from contextlib import ExitStack
 import ctypes
 
@@ -256,7 +257,8 @@ class M5Tests(unittest.TestCase):
                        "voice_m5_speex_baseline.py",
                        "voice_m5_speex_zero_reference.py",
                        "voice_m5_speex_known_voice.py",
-                       "voice_m5_speex_delta.py"):
+                       "voice_m5_speex_delta.py",
+                       "voice_m5_listening_ab.py"):
             proc = subprocess.run([sys.executable, str(TOOLS / script), "--help"],
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -2222,6 +2224,172 @@ class M5Tests(unittest.TestCase):
                         low,high,m4,prev_file,
                         audit/"voice-aec/M5-speex-delta-002",
                         native_loader=lambda:(FakeSpeex(),"fake-native"))
+
+    def test_listening_ab_common_gain_and_wav_exclusive(self):
+        """Explicit user-requested WAVs preserve matched-level A/B comparisons."""
+        rng=np.random.default_rng(224401)
+        signal=rng.normal(0,.010,6*RATE)
+        triple=(signal,signal*.5,signal*.8)
+        pcm,meta=listening_ab.matched_pcm16(triple)
+        self.assertEqual(len(pcm),3)
+        self.assertTrue(meta["same_linear_amplitude_gain_applied_to_all_three"])
+        self.assertFalse(meta["per_file_normalization"])
+        self.assertEqual(meta["joint_post_gain_target_peak_dbfs"],-3.)
+        g=meta["shared_gain_linear"]
+        np.testing.assert_allclose(
+            pcm[0].astype(np.float64)/32768,
+            signal*g,atol=1/32768)
+        self.assertAlmostEqual(
+            aec.db(aec.rms(pcm[0].astype(np.float64)/32768))-
+            aec.db(aec.rms(pcm[1].astype(np.float64)/32768)),
+            20*math.log10(2),delta=.002)
+        with tempfile.TemporaryDirectory() as tmp:
+            dest=Path(tmp)/"demo.wav"
+            listening_ab.write_wav(dest,pcm[0])
+            with wave.open(str(dest),"rb") as wav:
+                self.assertEqual(
+                    (wav.getframerate(),wav.getnchannels(),
+                     wav.getsampwidth(),wav.getnframes()),
+                    (RATE,1,2,6*RATE))
+            with self.assertRaises(FileExistsError):
+                listening_ab.write_wav(dest,pcm[0])
+        with self.assertRaisesRegex(ValueError,"three finite"):
+            listening_ab.matched_pcm16(triple[:2])
+
+    def test_listening_ab_exact_source_pins_and_six_private_wavs(self):
+        """Two levels, three variants each; nothing auto-played or altered."""
+        rng=np.random.default_rng(224402)
+        class FakeSpeex:
+            def speex_echo_state_init(self,frame,tail):
+                assert (frame,tail)==(480,5760)
+                return 5567
+            def speex_echo_ctl(self,state,request,ptr):
+                data=ctypes.cast(ptr,ctypes.POINTER(ctypes.c_int))
+                if request==24: self.samplerate=data[0]
+                elif request==25: data[0]=self.samplerate
+                elif request==3: data[0]=480
+                else: return -1
+                return 0
+            def speex_echo_cancellation(self,state,rec,far,out):
+                signal=np.ctypeslib.as_array(rec,shape=(480,))
+                speaker=np.ctypeslib.as_array(far,shape=(480,))
+                target=np.ctypeslib.as_array(out,shape=(480,))
+                target[:]=np.rint(.95*signal.astype(np.float64)-
+                                   .18*speaker.astype(np.float64)).astype(np.int16)
+            def speex_echo_state_destroy(self,state):
+                assert state==5567
+        with tempfile.TemporaryDirectory() as temp:
+            audit=Path(temp)/".audit"
+            music_dir=audit/"voice-aec/M5-006"
+            capture=audit/"voice-aec/M5-level-030-001"
+            voice=audit/"voice-m4/M4-R0-ALSA-007"
+            previous=audit/"voice-aec/M5-speex-delta-001"
+            for folder in (music_dir,capture,voice,previous):
+                folder.mkdir(parents=True)
+            x=rng.normal(0,.015,20*RATE)
+            mp=music_dir/"reference-sent.wav"
+            pcm16_file(mp,x)
+            mm=music_dir/"manifest.json"
+            mm.write_text('{"test":true}')
+            mic=rng.normal(0,.001,36*RATE)
+            lag=speex_baseline.LAG_030_SAMPLES
+            mic[lag-480:lag-480+len(x)] += .015*x
+            mw=capture/"microphone-aba-raw.wav"
+            pcm16_file(mw,mic)
+            m={
+                "schema":"cuewire-M5-continuous-ABA-control-v1",
+                "status":"captured_aba_for_noise_diagnostics",
+                "source_mic_sample_spec":"s16le 1ch 48000Hz",
+                "source_mic_name":"alsa_input.usb-synthetic",
+                "speaker_sink_name":"alsa_output.pci-synthetic",
+                "speaker_play_volume":.30,
+                "reference_source_capture":str(music_dir),
+                "reference_source_manifest_sha256":aec.digest(mm),
+                "reference_wav_sha256":aec.digest(mp),
+                "reference_duration_s":20.0,
+                "requested_speaker_off_before_s":8,
+                "requested_speaker_off_after_s":8,
+                "microphone":{"sha256":aec.digest(mw)},
+            }
+            cm=capture/"manifest.json"
+            cm.write_text(json.dumps(m))
+            v=np.zeros(12*RATE)
+            v[6*RATE:]+=rng.normal(0,.006,6*RATE)
+            vw=voice/"raw.wav"
+            pcm16_file(vw,v)
+            vm=voice/"manifest.json"
+            vm.write_text(json.dumps({
+                "schema":"cuewire-M4-raw-alsa-v1",
+                "status":"recorded_unprocessed_raw",
+                "source":"physical_alsa_hw",
+                "device":"hw:1,2",
+                "card_id":"SYNTHETIC",
+                "raw_wav":"raw.wav",
+                "raw_sha256":aec.digest(vw),
+                "processing":{
+                    key:False for key in ("aec","denoise","eq",
+                    "compression","virtual_mic","normalization","monitoring")},
+                "measurements":{"rate":RATE,"channels":1,
+                                "sample_width_bytes":2,"clipped_samples":0}
+            }))
+            original_sources={
+                "digital_reference":aec.digest(mp),
+                "digital_reference_manifest":aec.digest(mm),
+                "level030_manifest":aec.digest(cm),
+                "level030_raw_mic":aec.digest(mw),
+                "m4_voice_manifest":aec.digest(vm),
+                "m4_voice_raw":aec.digest(vw),
+            }
+            report=previous/"speex-delta.json"
+            report.write_text(json.dumps({
+                "schema":"cuewire-M5-SpeexDSP-dual-branch-reference-delta-v1",
+                "voice_nearend_only_synthetic":True,
+                "approved_for_live_mic":False,
+                "source_sha256":original_sources,
+                "speaker_only_and_voice_report_030":{
+                    "historical_fixed_lag_samples":lag}
+            }))
+            original_files=[mp,mm,mw,cm,vw,vm,report]
+            old_hashes=[aec.digest(p) for p in original_files]
+            pins=[
+                (listening_ab,"AUDIT",audit.resolve()),
+                (playback_coherence,"AUDIT",audit.resolve()),
+                (listening_ab,"HIGH_MANIFEST_SHA",aec.digest(cm)),
+                (listening_ab,"HIGH_MIC_SHA",aec.digest(mw)),
+                (listening_ab,"REFERENCE_SHA",aec.digest(mp)),
+                (listening_ab,"SOURCE_MANIFEST_SHA",aec.digest(mm)),
+                (listening_ab,"DELTA_REPORT_SHA256",aec.digest(report)),
+                (playback_coherence,"REFERENCE_SHA",aec.digest(mp)),
+                (playback_coherence,"SOURCE_MANIFEST_SHA",aec.digest(mm)),
+            ]
+            with ExitStack() as stack:
+                for obj,field,val in pins:
+                    stack.enter_context(mock.patch.object(obj,field,val))
+                dest=audit/"voice-aec/M5-listening-001"
+                result=listening_ab.export(
+                    capture,voice,report,dest,volume=.30,
+                    native_loader=lambda:(FakeSpeex(),"fake-lib"))
+                self.assertEqual(len(result["files"]),6)
+                self.assertFalse(result["automatically_played"])
+                self.assertFalse(result["monitoring_or_audio_route_changed"])
+                self.assertTrue(result["no_external_microphone_recording"])
+                for level in ("voice_-50dbfs","voice_-39dbfs"):
+                    files=list((dest/level).glob("*.wav"))
+                    self.assertEqual(len(files),3)
+                    gains=result["case_settings"][level]["export_shared_gain"]
+                    self.assertTrue(
+                        gains["same_linear_amplitude_gain_applied_to_all_three"])
+                self.assertEqual(old_hashes,[aec.digest(p) for p in original_files])
+                with self.assertRaises(FileExistsError):
+                    listening_ab.export(capture,voice,report,dest,
+                        native_loader=lambda:(FakeSpeex(),"fake-lib"))
+                with (capture/"microphone-aba-raw.wav").open("ab") as fh:
+                    fh.write(b"tamper")
+                with self.assertRaisesRegex(ValueError,"SHA256"):
+                    listening_ab.export(
+                        capture,voice,report,
+                        audit/"voice-aec/M5-listening-002",
+                        native_loader=lambda:(FakeSpeex(),"fake-lib"))
 
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

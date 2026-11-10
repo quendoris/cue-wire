@@ -554,3 +554,37 @@ CueWire engine**. A separate user-configured Super+C scope/hotkey
 remains the emergency full-engine mechanism; no hotkeys are installed
 by this UI. Physical hardware controls still require a live safety
 review before being considered production-ready.
+
+
+## M7.1 compact Quendoris TUI — six-pane prototype
+
+The accepted [site's original 420×420 angular Quendoris skull
+mark](https://github.com/quendoris/site/blob/main/dist/assets/b-reference-mark.svg)
+and B-reference dark palette are reused (not reinterpreted). A
+restrained ~79-second TrueColor gradient slowly changes illumination
+behind SIX compact top panels: Runtime / Devices / Research and
+Cue State / Safety / Audit. The bottom COMMAND dock collapses to
+one terminal row with window focus and expands when Enter opens
+command entry. Tab or Esc collapses it again.
+
+**DEMO ONLY**: no PipeWire, microphone, evdev, socket, device changes,
+live DSP, default route changes, daemons or stored commands.
+The previously accepted M6 Physical-007 remains an offline reference.
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_cuewire_tui.py' -v
+python3 tools/cuewire_tui.py --snapshot  # static, ordinary stdout
+python3 tools/cuewire_tui.py --demo      # animated terminal console
+python3 tools/cuewire_tui.py --demo --no-motion
+~~~
+
+Use Tab/arrows to focus windows, Enter to expand command dock,
+play 4 to change the simulated Cue State, doctor to inspect
+skipped-vs-tested demo checks, and Esc/Tab to collapse. Ctrl+C
+restores the terminal. Minimum terminal size is 68x23.
+15 synthetic tests cover exact mark geometry, window/dock layout,
+command safety, terminal behaviors and preview isolation.
+
+See [M7.1 compact interface prototype and safety acceptance
+matrix](docs/m7-compact-tui.md). Real control via the separate
+tools/cuewire_console.py is NOT enabled in this visual demo.

@@ -161,6 +161,26 @@ class OperatorConsoleTests(unittest.TestCase):
              redirect_stdout(io.StringIO()):
             self.assertEqual(ui.main(["--once"]), 2)
 
+
+    def test_interactive_demo_is_pure_and_simulates_cues_without_audio(self):
+        from types import SimpleNamespace
+        output = io.StringIO()
+        with patch.object(ui.sys, "stdin",
+                          SimpleNamespace(isatty=lambda: True)), \
+             patch.object(ui, "request",
+                          side_effect=AssertionError("must not use socket")), \
+             patch.object(ui, "validate_socket_location",
+                          side_effect=AssertionError("must not touch runtime dir")), \
+             patch("builtins.input",
+                   side_effect=["play 4", "status", "stop", "exit"]), \
+             redirect_stdout(output):
+            self.assertEqual(ui.main(["--demo"]), 0)
+        shown = output.getvalue()
+        self.assertIn("DEMO / SIMULATED", shown)
+        self.assertIn("SIMULATED: cue 4 selected", shown)
+        self.assertIn("SIMULATED: cue stopped", shown)
+        self.assertIn("Running CueWire engine left untouched", shown)
+
     def test_visible_does_not_emit_terminal_escape(self):
         self.assertNotIn("\x1b", ui.visible("OK\x1b[2J", 80))
         self.assertLessEqual(len(ui.visible("a"*100, 12)), 12)

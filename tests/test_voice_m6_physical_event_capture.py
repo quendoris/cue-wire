@@ -135,6 +135,41 @@ class PhysicalPrivacyTests(unittest.TestCase):
         with patch.object(capture.fcntl,"ioctl"):
             capture.set_kernel_monotonic(fake)
 
+    def test_terminal_calibration_hides_input_and_restores_tty(self):
+        attrs = [0, 0, 0,
+                 capture.termios.ECHO | capture.termios.ICANON |
+                 capture.termios.ISIG, 0, 0, []]
+        fake_stdin = SimpleNamespace(isatty=lambda:True, fileno=lambda:17)
+        with patch.object(capture.sys, "stdin", fake_stdin), \
+                patch.object(capture.termios, "tcgetattr",
+                             return_value=attrs), \
+                patch.object(capture.termios, "tcsetattr") as setattrs, \
+                patch.object(capture.termios, "tcflush") as flush:
+            with capture.noecho_capture_terminal():
+                self.assertEqual(setattrs.call_count, 1)
+                active = setattrs.call_args.args[2]
+                self.assertFalse(active[3] & capture.termios.ECHO)
+                self.assertFalse(active[3] & capture.termios.ICANON)
+                self.assertTrue(active[3] & capture.termios.ISIG)
+            self.assertEqual(setattrs.call_count, 2)
+            self.assertEqual(setattrs.call_args.args[2], attrs)
+            self.assertEqual(flush.call_count, 2)
+
+    def test_terminal_restores_on_ctrl_c(self):
+        attrs = [0, 0, 0, capture.termios.ECHO |
+                 capture.termios.ICANON | capture.termios.ISIG,
+                 0, 0, []]
+        fake_stdin = SimpleNamespace(isatty=lambda:True, fileno=lambda:17)
+        with patch.object(capture.sys,"stdin",fake_stdin), \
+                patch.object(capture.termios,"tcgetattr",
+                             return_value=attrs), \
+                patch.object(capture.termios,"tcsetattr") as setattrs, \
+                patch.object(capture.termios,"tcflush"):
+            with self.assertRaises(KeyboardInterrupt):
+                with capture.noecho_capture_terminal():
+                    raise KeyboardInterrupt()
+            self.assertEqual(setattrs.call_args.args[2], attrs)
+
     def test_wav_format_guard_on_synthetic_fixture(self):
         import wave
         with tempfile.TemporaryDirectory() as d:

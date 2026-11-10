@@ -210,16 +210,31 @@ def run_inside(mic:str,monitor:str,cues:list[str],latency_ms:int,
     command_line=[str(BIN),"run","--mic",mic,"--monitor",monitor,
                   "--latency-ms",str(latency_ms)]
     for cue in cues:command_line.extend(["--cue",cue])
-    child=subprocess.Popen(command_line,stdin=subprocess.DEVNULL,
-                           stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    # An anonymous Linux memfd captures startup errors only, with
+    # NO persistent personal logs and no output in the fullscreen TUI.
+    logfd=os.memfd_create("cuewire-session-diagnostics",0)
+    child=None
     try:
-        wait_live(child,mic,monitor)
+        child=subprocess.Popen(
+            command_line,stdin=subprocess.DEVNULL,
+            stdout=logfd,stderr=logfd)
+        try:
+            wait_live(child,mic,monitor)
+        except SessionError:
+            os.lseek(logfd,0,os.SEEK_SET)
+            detail=os.read(logfd,4096).decode("utf-8","replace")
+            safe="".join(ch if ch.isprintable() else " " for ch in detail)
+            if safe:
+                print("CueWire Rust startup diagnostics: "+safe[-1500:],
+                      file=sys.stderr)
+            raise
         import cuewire_tui
         # We are in the single emergency-kill cgroup with all engine
         # child processes; TUI stays in THIS foreground process.
         return cuewire_tui.run_demo(no_motion=no_motion,mono=mono,live=True)
     finally:
-        stop_engine(child)
+        if child is not None:stop_engine(child)
+        os.close(logfd)
 
 
 def main(argv:list[str]|None=None)->int:

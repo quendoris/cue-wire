@@ -282,6 +282,9 @@ class LiveModel(Model):
                 self.add("LIVE: control socket responded; DSP remains offline")
             else:
                 self.add("OFFLINE: " + self.backend.short(self.report.message, 74))
+        if self.managed and was_online and not self.report.connected:
+            self.add("MANAGED: engine lost; ending whole owned session")
+            self.terminated = True
 
     def execute(self, cmd: str) -> None:
         """Fail-closed real remote actions, NEVER simulate successful playback."""
@@ -712,6 +715,8 @@ def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False,
         motion=not no_motion,mono=mono)
     if live:
         state.refresh(announce=True)
+        if managed and not state.report.connected:
+            raise RuntimeError("Managed engine disappeared before TUI started")
     reader=KeyReader()
     last_key=time.monotonic()
     last_frame=0.0

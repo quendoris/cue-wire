@@ -89,7 +89,8 @@ def validate_socket_location(environment: Mapping[str, str] | None = None) -> Pa
         raise ConsoleError(f"Cannot examine CueWire socket: {exc}") from exc
     if not stat.S_ISSOCK(sock_meta.st_mode):
         raise ConsoleError("CueWire endpoint is not a real Unix socket")
-    if sock_meta.st_uid != os.getuid() or sock_meta.st_mode & 0o077:
+    if (sock_meta.st_uid != os.getuid()
+            or (sock_meta.st_mode & 0o777) != 0o600):
         raise ConsoleError("CueWire socket must be user-owned with mode 0600")
     return destination
 
@@ -110,8 +111,18 @@ def request(command: str, destination: Path | None = None) -> str:
     kind, approved = operator_command(command)
     if kind != "remote" or approved is None:
         raise ConsoleError("Only allowlisted remote commands may be transmitted")
-    # Explicit path injection is used by isolated unit tests only.
-    path = destination if destination is not None else validate_socket_location()
+    if destination is None:
+        path = validate_socket_location()
+    else:
+        # Even explicitly supplied endpoints (e.g. synthetic tests) must
+        # pass exactly the same runtime owner and 0600 socket policy.
+        if destination.name != SOCKET_NAME:
+            raise ConsoleError("Unexpected CueWire socket filename")
+        path = validate_socket_location({
+            "XDG_RUNTIME_DIR": str(destination.parent)
+        })
+        if path != destination:
+            raise ConsoleError("Unexpected CueWire destination")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(SOCKET_TIMEOUT_S)
         try:

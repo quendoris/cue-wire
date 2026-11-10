@@ -220,9 +220,12 @@ def run(source:Path, alignment:Path, out:Path)->dict:
     offsets=validate_alignment(source,alignment,manifest)
     mask,highband,mask_report=sample_mask(mic,manifest,events,offsets)
     raw=to_pcm16(mic)
+    # Model the anti-sound as an independent, explicitly signed channel.
+    # No changes to mic are made until the final additive mix.
+    inverted_correction=-mask.astype(np.float64)*highband
     tracks={"A_original":raw}
     for name,alpha in GAINS.items():
-        candidate=to_pcm16(mic-alpha*mask*highband)
+        candidate=to_pcm16(mic+alpha*inverted_correction)
         if not np.array_equal(candidate[mask==0],raw[mask==0]):
             raise ValueError("Any sample outside event mask was modified")
         tracks[name]=candidate

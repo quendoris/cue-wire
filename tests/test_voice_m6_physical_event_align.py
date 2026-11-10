@@ -60,12 +60,15 @@ def synthetic_alignment(with_impulses: bool = True):
             train=np.arange(1.2,3.34,.19)
         else:
             train=np.arange(3.8,6.01,.17)
+        # Variable press-to-release timing prevents a false shortcut:
+        # a fixed +75ms release shift lets the algorithm associate a
+        # release with the preceding press's stronger acoustic impulse.
         if name.endswith("release"):
-            train=train+.075
+            train=train+rng.uniform(.04,.14,len(train))
         held=np.arange(6.45,12.31,.47)
         held += rng.uniform(-.048,.048,len(held))
         if name.endswith("release"):
-            held=held+.075
+            held=held+rng.uniform(.04,.14,len(held))
         times[name]=(train,held)
     events=[]
     for kind,(training,heldout) in times.items():

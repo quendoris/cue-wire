@@ -60,6 +60,11 @@ def samples_from_ms(ms:float)->int:
 def phase_bounds(phase:dict, start_ns:int, total:int)->tuple[int,int]:
     a=round((phase["start_monotonic_ns"]-start_ns)*RATE/1e9)
     b=round((phase["end_monotonic_ns"]-start_ns)*RATE/1e9)
+    # pw-record stopped about 175ms before the final wall-clock phase
+    # timestamp in this pinned physical capture. Clip ONLY this bounded
+    # terminal discrepancy; never extrapolate or manufacture audio.
+    if b > total and 0 < b-total <= round(.25*RATE):
+        b=total
     if not 0<=a<b<=total:
         raise ValueError("Recorded physical phase does not fit mic PCM")
     return a,b

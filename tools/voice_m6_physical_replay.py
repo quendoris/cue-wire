@@ -339,15 +339,33 @@ def run(capture:Path,initial:Path,consistency:Path,previous:Path,
     common_gain = min(1.,PEAK_CEILING/global_peak)
     a,b = interval(CLEAN,len(mic))
     clean_control = {}
+    shared_clean_raw = exact_pcm16(mic[a:b] * common_gain)
     for role in ("m6_frozen","m6_adaptive"):
         difference = np.count_nonzero(
             exact_pcm16(tracks[role][a:b]) != raw_pcm[a:b])
-        if difference:
+        postgain_diff = np.count_nonzero(
+            exact_pcm16(tracks[role][a:b]*common_gain)
+            != shared_clean_raw)
+        if difference or postgain_diff:
             raise ValueError(
-                f"Physical voice-only preservation failed: {role} "
-                f"{difference} changed PCM16 samples")
-        clean_control[role] = {"pcm16_changed_samples":0,
-                               "checked_frames":b-a}
+                f"Physical clean-voice PCM16 preservation failed: {role} "
+                f"before_gain={difference} after_shared_gain={postgain_diff}")
+        clean_control[role] = {
+            "pcm16_changed_samples_before_gain":0,
+            "pcm16_changed_samples_after_shared_gain":0,
+            "checked_frames":b-a}
+    # Source data must still be bit-exact just before writing ANY new WAVs.
+    audit_sources = [
+        (capture/"manifest.json", ACTUAL_MANIFEST_SHA256),
+        (capture/"microphone-chaos-raw.wav", ACTUAL_MIC_SHA256),
+        (initial, PINNED_FIRST_ALIGNMENT_SHA256),
+        (consistency, PINNED_CONSISTENCY_SHA256),
+        (previous, ACTUAL_REAL_SPEEX_REPORT_SHA256),
+        (Path(old["music_source"]["path"]).expanduser(),
+         ACTUAL_SONG_SHA256),
+    ]
+    if any(digest(path) != expected for path,expected in audit_sources):
+        raise RuntimeError("Pinned physical evidence changed during DSP")
     # All processing is complete before creating an output directory.
     audit = AUDIT.resolve(strict=True)
     out_parent = out.expanduser().parent.resolve(strict=True)
@@ -433,7 +451,7 @@ def main()->None:
         print(json.dumps(run(
             args.capture,args.initial_alignment,args.consistency,
             args.previous_report,args.out),indent=2,sort_keys=True))
-    except (OSError,ValueError,KeyError,TypeError,
+    except (OSError,ValueError,RuntimeError,KeyError,TypeError,
             np.linalg.LinAlgError) as err:
         p.exit(1,"ERROR: "+str(err)+"\n")
 

@@ -117,8 +117,10 @@ def set_kernel_monotonic(device) -> None:
     # Discard events that might have been queued under a different clock.
     while True:
         try:
-            if not device.read():
-                break
+            # python-evdev InputDevice.read() returns a GENERATOR.
+            # Always consume it; testing its truthiness never reads events.
+            for _ in device.read():
+                pass
         except BlockingIOError:
             break
 
@@ -195,8 +197,12 @@ def run(args: argparse.Namespace) -> dict:
     for label, path in (("keyboard",keyboard_path),("mouse",mouse_path)):
         try:
             device = evdev.InputDevice(path)
-            set_kernel_monotonic(device)
-            selector.register(device, selectors.EVENT_READ, data=label)
+            try:
+                set_kernel_monotonic(device)
+                selector.register(device, selectors.EVENT_READ, data=label)
+            except BaseException:
+                device.close()
+                raise
             open_devices.append(device)
         except BaseException:
             for old in open_devices:
@@ -303,11 +309,12 @@ def run(args: argparse.Namespace) -> dict:
         failure=failure or "Recorder did not produce WAV"
         status="invalid"
     if status=="capture_complete":
-        if (counts["mouse_press"] < 8 or
-                counts["keyboard_press"] < 8 or
-                not any(p["phase"]=="voice_only_holdout" for p in phases)):
+        phase_counts = {p["phase"]:p["event_counts_by_class"] for p in phases}
+        if (phase_counts.get("mouse_isolated",{}).get("mouse_press",0) < 8
+                or phase_counts.get("keyboard_isolated",{}).get(
+                    "keyboard_press",0) < 8):
             status="invalid_insufficient_calibration_events"
-            failure="Fewer than eight recorded presses of each class"
+            failure="Need >=8 isolated mouse and >=8 isolated keyboard presses"
     record = {
         "schema":"cuewire-M6-physical-anonymous-events-v1",
         "created_utc":datetime.now(timezone.utc).isoformat(),

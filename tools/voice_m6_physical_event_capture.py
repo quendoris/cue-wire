@@ -135,15 +135,22 @@ def set_kernel_monotonic(device) -> None:
     except OSError as exc:
         raise RuntimeError(
             "Cannot set evdev CLOCK_MONOTONIC; timestamps untrusted") from exc
-    # Discard events that might have been queued under a different clock.
-    while True:
+    # Drain events queued before the clock switch. python-evdev read()
+    # returns an iterable: an EMPTY iterable must terminate the loop.
+    # Bound BOTH batches and events so even a broken/flooding device
+    # cannot wedge unit tests or hold the microphone capture hostage.
+    for _batch in range(64):
+        saw_event = False
         try:
-            # python-evdev InputDevice.read() returns a GENERATOR.
-            # Always consume it; testing its truthiness never reads events.
-            for _ in device.read():
-                pass
+            for index, _event in enumerate(device.read()):
+                if index >= 8192:
+                    raise RuntimeError("Input event backlog too large to drain")
+                saw_event = True
         except BlockingIOError:
-            break
+            return  # Normal end of the nonblocking evdev queue.
+        if not saw_event:
+            return
+    raise RuntimeError("Input event queue did not quiesce after clock change")
 
 
 def terminate_owned(process: subprocess.Popen | None) -> None:

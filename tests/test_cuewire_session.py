@@ -177,7 +177,8 @@ class SessionDefaultsAndScope(unittest.TestCase):
                 self.assertEqual(
                     s.main(["--configure","--cue","4="+str(file)]),0)
             self.assertEqual(profile.stat().st_mode & 0o777,0o600)
-            self.assertEqual(s.private_profile_cues(),["4="+str(file)])
+            with patch.object(s,"PROFILE",profile):
+                self.assertEqual(s.private_profile_cues(),["4="+str(file)])
             with patch.object(s,"PROFILE",profile), \
                  redirect_stdout(io.StringIO()):
                 self.assertEqual(s.main(

@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
+import ctypes
 import fcntl
 import hashlib
 import json
@@ -48,6 +49,26 @@ PHASES = (
     ("voice_clicks_holdout", 9., "Голос + мышь + клавиатура. Без музыки"),
 )
 MAX_EVENT_ROWS = 10000
+PR_SET_PDEATHSIG = 1
+LIBC = ctypes.CDLL(None, use_errno=True)
+LIBC.prctl.argtypes = [
+    ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
+    ctypes.c_ulong, ctypes.c_ulong,
+]
+LIBC.prctl.restype = ctypes.c_int
+
+
+def make_child_die_with_parent(expected_parent_pid: int) -> None:
+    """Linux child pre-exec: no orphan recorder after parent SIGKILL.
+
+    Do not create descendants or launch shell. This script is
+    deliberately single-threaded; the child uses only libc prctl,
+    os.getppid, os._exit before exec.
+    """
+    if (LIBC.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0
+            or os.getppid() != expected_parent_pid):
+        os._exit(127)
+
 
 
 def sha(path: Path) -> str:
@@ -229,9 +250,11 @@ def run(args: argparse.Namespace) -> dict:
                 "--channel-map=mono","--format=s16",
                 "--latency=20ms",str(mic_path)
             ]
+            parent_pid = os.getpid()
             process=subprocess.Popen(
                 argv, stdout=subprocess.DEVNULL, stderr=log,
-                stdin=subprocess.DEVNULL, start_new_session=True)
+                stdin=subprocess.DEVNULL, start_new_session=True,
+                preexec_fn=lambda: make_child_die_with_parent(parent_pid))
             start_ns=time.monotonic_ns()
             print("M6: only timing and device class, no key/button identity.")
             print("The mic is recorded ONLY in this opt-in session. Ctrl+C aborts.")
@@ -338,6 +361,8 @@ def run(args: argparse.Namespace) -> dict:
             process.returncode if process is not None else None),
         "no_PipeWire_default_or_route_changes":True,
         "no_new_service_autostart_or_hotkeys":True,
+        "recorder_parent_death_signal":"SIGKILL (PR_SET_PDEATHSIG)",
+        "forced_parent_kill_wav_header_integrity_not_guaranteed":True,
         "no_key_event_identity_collected":True,
         "event_to_PCM_sample_mapping_unmeasured":True,
         "user_recordings_are_private":True,

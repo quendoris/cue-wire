@@ -308,3 +308,25 @@ See [M6 PHYSICAL-001 reproducible commands](docs/voice-m6-physical-replay.md).
 ~/.venvs/cuewire-voice-lab/bin/python \
   -m unittest discover -s tests -p 'test_voice_m6_physical_replay.py' -v
 ~~~
+
+
+## M6 PHYSICAL-EVENT-001 — anonymous mouse/keyboard event capture
+
+The existing M5 music+microphone recording is adequate for physical
+anti-music replay, but LACKS exact press/release event timestamps.
+For a reproducible mechanical-click experiment, an optional
+**foreground-only ~44-second** M6 capture is available:
+one explicitly chosen real microphone + two explicitly approved
+Linux evdev event sources. Written event records store ONLY coarse
+class (keyboard/mouse press/release) and kernel monotonic event
+timestamp; **no key identity, button code, text, device ID, mouse
+position or movement**. No background capture, automatic playback,
+routing changes, re-run or event grab. PCM sample-zero alignment
+MUST be validated later from real calibration clicks.
+
+See [short physical M6 anonymous event recording protocol](docs/voice-m6-physical-event-capture.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python -m unittest discover \
+  -s tests -p 'test_voice_m6_physical_event_capture.py' -v
+~~~

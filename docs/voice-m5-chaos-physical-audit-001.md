@@ -137,3 +137,53 @@ and must NOT be committed to the repo.
 This committed audit contains only
 measurements, SHA256 provenance and
 interpretation limits.
+
+
+## Read-only local music reference alignment diagnostic
+
+\`tools/voice_m5_chaos_reference_probe.py\` was subsequently added.
+It pins all THREE independently verified real evidence hashes:
+the full uploaded M5 chaos capture manifest, microphone WAV,
+and the exact privately held local stereo music WAV. It uses
+the historical CueWire \`band_lag\` 1500–4000Hz normalized
+cross-correlation on song seconds 1.0–3.7 for EACH of the
+two \`pw-play\` process launches individually.
+It tries L, R and arithmetic-mean stereo reference.
+Correlations below 0.06 are INCONCLUSIVE, and even
+higher correlations require further checks because
+music loops/repeating riffs can create false peaks.
+This is an alignment diagnostic, **not echo cancellation**.
+
+Two additional synthetic regression tests, including
+two different exact known acoustic delays and source
+SHA256 protection, bring the M5 test suite to
+**57 methods**. These new tests have not been executed
+on the user's Arch in this turn.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~~~
+
+Only after green tests, with the **original**
+\`/data/oae-research/ACDC_-_Thunderstruck_(Official_Video).wav\`
+unchanged and still available locally:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_chaos_reference_probe.py \
+  --capture .audit/voice-aec/M5-chaos-001 \
+  --out .audit/voice-aec/M5-chaos-alignment-001
+
+cd /data/cue-wire/.audit/voice-aec/M5-chaos-alignment-001
+sha256sum -c SHA256SUMS
+~~~
+
+Send \`music-alignment.json\` and \`SHA256SUMS\`
+(or error text if an input digest is missing).
+No actual music, microphone or voice WAV
+needs to be uploaded, and no sound will play.
+All old source files are read-only.

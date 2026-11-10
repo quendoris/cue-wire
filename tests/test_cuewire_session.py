@@ -214,6 +214,43 @@ class SessionDefaultsAndScope(unittest.TestCase):
                 s.write_private_profile(["4="+str(file)],replace=True)
                 self.assertEqual(profile.stat().st_mode & 0o777,0o600)
 
+    def test_outer_tty_guard_recovers_terminal_after_scoped_sigkill(self):
+        class FakeTTY:
+            def __init__(self):self.output=[]
+            def isatty(self):return True
+            def fileno(self):return 47
+            def write(self,value):self.output.append(value)
+            def flush(self):pass
+        original=["termios-original"]
+        input_tty=FakeTTY()
+        output_tty=FakeTTY()
+        with patch.object(s.sys,"stdin",input_tty), \
+             patch.object(s.sys,"stdout",output_tty), \
+             patch.object(s.termios,"tcgetattr",return_value=original) as read, \
+             patch.object(s.termios,"tcsetattr") as restore:
+            with s.TTYGuardian():
+                pass
+        read.assert_called_once_with(47)
+        restore.assert_called_once_with(
+            47,s.termios.TCSADRAIN,original)
+        self.assertIn("\x1b[?25h",output_tty.output[-1])
+        self.assertIn("\x1b[?1049l",output_tty.output[-1])
+
+    def test_unified_run_makes_no_device_probes_outside_killable_scope(self):
+        complete=MagicMock(returncode=0)
+        with patch.object(s,"resolve_nodes",
+                          side_effect=AssertionError("should be INSIDE scope")), \
+             patch.object(s,"private_profile_cues",
+                          side_effect=AssertionError("should be INSIDE scope")), \
+             patch.object(s,"refuse_existing"), \
+             patch.object(s.BIN,"is_file",return_value=True), \
+             patch.object(s.os,"access",return_value=True), \
+             patch.object(s,"TTYGuardian") as guard, \
+             patch.object(s.subprocess,"run",return_value=complete) as go:
+            self.assertEqual(s.main(["--run"]),0)
+        self.assertIn("--inside-scope",go.call_args.args[0])
+        guard.assert_called_once()
+
     def test_keyboard_profile_only_declares_opt_in_lua_binds(self):
         lua=(s.ROOT/"tools/cuewire_hyprland.lua").read_text()
         self.assertIn("hl.bind(",lua)

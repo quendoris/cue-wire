@@ -47,8 +47,10 @@ def fixture(out: Path) -> dict:
     out = assert_private(out, audit, existing=False)
     rng = np.random.default_rng(6172026)
     ref_cal = np.zeros(N, dtype=np.float64)
-    ref_cal[int(.20*RATE):int(1.10*RATE)] = rng.normal(
-        0., .052, int(.90*RATE))
+    cal_first = round(.20 * RATE)
+    cal_last = round(1.10 * RATE)
+    ref_cal[cal_first:cal_last] = rng.normal(
+        0., .052, cal_last - cal_first)
     ref_eval = np.zeros(N, dtype=np.float64)
     eval_first = round(.35 * RATE)
     eval_last = round(2.9 * RATE)
@@ -74,7 +76,7 @@ def fixture(out: Path) -> dict:
     cal_mic = predict_music(ref_cal, IMPULSE)
     place_clicks(cal_mic, cal_events, shapes)
     voice = np.zeros(N, dtype=np.float64)
-    a, b = int(.85 * RATE), int(2.75 * RATE)
+    a, b = round(.85 * RATE), round(2.75 * RATE)
     tt = np.arange(a, b, dtype=float) / RATE
     voice[a:b] = .035 * (np.sin(2*np.pi*170*tt) +
                           .25*np.sin(2*np.pi*680*tt)) * (

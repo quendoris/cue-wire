@@ -581,8 +581,9 @@ def main(argv:Iterable[str]|None=None)->int:
         canvas,_=paint(Model(motion=False),100,32)
         print(canvas.plain())
         return 0
-    try:return run_demo(a.no_motion or bool(os.environ.get("NO_COLOR")),
-                        a.mono or os.environ.get("TERM")=="dumb")
+    no_color=bool(os.environ.get("NO_COLOR"))
+    mono=a.mono or no_color or os.environ.get("TERM")=="dumb"
+    try:return run_demo(a.no_motion or mono,mono)
     except (OSError,RuntimeError) as exc:
         print(f"cuewire-tui: {exc}",file=sys.stderr)
         return 2

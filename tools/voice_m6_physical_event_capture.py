@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import ctypes
 import fcntl
@@ -31,6 +32,7 @@ import stat
 import struct
 import subprocess
 import sys
+import termios
 import time
 import wave
 
@@ -125,6 +127,33 @@ def ensure_private_output(path:Path) -> Path:
     if dest.parent != audit / "voice-aec":
         raise ValueError("Capture must be a direct child of .audit/voice-aec")
     return dest
+
+
+@contextmanager
+def noecho_capture_terminal():
+    """Prevent test key presses from echoing or reaching the next shell.
+
+    Never read terminal input. Keep ISIG enabled so Ctrl+C still works.
+    On ordinary exit flush typed bytes before restoring the terminal.
+    A forced SIGKILL cannot run a finally handler; use 'stty sane'
+    in the terminal if a forcible kill leaves it without echo.
+    """
+    if not sys.stdin.isatty():
+        raise RuntimeError("M6 capture requires an interactive terminal for no-echo protection")
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    new = old.copy()
+    new[3] = old[3] & ~(termios.ECHO | termios.ICANON)
+    # Do NOT disable ISIG: Ctrl+C must still be recognized by the TTY.
+    termios.tcsetattr(fd, termios.TCSANOW, new)
+    try:
+        termios.tcflush(fd, termios.TCIFLUSH)
+        yield
+    finally:
+        try:
+            termios.tcflush(fd, termios.TCIFLUSH)
+        finally:
+            termios.tcsetattr(fd, termios.TCSANOW, old)
 
 
 def set_kernel_monotonic(device) -> None:
@@ -250,63 +279,64 @@ def run(args: argparse.Namespace) -> dict:
     start_ns=None
     end_ns=None
     try:
-        with log_path.open("xb") as log, events_path.open("x", encoding="utf-8") as stream:
-            argv=[
-                "pw-record", "--target="+args.mic,
-                "--rate=48000","--channels=1",
-                "--channel-map=mono","--format=s16",
-                "--latency=20ms",str(mic_path)
-            ]
-            parent_pid = os.getpid()
-            process=subprocess.Popen(
-                argv, stdout=subprocess.DEVNULL, stderr=log,
-                stdin=subprocess.DEVNULL, start_new_session=True,
-                preexec_fn=lambda: make_child_die_with_parent(parent_pid))
-            start_ns=time.monotonic_ns()
-            print("M6: only timing and device class, no key/button identity.")
-            print("The mic is recorded ONLY in this opt-in session. Ctrl+C aborts.")
-            time.sleep(1.5)
-            if process.poll() is not None:
-                raise RuntimeError("Physical recorder exited before capture")
-            for phase_name, seconds, instruction in PHASES:
-                print(f"\n[{phase_name}] {seconds:g}s — {instruction}",flush=True)
-                left=time.monotonic_ns()
-                deadline=left+round(seconds*1e9)
-                local=Counter()
-                while time.monotonic_ns() < deadline:
-                    if process.poll() is not None:
-                        raise RuntimeError("Microphone recorder exited during capture")
-                    timeout=min(.035,max(0,(deadline-time.monotonic_ns())/1e9))
-                    for key,_ in selector.select(timeout):
-                        for event in key.fileobj.read():
-                            if (event.type==evdev.ecodes.EV_SYN
-                                    and event.code==evdev.ecodes.SYN_DROPPED):
-                                raise RuntimeError("EV_SYN/SYN_DROPPED: input events lost")
-                            item=classify_event(key.data,event,evdev)
-                            if item is None:
-                                continue
-                            kind,t_ns=item
-                            now=time.monotonic_ns()
-                            if (t_ns > now+10_000_000
-                                    or t_ns < now-2_000_000_000):
-                                raise RuntimeError("evdev kernel time not monotonic/recent")
-                            stream.write(event_line(kind,t_ns))
-                            local[kind]+=1
-                            counts[kind]+=1
-                            if sum(counts.values()) > MAX_EVENT_ROWS:
-                                raise RuntimeError("Too many event rows")
-                end=time.monotonic_ns()
-                phases.append({
-                    "phase":phase_name,
-                    "start_monotonic_ns":left,
-                    "end_monotonic_ns":end,
-                    "event_counts_by_class":dict(local),
-                    "speaker_off_operator_confirmed":True,
-                    "nearend_speech_intended":
-                        phase_name in ("voice_only_holdout","voice_clicks_holdout")
-                })
-                print("Markers:",dict(local),flush=True)
-            status="capture_complete"
+        with noecho_capture_terminal():
+            with log_path.open("xb") as log, events_path.open("x", encoding="utf-8") as stream:
+                argv=[
+                    "pw-record", "--target="+args.mic,
+                    "--rate=48000","--channels=1",
+                    "--channel-map=mono","--format=s16",
+                    "--latency=20ms",str(mic_path)
+                ]
+                parent_pid = os.getpid()
+                process=subprocess.Popen(
+                    argv, stdout=subprocess.DEVNULL, stderr=log,
+                    stdin=subprocess.DEVNULL, start_new_session=True,
+                    preexec_fn=lambda: make_child_die_with_parent(parent_pid))
+                start_ns=time.monotonic_ns()
+                print("M6: only timing and device class, no key/button identity.")
+                print("The mic is recorded ONLY in this opt-in session. Ctrl+C aborts.")
+                time.sleep(1.5)
+                if process.poll() is not None:
+                    raise RuntimeError("Physical recorder exited before capture")
+                for phase_name, seconds, instruction in PHASES:
+                    print(f"\n[{phase_name}] {seconds:g}s — {instruction}",flush=True)
+                    left=time.monotonic_ns()
+                    deadline=left+round(seconds*1e9)
+                    local=Counter()
+                    while time.monotonic_ns() < deadline:
+                        if process.poll() is not None:
+                            raise RuntimeError("Microphone recorder exited during capture")
+                        timeout=min(.035,max(0,(deadline-time.monotonic_ns())/1e9))
+                        for key,_ in selector.select(timeout):
+                            for event in key.fileobj.read():
+                                if (event.type==evdev.ecodes.EV_SYN
+                                        and event.code==evdev.ecodes.SYN_DROPPED):
+                                    raise RuntimeError("EV_SYN/SYN_DROPPED: input events lost")
+                                item=classify_event(key.data,event,evdev)
+                                if item is None:
+                                    continue
+                                kind,t_ns=item
+                                now=time.monotonic_ns()
+                                if (t_ns > now+10_000_000
+                                        or t_ns < now-2_000_000_000):
+                                    raise RuntimeError("evdev kernel time not monotonic/recent")
+                                stream.write(event_line(kind,t_ns))
+                                local[kind]+=1
+                                counts[kind]+=1
+                                if sum(counts.values()) > MAX_EVENT_ROWS:
+                                    raise RuntimeError("Too many event rows")
+                    end=time.monotonic_ns()
+                    phases.append({
+                        "phase":phase_name,
+                        "start_monotonic_ns":left,
+                        "end_monotonic_ns":end,
+                        "event_counts_by_class":dict(local),
+                        "speaker_off_operator_confirmed":True,
+                        "nearend_speech_intended":
+                            phase_name in ("voice_only_holdout","voice_clicks_holdout")
+                    })
+                    print("Markers:",dict(local),flush=True)
+                status="capture_complete"
     except KeyboardInterrupt:
         failure="Ctrl+C: deliberately interrupted by user"
     except BaseException as exc:
@@ -319,14 +349,6 @@ def run(args: argparse.Namespace) -> dict:
             selector.close()
             for dev in open_devices:
                 dev.close()
-            # Empty the terminal's pending typed input after calibration
-            # WITHOUT READING, LOGGING or decoding any typed characters.
-            if sys.stdin.isatty():
-                try:
-                    import termios
-                    termios.tcflush(sys.stdin.fileno(),termios.TCIFLUSH)
-                except (OSError,ImportError):
-                    pass
 
     mic_meta={}
     if mic_path.exists():

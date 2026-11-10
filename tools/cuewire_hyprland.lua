@@ -32,14 +32,14 @@ for n = 0, 9 do
     handles[#handles + 1] = hl.bind(
         "KP_" .. tostring(n),
         hl.dsp.exec_cmd(bin .. " ctl play " .. tostring(n)),
-        { ignore_mods = true }
+        { ignore_mods = true, dont_inhibit = true }
     )
 end
 
 handles[#handles + 1] = hl.bind(
     "KP_Decimal",
     hl.dsp.exec_cmd(bin .. " ctl stop"),
-    { ignore_mods = true }
+    { ignore_mods = true, dont_inhibit = true }
 )
 
 -- A single emergency shortcut kills only the independently MARKED
@@ -47,7 +47,8 @@ handles[#handles + 1] = hl.bind(
 -- compositor configuration mutation or autostart.
 handles[#handles + 1] = hl.bind(
     "SUPER + C",
-    hl.dsp.exec_cmd("bash " .. scoped .. " emergency")
+    hl.dsp.exec_cmd("bash " .. scoped .. " emergency"),
+    { dont_inhibit = true }
 )
 
 _G.__cuewire_hotkey_handles = handles

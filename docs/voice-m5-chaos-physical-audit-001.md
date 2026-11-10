@@ -413,3 +413,164 @@ export or PipeWire changes, only native
 SpeexDSP offline analysis. This does not
 deploy a live microphone; any next step
 will be grounded in actual results.
+
+## User-supplied real physical native Speex vs dual-Speex report (2026-11-10)
+
+The operator supplied \`physical-chaos-speex.json\` and
+\`SHA256SUMS\`; SHA256 calculated independently for the
+actual uploaded JSON and matched the manifest:
+
+\`\`\`text
+3fdb522dbbcbe456709c11987d1e795c9b9fc9f086b91718dff374cd6919ad58  physical-chaos-speex.json
+\`\`\`
+
+This is \`cuewire-M5-chaos-native-speex-vs-dual-delta-real-physical-v1\`
+from native \`libspeexdsp.so.1\`, 48kHz, 10ms frames,
+120ms acoustic tail. This first real doubletalk report
+preserves source hashes for the exact actual recorded
+M5 chaos mic WAV, initial two-lag alignment, frozen
+multiwindow lag checks, and privately held stereo song.
+No WAV was exported. No live microphone was created.
+
+### Real physical-stage reference-linked power suppression
+
+Values below are dB reductions in the **uncalibrated
+500–4000Hz finite-sample coherence-linked power proxy**
+relative to exactly the same raw mic section.
+This is NOT a measured voice-to-echo SNR,
+nor a direct isolated echo power measurement
+while near-end speech/keyboard clicks occur.
+
+| Real physical stage | Native Speex, both L/R avg | Raw dual delta, both L/R avg | Guarded dual delta, both L/R avg | Zero-ref native Speex |
+| --- | ---: | ---: | ---: | ---: |
+| Mouse clicks + music | 11.36445 | 10.84853 | 10.65616 | 0.01144 |
+| Keyboard + music | 13.11296 | 12.29805 | 11.94908 | 0.01113 |
+| Mouse + keyboard + music | 14.80536 | 13.82245 | 13.47140 | 0.01132 |
+| Live speech + clicks + vocal music, open final | 6.40248 | 6.36581 | 6.34529 | 0.01402 |
+
+**Interpretation:** Native Speex is somewhat
+stronger by ~0.7–1.3dB on the first three
+speech-off physical stages. Under actual
+near-end speech + music + clicking, the
+guarded dual delta preserves nearly all
+its ref-linked suppression (6.345dB
+vs native 6.402dB, only 0.05719dB less).
+This is a positive trial for the originally
+proposed differential reference-dependent
+AEC mechanism under *real simultaneous sound*,
+not a near-end voice-quality certificate.
+
+### Clean live speech speaker-OFF is EXACTLY untouched
+
+The real user's voice-only physical mic
+interval (approx 36.76–43.26s) has
+raw total RMS **-40.46861dBFS**.
+Both raw delta and guarded delta produced
+**sample-exact identical output** to the
+raw original in this window:
+max abs diff 0, difference RMS sentinel
+-240dBFS, same total RMS.
+Native Speex with actual far-end (which
+is zero in this stage) and the zero-ref
+Speex independently produce the same
+nonzero change: output RMS -40.60407dBFS,
+difference waveform RMS -49.45508dBFS,
+max absolute waveform difference 0.02575684.
+This does **not** mean native Speex ruined
+the voice or delta preserved voice under
+speaker-ON doubletalk; it directly demonstrates
+that the reference-conditioned dual-delta
+avoids reference-independent signal changes
+during the **observed speaker-OFF clean speech**.
+
+### Real open-ended chaotic doubletalk details
+
+On approx 44.77–89.26s with mean L/R
+source, input RMS is -32.34388dBFS.
+Native Speex output -32.42889dBFS,
+guarded dual-delta output -32.36474dBFS.
+That is only **0.08501dB** and
+**0.02086dB** reduction of TOTAL
+wideband energy, respectively.
+A 6.35dB suppression of the music-linked
+proxy can coexist with almost unchanged
+overall RMS: other inputs (live speech,
+typing/clicks, noise and microphone DSP)
+remain audible and unclassified.
+
+Native Speex output-minus-raw error RMS
+was -43.00331dBFS whereas guarded
+differential's was -53.01475dBFS
+(**10.01144dB weaker waveform change**).
+This is not an objectively calibrated
+speech distortion comparison because
+some of that correction is actual echo
+removal, and a clean copy of the identical
+spoken utterance during doubletalk
+does not exist. The report does not
+establish subjective voice quality.
+
+### Critical stereo reference choice — do not overfit 2.7s
+
+Only the second song restart changes
+between two channel-strategy cases.
+The first restart always uses mean(L,R).
+
+For the open 45s simultaneous doubletalk:
+
+| Reference for second restart | Native Speex | Raw delta | Guarded delta |
+| --- | ---: | ---: | ---: |
+| Stereo mean(L,R) | 6.40248 | 6.36581 | 6.34529 |
+| Left alone (early peak winner) | 4.74491 | 4.67728 | 4.66584 |
+| Mean minus left | +1.65757 | +1.68853 | +1.67945 |
+
+These are same *uncalibrated linked-power
+proxy* dB units, not total speech
+improvements. The early 1–3.7s song
+winner "left" beat mean by only
+**0.001526** in normalized correlation
+(0.139972 vs 0.138446). That tiny
+short-probe advantage does not support
+a persistent left-channel choice.
+On this recording the long-stage
+posthoc descriptive evidence favors
+stereo mean as a more robust mono
+reference. No claim of production
+optimality or general cross-song result.
+
+### Performance and next step
+
+Native Speex audio processing of
+the complete 89.963s recorded mic took
+0.790928s (mean case) and 0.801720s
+(left-second case) on the operator's
+machine. The zero-reference branch
+took 0.737857s, performed once and
+reused. The two native branches
+total ~1.53s for 90s mic, excluding
+the offline noncausal FIR, I/O and
+real-time scheduling. A 10ms frame
+API is not a measured end-to-end
+real-time delay.
+
+**Next experimental priority:** an explicit
+private, matched-level A/B listening
+export on the original 90s physical
+doubletalk, not another numeric
+tuning loop or new AEC design.
+Choose the mean(L,R) fixed source
+for both restarts as this recording's
+candidate, compare raw, native
+Speex and guarded dual delta on
+equal actual mic samples. Preserve
+matched gain and useful phases
+(e.g. clean voice, speech+music,
+mouse+music). Avoid commercial music
+or private voice uploads to public GitHub.
+For assessing speech intelligibility under
+the final combined phase, this must remain
+a subjective A/B, not a true same-utterance
+clean reference. Then explore mature
+WebRTC AEC3 and existing click suppressors
+as independent baselines.
+

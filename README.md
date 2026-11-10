@@ -617,7 +617,7 @@ occur in the TUI. M6-007 remains a frozen OFFLINE reference.
 The user must manually launch the original Rust cuewire run
 with correct physical mic, monitor and audio cue WAVs from a separate
 terminal before --live can show a connected state. The new
-15 synthetic tests exercise a temporary mock Unix socket and mocked
+16 synthetic tests exercise a temporary mock Unix socket and mocked
 read-only pw-dump: they do not touch actual audio hardware.
 
 See [M7.2 live integration verification protocol](docs/m7-live-integration.md).

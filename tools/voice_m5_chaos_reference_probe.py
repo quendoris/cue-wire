@@ -30,6 +30,10 @@ from voice_m5_aec import AUDIT, RATE, digest
 from voice_m5_refcoherence import band_lag
 
 SOURCE_SCHEMA = "cuewire-M5-chaos-physical-doublestress-v1"
+# Actual user-uploaded physical evidence, independently rehashed 2026-11-10.
+ACTUAL_MANIFEST_SHA256 = "20d52a781d33c6df05d9bc551afb8fea5899dbd070a6690e5bfaabb3fd6b7c66"
+ACTUAL_MIC_SHA256 = "63322a193843100e87124fb47fd1445604fbc6118accbc1fe489e772326980fb"
+ACTUAL_SONG_SHA256 = "495d4fb1845a369129df4a659f62f18c087c7de1bff4f895dcf60a1c38351e6a"
 PROBE_START = 1.0
 PROBE_END = 3.7
 RELIABLE_CORRELATION_MIN = 0.06  # Historical CueWire band_lag minimum, not new pass threshold.
@@ -115,6 +119,8 @@ def analyze(source_dir:Path, output_dir:Path)->dict:
     if out_parent!=source_dir.parent:
         raise ValueError("Output must be new sibling of original .audit recording")
     mf_path=source_dir/"manifest.json"
+    if digest(mf_path)!=ACTUAL_MANIFEST_SHA256:
+        raise ValueError("Actual original M5 chaos manifest SHA256 mismatch")
     report=json.loads(mf_path.read_text(encoding="utf-8"))
     if (report.get("schema")!=SOURCE_SCHEMA
        or report.get("status")!="captured_ctrl_c_at_free_stress"
@@ -123,13 +129,15 @@ def analyze(source_dir:Path, output_dir:Path)->dict:
        or report.get("sink_volume_changed") is not False):
         raise ValueError("Original M5 chaos recording/protocol not validated")
     mic_path=source_dir/report.get("raw_wav_file","")
-    if mic_path.name != "microphone-chaos-raw.wav":
+    if report.get("raw_wav_file") != "microphone-chaos-raw.wav":
         raise ValueError("Unrecognized original physical mic WAV filename")
-    if digest(mic_path)!=report.get("source_mic_sha256"):
+    if (report.get("source_mic_sha256")!=ACTUAL_MIC_SHA256 or
+        digest(mic_path)!=ACTUAL_MIC_SHA256):
         raise ValueError("Original microphone WAV SHA256 mismatch")
     song_data=report.get("music_source",{})
     song_path=Path(song_data["path"]).expanduser().resolve(strict=True)
-    if digest(song_path)!=song_data.get("sha256"):
+    if (song_data.get("sha256")!=ACTUAL_SONG_SHA256 or
+        digest(song_path)!=ACTUAL_SONG_SHA256):
         raise ValueError("Original 0.60 music WAV SHA256 mismatch")
     if not (song_data.get("rate")==RATE and song_data.get("channels")==2):
         raise ValueError("Expected the original 48kHz stereo music source")

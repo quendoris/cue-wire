@@ -125,7 +125,7 @@ the shell value with the actual file:
 
 ~~~bash
 MUSIC='/absolute/path/to/your/vocal-music.wav'
-test -f "$MUSIC" || { echo "No selected WAV" >&2; exit 1; }
+test -f "$MUSIC" && echo "Selected vocal WAV exists" || echo "ERROR: no selected WAV; do not start capture" >&2
 ~~~
 
 If only MP3/FLAC music with vocals is available,

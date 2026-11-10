@@ -621,3 +621,67 @@ terminal before --live can show a connected state. The new
 read-only pw-dump: they do not touch actual audio hardware.
 
 See [M7.2 live integration verification protocol](docs/m7-live-integration.md).
+
+
+## M7.3: ONE scoped CueWire session, automatic default devices and opt-in NumPad
+
+CueWire M7.3 combines the existing working Rust audio owner with the
+Quendoris six-pane LIVE terminal UI in a SINGLE manually launched
+transient systemd user scope. Read-only selection of default source
+and sink uses wpctl inspect plus strict exact-node verification from
+pw-dump; no changes to WirePlumber defaults or PipeWire routes other
+than the already authorized CueWire-owned temporary nodes.
+The existing M6-007 processing remains an OFFLINE research reference.
+
+One-time LOCAL private cue profile; cue path is stored only in
+ignored .audit as owner-only 0600 JSON:
+
+~~~bash
+python3 tools/cuewire_session.py --configure \
+  --cue '4=/absolute/local/path/to/music.wav'
+~~~
+
+Then the ordinary workflow is two short commands (manual startup,
+no daemon, no autostart):
+
+~~~bash
+python3 tools/cuewire_session.py --check
+python3 tools/cuewire_session.py --run
+~~~
+
+The new session's exit/Ctrl+C closes BOTH TUI and its owned engine.
+Emergency Super+C when manually bound kills the single marked cgroup
+(TUI + engine + owned child audio processes), never unrelated
+PipeWire/session applications; an outer TTY guardian restores cursor
+and terminal state after scoped SIGKILL. Prior standalone --live still
+leaves a separately started engine running upon exit. The system
+refuses to hijack an existing CueWire socket/scope.
+
+The Lua-Hyprland binding source tools/cuewire_hyprland.lua is
+present but NEVER auto-installed. It maps KP_0..KP_9 to cue play,
+KP_Decimal to cue-only stop, and Super+C to marked-scope emergency.
+Review existing binds before manually adding it to the user's active
+Hyprland Lua config:
+
+~~~bash
+python3 tools/cuewire_hotkeys.py check
+python3 tools/cuewire_hotkeys.py render --format lua
+~~~
+
+~~~lua
+dofile("/data/cue-wire/tools/cuewire_hyprland.lua")
+~~~
+
+Manual user approval/configuration is required; the tool does not
+overwrite bindings, change compositor settings, launch services,
+capture key events or persist microphone audio.
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_cuewire_session.py' -v
+python3 -m unittest discover -s tests -p 'test_cuewire_hotkeys.py' -v
+python3 -m unittest discover -s tests -p 'test_cuewire_tui_live.py' -v
+~~~
+
+See [M7.3 unified operator workflow and audit gates](docs/m7-unified-session.md).
+M7.3 physical device, emergency cleanup, Steam route and global
+hotkey tests are pending: no production-ready claims until completed.

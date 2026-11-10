@@ -27,10 +27,8 @@ and \`failure: null\`.
 48kHz \`/data/oae-research/ACDC_-_Thunderstruck_(Official_Video).wav\`,
 duration 292.931333s, stored digital SHA256
 \`495d4fb1845a369129df4a659f62f18c087c7de1bff4f895dcf60a1c38351e6a\`
-(note: use exact SHA from manifest in future code; see caution below).
-The actual manifest source SHA256 must always be
-treated as canonical if a handwritten transcription
-differs. This music WAV was **NOT uploaded**; we
+(as recorded in the original capture manifest).
+This music WAV was **NOT uploaded**; we
 cannot independently rehash or analyze the exact
 digital far-end reference in this review.
 \`pw-play\` uses an explicitly selected physical sink

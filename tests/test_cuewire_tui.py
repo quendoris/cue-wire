@@ -211,6 +211,28 @@ class QuendorisCompactTUIChecks(unittest.TestCase):
             self.assertFalse(geo.panels)
             self.assertIn("terminal too small",canvas.plain())
 
+    def test_terminal_context_restores_raw_mode_and_cursor_on_exit(self):
+        class MockTerminal:
+            def __init__(self):
+                self.transcript=[]
+            def isatty(self): return True
+            def fileno(self): return 77
+            def write(self,value): self.transcript.append(value)
+            def flush(self): pass
+
+        terminal=MockTerminal()
+        original=["saved-termios"]
+        with patch.object(t.termios,"tcgetattr",return_value=original) as saved, \
+             patch.object(t.tty,"setraw") as setraw, \
+             patch.object(t.termios,"tcsetattr") as restored:
+            with t.TerminalSession(stream=terminal,output=terminal):
+                self.assertIn("\\x1b[?1049h",repr(terminal.transcript))
+            saved.assert_called_once_with(77)
+            setraw.assert_called_once_with(77)
+            restored.assert_called_once_with(77,t.termios.TCSADRAIN,original)
+        self.assertIn("\x1b[?25h",terminal.transcript[-1])
+        self.assertIn("\x1b[?1049l",terminal.transcript[-1])
+
     def test_terminal_session_refuses_non_tty_before_changing_mode(self):
         class Fake:
             def isatty(self):return False

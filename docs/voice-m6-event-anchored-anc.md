@@ -19,8 +19,13 @@ event-conditioned acoustic predictor, not a new physical ANC device.
 
 **Amplitude alone is not enough.** The reference must have the correct
 sample delay, polarity and frequency-dependent phase/room response.
-M6 fits a short causal 128-tap FIR (2.67ms at 48kHz) to labeled
-speaker-only calibration. Long reverberation tails, nonlinearities,
+A *measured*, nonnegative --acoustic-lag-samples first shifts the
+sample-aligned digital farend; then M6 fits a short causal 128-tap FIR
+(2.67ms at 48kHz) to labeled speaker-only calibration. Default lag
+is zero for pre-aligned references. The earlier M5 10ms-advanced
+reference would require an explicitly justified 480-sample shift
+before this filter, rather than incorrectly trying to fit 10ms
+with 128 taps. Long reverberation tails, nonlinearities,
 clock drift, and physical speaker movement are NOT solved by 128 taps.
 A common gain can adapt over time but ONLY after explicitly marked
 speech-free, click-free intervals; it freezes over voice/doubletalk.
@@ -59,6 +64,7 @@ git pull --ff-only
   --cal-reference .audit/voice-aec/M6-synthetic-001/cal-reference.wav \
   --cal-events .audit/voice-aec/M6-synthetic-001/cal-events.jsonl \
   --music-only 0.35:1.05 \
+  --acoustic-lag-samples 0 \
   --speech-free-calibration-confirmed \
   --mic .audit/voice-aec/M6-synthetic-001/eval-mic.wav \
   --reference .audit/voice-aec/M6-synthetic-001/eval-reference.wav \

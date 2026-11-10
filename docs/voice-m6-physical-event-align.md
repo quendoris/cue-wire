@@ -23,7 +23,11 @@ Then it freezes the offset and scores the 7-second both-device heldout
 stage. It compares the true timing against 2000 circular time-shifted
 surrogates WITHIN that same heldout stage, preserving event rhythm
 and density. Each surrogate shifts by at least 250ms. No heldout time
-is used to optimize offsets.
+is used to optimize offsets. Regression test fixtures include a realistic
+variable press-to-release interval; a constant interval can produce a
+spurious high-scoring offset where a release is matched to the preceding
+press. The fixture also includes the real capture schema and SHA256
+metadata fields required by the alignment report.
 
 Exploratory independent measurements on the real supplied physical
 source show:

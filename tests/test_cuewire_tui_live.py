@@ -289,6 +289,19 @@ class M7LiveTests(unittest.TestCase):
             self.assertEqual(demo.active_cue,4)
             self.assertIn("SIMULATED",demo.feed[-1])
 
+    def test_status_poll_and_commands_have_distinct_bounded_timeouts(self):
+        with patch.object(live.protocol,"validate_socket_location"), \
+             patch.object(live.protocol,"request",
+                          return_value=status(None)) as requested:
+            self.assertTrue(live.read_live().connected)
+            requested.assert_called_once_with(
+                "status",timeout_seconds=0.5)
+        with patch.object(live.protocol,"request",
+                          return_value="OK cue stopped") as requested:
+            self.assertIn("cue stopped",live.send_live("stop"))
+            requested.assert_called_once_with(
+                "stop",timeout_seconds=1.2)
+
     def test_live_check_fails_closed_when_absent(self):
         snapshot=live.LiveReport(False,"not running",socket_acl="FAIL",protocol="SKIP")
         with patch.object(live,"read_live",return_value=snapshot), \

@@ -106,11 +106,12 @@ def write_wav(path: Path, pcm: np.ndarray) -> None:
             or pcm.dtype != np.dtype("<i2")
             or not pcm.flags.c_contiguous):
         raise ValueError("Only mono 48k PCM16 exactly 6s is permitted")
-    with wave.open(str(path), "xb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)
-        wav.setframerate(RATE)
-        wav.writeframes(pcm.tobytes())
+    with path.open("xb") as file:
+        with wave.open(file, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(RATE)
+            wav.writeframes(pcm.tobytes())
     with wave.open(str(path),"rb") as verify:
         if ((verify.getnchannels(), verify.getsampwidth(),
              verify.getframerate(), verify.getnframes(),

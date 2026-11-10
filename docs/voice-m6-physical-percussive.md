@@ -153,8 +153,14 @@ Interpretation with strict limits:
   unlike the elongated-vowel truncation reported for Physical-004.
 - This is a **positive subjective result on the current recording**,
   not objective proof of voice source separation or generalization.
-- The operator did NOT specify whether B_006 or C_006 was their favored
-  new candidate. Do not record a winner or select C unilaterally.
+- The original report did not distinguish B_006 from C_006.
+  In the subsequent explicit comparison the operator selected
+  **C_006_percussive_strong** as the preferred version, because
+  keyboard clicks sounded noticeably quieter than in B_006
+  despite the modest measured level difference.
+- The subjective preference is not an objectively established
+  clean-source click SNR advantage. Preserve the source audio and
+  both independent processed outputs for reproducibility.
 
 Decision:
 1. Preserve C_005 as the known successful earlier voice baseline, and
@@ -167,3 +173,14 @@ Decision:
 4. Do not alter live PipeWire routes, install services, collect key
    identities, overwrite previous private WAVs, or silently deploy
    the noncausal STFT processor.
+
+## Explicit operator choice for next iteration
+
+**Preferred reference for M6 Physical-007:**
+`R5_voice_clicks_holdout/C_006_percussive_strong.wav`.
+
+The operator confirmed C over B, emphasizing that the keys sound
+perceptibly quieter while the voice remains natural. In M6-007,
+use EXACT C_006 as the A benchmark and only add genuinely separate
+processing to B/C; always report objective *band energy* separately
+from subjective speech intactness. Do not overwrite M6-006 files.

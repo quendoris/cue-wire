@@ -187,3 +187,97 @@ Send \`music-alignment.json\` and \`SHA256SUMS\`
 No actual music, microphone or voice WAV
 needs to be uploaded, and no sound will play.
 All old source files are read-only.
+
+
+## Uploaded onset-lag probe: actual two-restart results (2026-11-10)
+
+User uploaded \`music-alignment.json\` and \`SHA256SUMS\`.
+Independently rehashed JSON bytes:
+\`ea1855721441b4a859a4409af707f0ff554953184b5bd634519a9349cc67b243\`;
+the user's SHA256SUMS matches exactly.
+The report also confirms locally checked SHA256 for the
+physical 89.96267s microphone WAV, original manifest and
+locally held stereo AC/DC song source. The source WAV itself
+was not uploaded for this later diagnostic.
+
+Same 1.5–4kHz filtered normalized cross-correlation,
+original song source seconds 1.0–3.7, launch-relative
+search -0.3 to +0.9 seconds:
+
+| Restart | Process starts at mic wall s | Best reference | Peak correlation | Lag reference-origin sample from mic start | Relative to process launch |
+|---|---:|---|---:|---:|---:|
+| First, speaker-only clicking + music | 11.00758 | arithmetic L/R mean | 0.449889 | 541898 (11.2895417s) | +281.96167ms |
+| Second, near-end voice + music + clicks | 44.01799 | L | 0.139972 | 2117222 (44.1087917s) | +90.80167ms |
+
+The difference in process-launch-relative lags is
+**191.16ms**. This is NOT evidence of a changed
+sound propagation distance or physical hardware
+latency, because \`pw-play\` startup and PipeWire
+buffering are part of the measurement.
+These are **candidate offsets to acoustic
+recorded waveforms**, not production AEC
+sample-clock synchronization.
+
+The second peak is about 3.2× weaker in
+magnitude than the first. This may be expected
+because the second stage contains live
+near-end speech and clicks, but an ambiguous
+musical correlation match remains possible.
+The "best" L/R selection differs by only
+~0.0015 absolute correlation in the second
+recording. Treat this as **inconclusive
+channel preference**; do not infer which
+physical loudspeaker is better represented
+from those small differences alone.
+Both candidates exceed the preexisting
+0.06 minimum of the first-stage probe,
+which is not an independent reliability
+test or physical hardware gate.
+
+A next offline-only step must **validate**
+each previously found lag in later, disjoint
+song windows, rather than choosing a
+different globally optimal offset after
+inspection. The proposed validation computes
+both (a) signed normalized reference-mic
+correlation at the original pinned lag
+and (b) local ±120ms search for possible
+drift/ambiguity; it NEVER silently replaces
+the original timing observations.
+
+Implemented in \`tools/voice_m5_chaos_reference_validate.py\`,
+which SHA256-pins the uploaded prior alignment report,
+actual mic WAV, original manifest and on-disk
+stereo music source. One new synthetic test with
+a known 330ms lag, three held-out windows and a
+deliberately wrong 47ms prior was added;
+**58 test methods** now exist, not yet
+independently executed on the user's Arch.
+
+~~~bash
+cd /data/cue-wire
+git pull --ff-only
+
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p test_voice_m5_aec.py -v
+~~~
+
+If green, and local original song and
+Chaos-001 WAV are still in the same exact
+locations with unchanged SHA256:
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  tools/voice_m5_chaos_reference_validate.py \
+  --capture .audit/voice-aec/M5-chaos-001 \
+  --prior-alignment .audit/voice-aec/M5-chaos-alignment-001/music-alignment.json \
+  --out .audit/voice-aec/M5-chaos-alignment-consistency-001
+
+cd .audit/voice-aec/M5-chaos-alignment-consistency-001
+sha256sum -c SHA256SUMS
+~~~
+
+Send \`alignment-consistency.json\` and its
+\`SHA256SUMS\`. Do not upload private voice/music
+WAVs or alter existing capture/manifest files.
+No audio playback or PipeWire changes occur.

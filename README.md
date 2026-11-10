@@ -520,3 +520,36 @@ anonymous event timestamps remain exclusively in private ignored
 .audit.
 
 See [M6-007 signed-off research freeze and next-stage gates](docs/voice-m6-physical-007-research-freeze.md).
+
+
+## M7 terminal interface — initial implementation (separate development branch)
+
+**M6 Physical-007 offline research is archived and frozen** in
+archive/m6-physical-007-research-accepted-20261110; the integration
+handoff is [docs/m7-integration-handoff.md](docs/m7-integration-handoff.md).
+
+M7.0 adds a **foreground, terminal-only operator console** using just
+the Python standard library and the EXISTING CueWire v0.1 local Unix
+control socket. It DOES NOT run audio, capture voice, enable M6 DSP,
+change PipeWire/Hyprland defaults, start services or automatically
+play sound. A no-device preview works even without an active engine:
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_cuewire_console.py' -v
+python3 tools/cuewire_console.py --preview
+~~~
+
+While a manually launched existing cuewire run is active, use:
+
+~~~bash
+python3 tools/cuewire_console.py --once  # read-only status
+python3 tools/cuewire_console.py         # interactive operator console
+~~~
+
+Commands: status, play 0..9, stop, research, quit (explicit QUIT
+confirmation), exit and help. **stop stops cues, not the mic**.
+**exit/Ctrl+C closes only the interface, not a separate running
+CueWire engine**. A separate user-configured Super+C scope/hotkey
+remains the emergency full-engine mechanism; no hotkeys are installed
+by this UI. Physical hardware controls still require a live safety
+review before being considered production-ready.

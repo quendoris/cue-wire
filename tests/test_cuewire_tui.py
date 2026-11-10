@@ -211,6 +211,12 @@ class QuendorisCompactTUIChecks(unittest.TestCase):
             self.assertFalse(geo.panels)
             self.assertIn("terminal too small",canvas.plain())
 
+    def test_no_color_requests_monochrome_and_disables_animation(self):
+        with patch.dict(t.os.environ,{"NO_COLOR":"1","TERM":"xterm-256color"}), \
+             patch.object(t,"run_demo",return_value=0) as demo:
+            self.assertEqual(t.main(["--demo"]),0)
+            demo.assert_called_once_with(True,True)
+
     def test_terminal_context_restores_raw_mode_and_cursor_on_exit(self):
         class MockTerminal:
             def __init__(self):

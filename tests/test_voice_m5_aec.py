@@ -2422,7 +2422,7 @@ class M5Tests(unittest.TestCase):
         self.assertGreater(loud["share_of_8_16khz_power_in_12_14khz"],.7)
         self.assertAlmostEqual(loud["peak_frequency_8_16khz_hz"],13000,
                                delta=20)
-        with self.assertRaisesRegex(ValueError,"exactly 0.5"):
+        with self.assertRaisesRegex(ValueError,"0.5 seconds"):
             mouse_control.analyze_window(mic[:1000])
     def test_source_sha_guard_and_exact_output_length(self):
         with tempfile.TemporaryDirectory() as temp:

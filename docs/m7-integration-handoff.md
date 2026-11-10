@@ -160,6 +160,6 @@ implemented in tools/cuewire_tui.py and documented in
 [the M7.1 TUI specification](m7-compact-tui.md). It runs ONLY a
 simulated state machine, and is intentionally separate from both
 the M6 archived branch and the existing real-socket controller.
-Its 16 synthetic tests must pass on the user's Arch before live
+Its 17 synthetic tests must pass on the user's Arch before live
 device integration. No genuine DSP, socket or runtime metrics are
 simulated as actual.

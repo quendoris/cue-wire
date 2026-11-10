@@ -207,7 +207,7 @@ class Model:
         elif entered in ("help", "?"):
             self.add("Tab = windows / Enter = command / Esc = collapse")
             self.add("play 0..9 | stop | status | research | doctor | quit | exit")
-            self.add("keys | bind cue:4 F8 | unbind cue:4 (demo only)")
+            self.add("keys | keys cue:4 | bind cue:4 F8 | unbind cue:4 (demo)")
         elif entered=="keys" or entered.startswith(("bind ","unbind ")):
             keymap_command(self,entered,persistent=False)
         elif entered=="research":
@@ -239,12 +239,21 @@ def keymap_command(model: Model, command: str, persistent: bool) -> bool:
     This does NOT call hyprctl, change a live bind, reload Hyprland, send
     audio commands or claim an assignment is already active.
     """
-    if not (command=="keys" or command.startswith(("bind ","unbind "))):
+    if not (command=="keys" or command.startswith(("keys ","bind ","unbind "))):
         return False
     import cuewire_keymap as keymap
     try:
         mapping=(keymap.read_profile() if persistent else
                  (model.demo_keymap or keymap.defaults()))
+        if command.startswith("keys "):
+            target=command.partition(" ")[2].strip()
+            if target not in keymap.ACTIONS:
+                model.add("REFUSED: keys cue:4 | keys stop")
+                return True
+            model.selected=4
+            model.add(f"KEY {target} -> {mapping.get(target,'unassigned')}")
+            model.add("LOCAL setting / no compositor change verified")
+            return True
         if command=="keys":
             model.selected=4
             for group in (range(0,5),range(5,10)):
@@ -371,7 +380,7 @@ class LiveModel(Model):
         elif entered in ("help", "?"):
             self.add("TAB/ARROWS panels | ENTER command | ESC collapse")
             self.add("status | doctor | play 0..9 | stop | research | quit | exit")
-            self.add("keys | bind cue:4 F8 | unbind cue:4 (STAGED only)")
+            self.add("keys | keys cue:4 | bind cue:4 F8 | unbind cue:4 (STAGED)")
         elif entered=="keys" or entered.startswith(("bind ","unbind ")):
             keymap_command(self,entered,persistent=True)
         elif entered == "research":

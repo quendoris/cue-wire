@@ -50,8 +50,10 @@ def fixture(out: Path) -> dict:
     ref_cal[int(.20*RATE):int(1.10*RATE)] = rng.normal(
         0., .052, int(.90*RATE))
     ref_eval = np.zeros(N, dtype=np.float64)
-    ref_eval[int(.35*RATE):int(2.9*RATE)] = rng.normal(
-        0., .052, int(2.55*RATE))
+    eval_first = round(.35 * RATE)
+    eval_last = round(2.9 * RATE)
+    ref_eval[eval_first:eval_last] = rng.normal(
+        0., .052, eval_last - eval_first)
     shapes = {
         "mouse_press": click_template(1600.),
         "keyboard_press": click_template(2800.),

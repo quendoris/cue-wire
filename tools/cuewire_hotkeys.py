@@ -68,7 +68,7 @@ def load_hyprctl():
 def commands(bin_path,scope_path):
     result=[]
     for n in SLOTS:
-        result.append((f"KP_{n}",f"{bin_path} ctl play {n}",f"CueWire cue {n}"))
+        result.append((f"KP_{n}",f"{bin_path} ctl toggle {n}",f"CueWire toggle cue {n}"))
     result.append(("KP_Decimal",f"{bin_path} ctl stop",
                    "CueWire stop cues (voice stays on)"))
     result.append(("SUPER+C",f"/usr/bin/bash {scope_path} emergency",
@@ -79,6 +79,7 @@ def commands(bin_path,scope_path):
 def render_legacy(items):
     lines=[
         "# CueWire LEGACY hyprlang snippet, generated read-only.",
+        "# Static default bindings; for remapping use tools/cuewire_keymap.py.",
         "# This is NOT installed by CueWire. Review before explicitly adding.",
         "# WARNING: Super+C requires launching via tools/cuewire_scope.sh run.",
         "# The i flag ignores held Shift/Ctrl/Alt modifiers for NumPad.",
@@ -96,6 +97,7 @@ def render_legacy(items):
 def render_lua(items):
     lines=[
         "-- CueWire LUA binding fragment, generated read-only.",
+        "-- Static default bindings; for remapping use tools/cuewire_keymap.py.",
         "-- The tool does NOT call hyprctl eval or modify the user config.",
         "-- Super+C requires tools/cuewire_scope.sh run.",
         "-- ignore_mods accepts held movement/modifier keys.",

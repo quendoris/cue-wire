@@ -187,8 +187,10 @@ class M7LiveTests(unittest.TestCase):
         model=ui.LiveModel()
         old=live.LiveReport(True,"initial",mic="old-name",
                             active_cue="Some(4)",protocol="PASS",socket_acl="PASS")
+        disconnected=live.LiveReport(
+            False,"engine disappeared",socket_acl="FAIL",protocol="SKIP")
         with patch.object(live,"read_live",side_effect=[
-            old,live.LiveReport(False,"engine disappeared",socket_acl="FAIL",protocol="SKIP")
+            old,disconnected,disconnected
         ]):
             model.refresh()
             self.assertTrue(model.report.connected)
@@ -197,7 +199,8 @@ class M7LiveTests(unittest.TestCase):
         self.assertIn("OFFLINE"," ".join(ui.panel_lines(model,"Runtime")))
         self.assertNotIn("old-name"," ".join(ui.panel_lines(model,"Devices")))
         self.assertIn("unknown"," ".join(ui.panel_lines(model,"Cue State")))
-        with patch.object(live,"send_live",side_effect=AssertionError("must refuse")):
+        with patch.object(live,"send_live",side_effect=AssertionError("must refuse")), \
+             patch.object(live,"read_live",return_value=disconnected):
             model.execute("stop")
         self.assertIn("REFUSED",model.feed[-1])
 

@@ -120,7 +120,13 @@ No music, no speech in the first four phases:
 An initial 1.5-second recorder warmup precedes these phases. The
 program terminates its ONLY owned child process when completed or
 interrupted, and closes its evdev descriptors. Ctrl+C ABORTS; no
-automatic restart. It never edits PipeWire system configuration.
+automatic restart. Linux PR_SET_PDEATHSIG(SIGKILL) is also installed
+on the recorder: if the supervising Python is force-killed (including
+externally triggered Super+C), the kernel kills pw-record instead of
+leaving an orphan recorder. Forced SIGKILL cannot finalize a WAV header
+or manifest: treat the capture as incomplete and never silently accept
+it. This is NOT a new Super+C compositor binding. It never edits
+PipeWire system configuration.
 
 ## Step 4 — verify and report
 

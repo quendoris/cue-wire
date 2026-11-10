@@ -283,3 +283,28 @@ No background listener, no autostart, no PipeWire changes. Optional,
 explicit evdev timing collection is foreground-only and stores no
 key identities or text. Real audio-clock anchoring still requires
 independent hardware calibration; never guess it from process launch.
+
+
+## M6 PHYSICAL-001 — real recorded microphone, NO new recording
+
+New private offline replay reuses the previously SHA256-pinned M5 Chaos
+90-second mic, original local music and frozen two-restart alignment.
+It fits a speaker-only 120ms FIR in 12–18s (music + clicks, no voice),
+adjusts music estimate gain causally only at 20–26s (no voice, some
+clicks), freezes before heldout 28–34s and real speech+music 53–83s,
+and compares RAW, native Speex, frozen M6, adapted M6 (four variants).
+The physical 37–43s voice-only stage has mandatory exact PCM16
+unchanged-speech checks before AND after common attenuation. Outputs
+private 48kHz WAVs and a pinned report. No sound is played automatically.
+
+**Mechanical event capture was absent in old M5.** This physical
+pilot tests known-PCM anti-music only and DOES NOT suppress mouse or
+keyboard events. Event-conditioned anti-click needs a separate short
+synchronized calibration at a later stage.
+
+See [M6 PHYSICAL-001 reproducible commands](docs/voice-m6-physical-replay.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p 'test_voice_m6_physical_replay.py' -v
+~~~

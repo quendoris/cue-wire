@@ -113,8 +113,10 @@ class M6PredictiveTests(unittest.TestCase):
         rng = np.random.default_rng(12007)
         n = 3*m6.RATE
         reference = np.zeros(n)
-        reference[int(.2*m6.RATE):int(2.3*m6.RATE)] = rng.normal(
-            0., .04, int(2.1*m6.RATE))
+        first = round(.2 * m6.RATE)
+        last = round(2.3 * m6.RATE)
+        reference[first:last] = rng.normal(
+            0., .04, last - first)
         delayed = m6.delay_reference(reference, 480)
         mic = .55*delayed
         a, b = int(.5*m6.RATE), int(1.5*m6.RATE)

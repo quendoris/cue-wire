@@ -247,19 +247,34 @@ class LiveModel(Model):
         self.backend = backend
         self.report = backend.LiveReport(False, "not yet checked")
         self.graph_checks: tuple = ()
+        self.graph_checked_at = 0.0
+        self.graph_identity: tuple | None = None
+        self.graph_summary = "SKIP / graph (run doctor)"
         self.last_refresh = 0.0
 
     def refresh(self, announce: bool = False) -> None:
         was_online = self.report.connected
         self.report = self.backend.read_live()
         self.last_refresh = time.monotonic()
+        identity = (
+            self.report.mic, self.report.monitor,
+            self.report.virtual_source, self.report.mix_input,
+        )
+        valid_audit = bool(
+            self.report.connected and was_online and self.graph_checks
+            and identity == self.graph_identity
+            and self.last_refresh - self.graph_checked_at < 20.0
+        )
+        if not valid_audit:
+            self.graph_checks = ()
+            self.graph_summary = "SKIP / graph (run doctor)"
+            self.graph_identity = None
         self.checks = (
             f"{self.report.socket_acl} / socket ACL 0600",
             f"{self.report.protocol} / control v0.1",
-            "SKIP / graph (run doctor)",
+            self.graph_summary,
             "SKIP / M6 DSP + latency",
         )
-        self.graph_checks = ()
         if announce or was_online != self.report.connected:
             if self.report.connected:
                 self.add("LIVE: control socket responded; DSP remains offline")
@@ -316,10 +331,16 @@ class LiveModel(Model):
                 graph_summary = "PASS / 4 nodes registered"
             else:
                 graph_summary = "SKIP / graph incomplete"
+            self.graph_summary = graph_summary
+            self.graph_identity = (
+                self.report.mic, self.report.monitor,
+                self.report.virtual_source, self.report.mix_input,
+            )
+            self.graph_checked_at = time.monotonic()
             self.checks = (
                 f"{self.report.socket_acl} / socket ACL 0600",
                 f"{self.report.protocol} / control v0.1",
-                graph_summary,
+                self.graph_summary,
                 "SKIP / audio/DSP/latency",
             )
         elif entered == "exit":
@@ -366,7 +387,7 @@ def panel_lines(model: Model, name: str) -> list[str]:
                 "Mic       " + (r.mic if r.connected else "unknown"),
                 "Monitor   " + (r.monitor if r.connected else "unknown"),
                 "Virtual   " + (r.virtual_source if r.connected else "unknown"),
-                "Graph     see doctor",
+                "Mix       " + (r.mix_input if r.connected else "unknown"),
             ]
         if name == "Research":
             return ["M4        offline", "M5        research",

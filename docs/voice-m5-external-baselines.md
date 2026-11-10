@@ -1002,3 +1002,53 @@ output, wave integrity, event-level logs, and
 absolute metrics. Parallel reference-free
 RNNoise/DeepFilterNet2 noise experiments should
 use a *different benchmark track*.
+
+
+## One-session physical adversarial stress WAV with vocals, clicks, live voice and laughter (2026-11-10)
+
+The next **new physical experiment** is defined in
+\`docs/voice-m5-chaos-capture-protocol.md\`
+and implemented by \`tools/voice_m5_chaos_capture.py\`.
+One continuous physical 48kHz PCM16 mic WAV contains:
+8s initial silence, 8s mouse+vocal music,
+8s keyboard+vocal music, 8s combined+vocal music,
+8s physical *clean* near-end speech with speaker off,
+then real physical doubletalk/stress (vocal music,
+speech, mouse, keyboard, natural laughter)
+until user Ctrl+C. Three seconds of warmup
+and a one-second post-music decay pause are
+separate control intervals.
+
+The chosen user-owned WAV with actual vocals is
+played through a pinned physical \`alsa_output.*\`
+with stream gain **0.60**, exactly twice previous
+\`pw-play --volume 0.30\` amplitude (+6.0206dB);
+never set hardware/system volume.
+The script does not synthesize/acquire remote
+voice; the user picks the local vocal music file.
+The exact music SHA256 is included, but the
+wall-time playback restart log is NOT
+sample-synchronized digital reference.
+This dataset's adverse conditions are
+expected and explicitly labeled; it is not
+a hidden acceptance test or guaranteed
+clean near-end speech.
+
+\`docs/voice-m5-stress-jokes-ru.txt\` includes
+72 original short jokes, displayed automatically
+every four seconds during the clean 8s control
+and seven seconds during the open-ended final.
+No keyboard input or GUI necessary to advance
+the material.
+
+Strong process-ownership cleanup and user-initiated
+Ctrl+C finalization protect against orphan
+recorder/player processes. Audio remains
+under private \`.audit\`, no automatic exports,
+no system audio routes change. New regressions
+test PCM metadata and the child/phase lifecycle,
+with **55 M5 unittest methods** total.
+No claim of locally green tests until user executes
+the documented command; see the dedicated
+protocol for preflight, music file choice, run
+and SHA256 verification.

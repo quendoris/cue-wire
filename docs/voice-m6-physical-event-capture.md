@@ -105,8 +105,22 @@ Use the ACTUAL numbered nodes discovered on the current machine:
   --out .audit/voice-aec/M6-physical-events-001
 ~~~
 
-N and M are placeholders; replace before running. All phases and their
-durations are printed in the terminal. Do NOT type a password or text.
+N and M are placeholders; replace before running. For the
+currently validated MSI GK20 and LXDDZ wireless mouse, the operator's
+live anonymous count found /dev/input/event13 (keyboard) and
+/dev/input/event261 (mouse). These event numbers are session-specific;
+confirm after reconnection/reboot. All phases and durations are shown
+in the terminal. Do NOT type a password or ordinary text.
+
+During calibration the tool disables terminal input ECHO and canonical
+line buffering and flushes pending typed characters, WITHOUT reading
+or storing them; the Linux evdev channel still receives timing markers.
+Ctrl+C remains enabled and normal exit restores original termios.
+**Forced SIGKILL cannot restore terminal mode**. If the terminal stops
+echoing input after an emergency kill, type `stty sane` and Enter
+(the command may be invisible). Existing shell command-line garbage
+from before the fix can be cleared with Ctrl+C.
+
 No music, no speech in the first four phases:
 
 1. quiet_baseline — 3s, no input/no voice

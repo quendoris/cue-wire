@@ -52,11 +52,17 @@ def normalize_bindings(payload):
 
 
 def load_hyprctl():
-    result=subprocess.run(["hyprctl","-j","binds"],text=True,
-                          capture_output=True,timeout=4,check=False)
-    if result.returncode!=0:
-        raise RuntimeError("hyprctl binds failed: "+result.stderr[-500:])
-    return json.loads(result.stdout)
+    try:
+        result=subprocess.run(["hyprctl","-j","binds"],text=True,
+                              capture_output=True,timeout=4,check=False)
+    except (OSError,subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("Cannot inspect active Hyprland bindings") from exc
+    if result.returncode!=0 or len(result.stdout)>512*1024:
+        raise RuntimeError("Hyprland bind enumeration failed or was too large")
+    try:
+        return json.loads(result.stdout)
+    except (ValueError,UnicodeError) as exc:
+        raise RuntimeError("Hyprland bind response is not valid JSON") from exc
 
 
 def commands(bin_path,scope_path):
@@ -97,8 +103,8 @@ def render_lua(items):
     ]
     for key,cmd,description in items:
         keys="SUPER + C" if key=="SUPER+C" else key
-        flags="{ ignore_mods = true, dont_inhibit = true }" if key=="SUPER+C" \
-               else "{ ignore_mods = true }"
+        flags="{ dont_inhibit = true }" if key=="SUPER+C" \
+               else "{ ignore_mods = true, dont_inhibit = true }"
         # All command paths were validated to contain only safe ASCII
         # punctuation; no Lua string injection is possible.
         lines.append(
@@ -126,7 +132,11 @@ def main():
             payload=json.loads(args.binds_json.read_text())
             origin="fixture"
         else:
-            payload=load_hyprctl()
+            try:
+                payload=load_hyprctl()
+            except RuntimeError as exc:
+                print("REFUSED: "+str(exc),file=sys.stderr)
+                sys.exit(2)
             origin="live Hyprland"
         hits=normalize_bindings(payload)
         print("CueWire hotkeys preflight from",origin)

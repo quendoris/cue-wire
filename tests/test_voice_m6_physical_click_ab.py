@@ -71,6 +71,24 @@ class PhysicalClickPilotTests(unittest.TestCase):
         self.assertLess(high_rms(conservative),
                         high_rms(original))
 
+    def test_final_phase_175ms_shortfall_is_bounded_not_fabricated(self):
+        # Physical M6 WAV duration 44.330667 s; last logged phase ends
+        # 44.50545 s. The last scene may only contain REAL samples.
+        begin=round(35.50448*pilot.RATE)
+        requested=round(44.50545*pilot.RATE)
+        total=round(44.330667*pilot.RATE)
+        phase={"start_monotonic_ns":1000000000000+round(
+                   35.50448*1e9),
+               "end_monotonic_ns":1000000000000+round(
+                   44.50545*1e9)}
+        a,b=pilot.phase_bounds(phase,1000000000000,total)
+        self.assertEqual(a,begin)
+        self.assertEqual(b,total)
+        self.assertGreater(requested,b)
+        phase["end_monotonic_ns"]+=round(.5*1e9)
+        with self.assertRaisesRegex(ValueError,"does not fit"):
+            pilot.phase_bounds(phase,1000000000000,total)
+
     def test_silent_event_and_wrong_offsets_are_rejected(self):
         mic,manifest,events,offsets,_=make_impulse_case()
         x=np.zeros_like(mic)

@@ -314,9 +314,9 @@ def main(argv:list[str]|None=None)->int:
             print("Private local cue profile saved (0600) in ignored .audit")
             print("No PipeWire, socket or Hyprland settings changed")
             return 0
-        cues=parse_cues(a.cue) if a.cue else private_profile_cues()
-        mic,monitor=resolve_nodes(a.mic,a.monitor)
         if a.check:
+            cues=parse_cues(a.cue) if a.cue else private_profile_cues()
+            mic,monitor=resolve_nodes(a.mic,a.monitor)
             print("Default audio selection (READ ONLY; does NOT change defaults)")
             print("  mic:    "+mic)
             print("  output: "+monitor)
@@ -325,27 +325,33 @@ def main(argv:list[str]|None=None)->int:
             if not cues:
                 print("  setup:  --configure --cue N=/absolute/audio.wav")
             return 0
-        if not cues:
-            raise SessionError("No cues configured; use --configure --cue N=/absolute/audio.wav")
         if not BIN.is_file() or not os.access(BIN,os.X_OK):
             raise SessionError("Missing compiled target/release/cuewire")
         if a.inside_scope:
+            # All potentially lengthy auto-detection and file validation
+            # run inside the killable scope, even during initialization.
+            if not scope_active() or not scope_marked():
+                raise SessionError("Refusing direct unscoped internal run")
+            cues=parse_cues(a.cue) if a.cue else private_profile_cues()
+            if not cues:
+                raise SessionError("No cues configured; use --configure --cue N=/absolute/audio.wav")
+            mic,monitor=resolve_nodes(a.mic,a.monitor)
             return run_inside(mic,monitor,cues,a.latency_ms,
                               a.no_motion,a.mono)
+        # --run: refuse takeover before creating any scoped process.
+        # No lengthy wpctl/pw-dump or user profile work outside scope.
         refuse_existing()
-        # A single marked cgroup owns engine + TUI together. The
-        # calling shell and session PipeWire are outside this cgroup.
         args=["systemd-run","--user","--scope","--collect",
               "--unit="+SCOPE,"--description="+DESCRIPTION,"--",
               sys.executable,str(SCRIPT),"--inside-scope",
-              "--mic",mic,"--monitor",monitor,
               "--latency-ms",str(a.latency_ms)]
-        for cue in cues:args.extend(["--cue",cue])
+        if a.mic:args.extend(["--mic",a.mic])
+        if a.monitor:args.extend(["--monitor",a.monitor])
+        for cue in a.cue:args.extend(["--cue",cue])
         if a.no_motion:args.append("--no-motion")
         if a.mono:args.append("--mono")
-        # Keep the caller outside the scope. If its foreground session
-        # is interrupted before the TUI can clean up, kill ONLY a scope
-        # whose marker belongs to CueWire, never a guessed process tree.
+        # Entire engine + TUI belong to the same emergency cgroup.
+        # The invoker stays outside and does not modify other processes.
         try:
             outcome=subprocess.run(args,check=False)
             return outcome.returncode

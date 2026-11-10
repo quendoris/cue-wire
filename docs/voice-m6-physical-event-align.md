@@ -88,3 +88,37 @@ not a wholly clean voice reference; mask event neighborhoods.
 
 Physical recorder return code is 1 although the WAV is complete and
 SHA256-valid. Do not speculate about the exit status without stderr.
+
+
+## Follow-on physical negative result: naive waveform anti-click templates
+
+After verifying the timing correspondence, an additional exploratory
+**offline** experiment learned a different acoustic waveform template
+per anonymous class (mouse/keyboard press/release) ONLY on the
+respective speech-free isolated stage. The experiment bandpass-filtered
+to 1300–9000 Hz and extracted fixed 10ms-pre / 50ms-post snippets
+at the independently trained effective offsets, then faded each
+average/median template at its edges. No learning on either heldout
+stage. Templates were linearly inverted and summed at known class
+event times for control evaluation.
+
+Heldout 7s BOTH-device stage, change in total 1300–9000 Hz RMS:
+- Mean-class-template anti-click: **+0.77084 dB** (WORSE)
+- Median-class-template anti-click: **+0.14587 dB** (WORSE)
+
+Voice + clicks heldout, change in 1300–9000 Hz RMS:
+- Mean anti-click: +0.49854 dB (WORSE as energy proxy)
+- Median anti-click: +0.09570 dB (WORSE as energy proxy)
+
+These values are experimental controls, not per-click ground truth
+or subjective speech intelligibility metrics. The negative result
+demonstrates: **event timing is predictive, fixed waveform template
+is NOT yet predictive enough**. The acoustic response varies with
+mechanical force, unknown key position/button ID, overlapping
+press/release events, and fine waveform alignment. Private key/button
+IDENTITY must remain uncollected by design. Do NOT promote simple
+fixed inversion to a microphone filter on the strength of synthetic
+M6 metrics. Next candidate should be event-triggered, local,
+waveform-aware reconstruction with non-speech-only training and
+explicit voice-protection gates; then evaluate on the untouched
+mixed/voice holdout WITHOUT learning on it.

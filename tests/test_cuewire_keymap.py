@@ -48,6 +48,9 @@ class KeymapTests(unittest.TestCase):
             k.validate(m)
         m["cue:4"]="F8"
         self.assertEqual(k.validate(m)["cue:4"],"F8")
+        m["cue:4"]="CTRL+KP_5"
+        with self.assertRaisesRegex(k.KeymapError,"overlap"):
+            k.validate(m)
 
     def test_unknown_actions_and_types_are_rejected(self):
         m=k.defaults()
@@ -108,6 +111,25 @@ class KeymapTests(unittest.TestCase):
         self.assertEqual(len(k.conflicts(m,[fake])),1)
         fake=dict(own,arg="other-cmd; injected")
         self.assertEqual(len(k.conflicts(m,[fake])),1)
+
+    def test_verify_uses_real_compositor_keys_action_and_modmask(self):
+        mapping={"cue:4":"CTRL + ALT + 4","stop":"KP_Decimal"}
+        installed=[
+            {"key":"4","modmask":12,"dispatcher":"exec",
+             "description":"CueWire M7.4 cue:4",
+             "arg":str(k.ROOT/"target/release/cuewire")+" ctl toggle 4"},
+            {"key":"KP_Decimal","modmask":0,"dispatcher":"exec",
+             "description":"CueWire M7.4 stop",
+             "arg":str(k.ROOT/"target/release/cuewire")+" ctl stop"},
+            {"key":"C","modmask":64,"dispatcher":"exec",
+             "description":"CueWire M7.4 emergency",
+             "arg":"/usr/bin/bash "+str(k.ROOT/"tools/cuewire_scope.sh")+
+                   " emergency"},
+        ]
+        self.assertEqual(k.missing_installed(mapping,installed),[])
+        with self.assertRaises(AssertionError):
+            self.assertEqual(k.missing_installed(
+                mapping,[dict(installed[0],modmask=0),*installed[1:]]),[])
 
     def test_preview_and_dry_run_do_not_write_any_local_files(self):
         with tempfile.TemporaryDirectory() as tmp:

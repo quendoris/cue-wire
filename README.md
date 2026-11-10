@@ -255,3 +255,31 @@ are passed.
 
 See [hotkeys H1](docs/hotkeys-H1.md). The frozen research plan for
 long-form controlled voice recording is [M4](docs/voice-M4-long-capture-protocol.md).
+
+
+## M6 — predictive event-anchored anti-noise (EXPERIMENTAL, offline)
+
+New research-only M6 builds two separately inspectable *inverted*
+digital audio tracks from **known causes** of unwanted sound:
+(1) an externally sample-aligned loudspeaker PCM reference, modeled
+with a short causal FIR and speech-free-only dynamic gain;
+(2) explicitly time-stamped keyboard/mouse event classes, modeled as
+isolated acoustic click templates from no-voice calibration.
+The mic is summed with these anti-tracks at the end; no neural
+voice-processing model is trained from doubletalk.
+
+Not a real-time AEC, no physical anti-sound in the room, no certified
+sample-zero input event timestamps yet. The public repository contains
+only code and synthetic fixtures, never the user's private voice/music.
+
+See [M6 design, controls and runnable synthetic end-to-end test](docs/voice-m6-event-anchored-anc.md).
+
+~~~bash
+~/.venvs/cuewire-voice-lab/bin/python \
+  -m unittest discover -s tests -p 'test_voice_m6_*.py' -v
+~~~
+
+No background listener, no autostart, no PipeWire changes. Optional,
+explicit evdev timing collection is foreground-only and stores no
+key identities or text. Real audio-clock anchoring still requires
+independent hardware calibration; never guess it from process launch.

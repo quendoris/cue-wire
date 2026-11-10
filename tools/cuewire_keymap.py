@@ -270,6 +270,36 @@ def conflicts(mapping:dict[str,str],existing:list[dict])->list[str]:
     return sorted(set(hazards))
 
 
+def missing_installed(mapping:dict[str,str],existing:list[dict])->list[str]:
+    """Strict read-only verification of compositor-registered bindings.
+
+    A generated file on disk does NOT prove that Hyprland loaded it.
+    Require exact action, physical keysym and modifier mask. A build
+    whose compositor omits bind descriptions reports NOT VERIFIED.
+    """
+    canonical=validate(mapping)
+    expected={**canonical,"emergency":"SUPER + C"}
+    bit={"SHIFT":1,"CTRL":4,"ALT":8,"SUPER":64}
+    missing=[]
+    for action,chord in expected.items():
+        chunks=chord.split(" + ")
+        name=chunks[-1].upper()
+        mask=sum(bit[x] for x in chunks[:-1])
+        descriptor=("CueWire M7.4 emergency" if action=="emergency"
+                    else "CueWire M7.4 "+action)
+        matching=[
+            b for b in existing
+            if isinstance(b,dict)
+            and str(b.get("key","")).upper()==name
+            and b.get("modmask")==mask
+            and b.get("description")==descriptor
+            and is_our_active_binding(b)
+        ]
+        if len(matching)!=1:
+            missing.append(f"{action}: {chord} not uniquely verified")
+    return missing
+
+
 def view(mapping:dict[str,str])->str:
     rows=["CueWire M7.4 / local keymap (not automatically applied)"]
     for a in ACTIONS:
@@ -292,6 +322,7 @@ def main(argv:list[str]|None=None)->int:
     sub.add_parser("preview",help="print Lua generated from local map; no write")
     sub.add_parser("check",help="read-only live Hyprland conflict preflight")
     sub.add_parser("compile",help="after preflight, write ignored owner-only Lua")
+    sub.add_parser("verify",help="read-only check that intended Lua binds are really registered")
     for name in ("set","unset","reset"):
         sub.choices[name].add_argument(
             "--dry-run",action="store_true",help="preview change without disk write")
@@ -324,15 +355,24 @@ def main(argv:list[str]|None=None)->int:
                 raise KeymapError("Cannot inspect Hyprland binds; refuse apply") from exc
             if not isinstance(existing,list):
                 raise KeymapError("Unknown Hyprland bind response")
-            hazards=conflicts(mapping,existing)
-            if hazards:
-                raise KeymapError("Bindings conflict:\n"+"\n".join(hazards))
-            print("PASS: no matching keysym conflicts in current Hyprland binds")
-            if a.action=="compile":
-                atomic_private(GENERATED,render_lua(mapping))
-                print("Generated owner-only Lua:",GENERATED)
-                print("Manual include: dofile("+json.dumps(str(GENERATED))+")")
-                print("No config was edited or reloaded automatically")
+            if a.action=="verify":
+                missing=missing_installed(mapping,existing)
+                if missing:
+                    raise KeymapError("Not active/ambiguous in Hyprland:\n"+
+                                      "\n".join(missing))
+                print("PASS: "+str(len(mapping)+1)+
+                      " expected CueWire M7.4 binds registered")
+                print("Physical delivery in games and emergency cgroup still require testing")
+            else:
+                hazards=conflicts(mapping,existing)
+                if hazards:
+                    raise KeymapError("Bindings conflict:\n"+"\n".join(hazards))
+                print("PASS: no foreign matching keysym conflicts in current Hyprland binds")
+                if a.action=="compile":
+                    atomic_private(GENERATED,render_lua(mapping))
+                    print("Generated owner-only Lua:",GENERATED)
+                    print("Manual include: dofile("+json.dumps(str(GENERATED))+")")
+                    print("No config was edited or reloaded automatically")
     except KeymapError as exc:
         print("REFUSED: "+str(exc),file=sys.stderr)
         return 2

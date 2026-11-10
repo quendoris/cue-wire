@@ -302,6 +302,22 @@ class M7LiveTests(unittest.TestCase):
             self.assertEqual(demo.active_cue,4)
             self.assertIn("SIMULATED",demo.feed[-1])
 
+    def test_managed_engine_disconnect_terminates_session_not_standalone(self):
+        current=live.LiveReport(True,"ready",socket_acl="PASS",protocol="PASS")
+        lost=live.LiveReport(False,"lost",socket_acl="FAIL",protocol="FAIL")
+        managed=ui.LiveModel(managed=True)
+        with patch.object(live,"read_live",side_effect=[current,lost]):
+            managed.refresh()
+            self.assertFalse(managed.terminated)
+            managed.refresh()
+        self.assertTrue(managed.terminated)
+        self.assertIn("ending whole owned session",managed.feed[-1])
+        external=ui.LiveModel(managed=False)
+        with patch.object(live,"read_live",side_effect=[current,lost]):
+            external.refresh()
+            external.refresh()
+        self.assertFalse(external.terminated)
+
     def test_graph_audit_persists_briefly_then_expires_without_false_pass(self):
         report=live.LiveReport(
             True,"ok",mic="mic",monitor="monitor",

@@ -23,7 +23,8 @@ XDG_RUNTIME_DIR/cuewire-v0.1.sock. The engine must already be running.
 The live client reuses tools/cuewire_console.py, including its strict
 command allowlist and same-user regular Unix socket mode 0600 checks.
 It never executes shell commands or transmits arbitrary text.
-Status is read every ~3 seconds on the foreground UI loop. Each read
+Status is read every ~3 seconds on the foreground UI loop (a single
+read is bounded by a 500ms socket timeout; action requests by 1.2s). Each read
 is fresh; if it fails, the live panel immediately becomes OFFLINE
 rather than displaying a stale "connected" state.
 
@@ -88,7 +89,7 @@ python3 -m unittest discover -s tests -p 'test_cuewire_console.py' -v
 cargo test --locked --offline
 ~~~
 
-The 14 new integration tests use an entirely synthetic private
+The 15 new integration tests use an entirely synthetic private
 Unix socket server and MOCKED pw-dump; they do NOT open any
 real microphone, launch PipeWire, play sounds or alter system audio.
 The 17 prior M7.1 TUI tests and 11 previous console tests must remain
@@ -152,7 +153,7 @@ For a strictly non-audio demonstration, use --demo.
 
 ## Acceptance gates and explicit limits
 
-- [ ] New 14 synthetic socket/doctor tests PASS on user's Arch.
+- [ ] New 15 synthetic socket/doctor tests PASS on user's Arch.
 - [ ] 17 TUI tests, 11 console tests and cargo tests remain green.
 - [ ] Safe --live-check OFFLINE failure behaves as expected.
 - [ ] Existing engine starts manually without changing defaults.

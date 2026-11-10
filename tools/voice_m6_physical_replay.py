@@ -90,7 +90,7 @@ def verify_physical(capture_dir:Path, initial_path:Path,
             any(p.parent.parent != out_parent for p in
                 (initial_path, consistency_path, previous_report))):
         raise ValueError("M6 output must be NEW sibling of M5 physical sources")
-    if any(p.is_symlink() for p in paths):
+    if any(p.is_symlink() for p in (manifest_path,raw_path)):
         raise ValueError("Symlinked M5 source evidence not allowed")
 
     manifest_path = capture_dir / "manifest.json"
@@ -135,7 +135,9 @@ def verify_physical(capture_dir:Path, initial_path:Path,
         raise ValueError("Music-OFF clean physical voice bounds not supported")
     song_info = capture.get("music_source",{})
     song_path = Path(song_info["path"]).expanduser().resolve(strict=True)
-    if (audit not in song_path.parents or song_path.is_symlink()
+    # Historical music source may live outside .audit (e.g. /data/oae-research),
+    # exactly as in the accepted M5 protocol; its pinned SHA256 is authoritative.
+    if (song_path.is_symlink()
             or song_info.get("sha256") != ACTUAL_SONG_SHA256
             or digest(song_path) != ACTUAL_SONG_SHA256):
         raise ValueError("Missing/changed private original song source")

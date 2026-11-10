@@ -155,6 +155,26 @@ class M7LiveTests(unittest.TestCase):
             self.assertTrue(stub.running)
             self.assertNotIn("quit",stub.commands)
 
+    def test_live_keymap_staging_only_writes_private_profile_no_rebind(self):
+        import cuewire_keymap as keymap
+        m=ui.LiveModel()
+        saved=[]
+        with patch.object(keymap,"read_profile",return_value=keymap.defaults()), \
+             patch.object(keymap,"save_profile",
+                          side_effect=lambda value:saved.append(value)), \
+             patch.object(live,"send_live",
+                          side_effect=AssertionError("no audio commands")), \
+             patch.object(live,"read_live",
+                          side_effect=AssertionError("no runtime requested")):
+            m.execute("keys")
+            self.assertIn("LOCAL PROFILE",m.feed[-1])
+            m.execute("bind cue:4 F8")
+            self.assertEqual(saved[-1]["cue:4"],"F8")
+            self.assertIn("manual Lua reload",m.feed[-1])
+            m.execute("bind cue:4 SUPER+C")
+            self.assertIn("REFUSED",m.feed[-1])
+        self.assertEqual(len(saved),1)
+
     def test_live_quit_needs_confirm_esc_and_stops_only_synthetic_owner(self):
         with SyntheticCuewireEngine() as stub,stub.environment():
             model=ui.LiveModel()

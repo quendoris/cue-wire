@@ -115,7 +115,7 @@ editing from the existing M7 command dock without key capture.
 ## Hyprland legacy .conf compatibility (NEW)
 
 Do NOT assume every installation uses a Lua configuration. If the
-actual running compositor is Hyprland 0.54 or older and the active
+actual running compositor is Hyprland 0.56 or older and the active
 configuration is hyprland.conf, use the dedicated safe
 [hyprland.conf integration](m7-hyprland-conf.md) instead of a
 dofile(...) Lua include.
@@ -131,9 +131,10 @@ The version-gated updater generates private owner-only
 up the existing hyprland.conf and appends a single marked
 source = /data/cue-wire/.audit/cuewire-keymap-v1.conf line.
 It does not rewrite user monitor/window/keymap settings, run a
-Hyprland reload, or install autostart services. For 0.55 and newer,
-the old .conf codepath is intentionally blocked: migrate and audit
-the real active config to Lua first.
+Hyprland reload, or install autostart services. For 0.57 and newer,
+the old .conf codepath is blocked. Hyprland 0.56.1+ warns that .conf
+is deprecated, so migrate the actual active config to Lua rather
+than extending a temporary compatibility setup.
 
 The commands in the previous Lua-only section apply to the Lua
 backend, NOT to older .conf installations.

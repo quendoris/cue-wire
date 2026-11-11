@@ -174,6 +174,20 @@ class LegacyConfTests(unittest.TestCase):
             self.assertFalse(folder.exists())
             self.assertEqual(list(Path(root).glob("*.cuewire-*.bak")),[])
 
+    def test_refuse_existing_cuewire_lua_during_first_conf_install(self):
+        previous={
+            "key":"KP_4","dispatcher":"exec",
+            "description":"CueWire M7.4 cue:4",
+            "arg":str(k.ROOT/"target/release/cuewire")+" ctl toggle 4",
+        }
+        with patch.object(h.cuewire_hotkeys,"load_hyprctl",
+                          return_value=[previous]):
+            issues=h.foreign_conflicts(k.defaults(),prior_conf_managed=False)
+            self.assertTrue(any("disable previous Lua" in x for x in issues))
+            self.assertEqual(
+                h.foreign_conflicts(
+                    k.defaults(),prior_conf_managed=True),[])
+
     def test_actual_version_gate_prevents_writes_on_lua_hyprland(self):
         with tempfile.TemporaryDirectory() as root:
             plain=Path(root)/"hyprland.conf"

@@ -738,15 +738,18 @@ on user hardware. Do not enable shortcuts after a failed preflight.
 The user's actual config file may be hyprland.conf, **not** hyprland.lua.
 Do not paste any dofile(...) Lua statement into Bash or a legacy .conf.
 
-- Hyprland <=0.54 (hyprlang): use
+- Hyprland <=0.56 (deprecated hyprlang): optionally use
   [the safe .conf updater](docs/m7-hyprland-conf.md). It generates
   .audit/cuewire-keymap-v1.conf and a single marked
   source = /data/cue-wire/.audit/cuewire-keymap-v1.conf include.
   No original window/monitor/binds are replaced; a private backup is
   created before an explicitly requested edit.
-- Hyprland >=0.55: official configuration language is Lua. The
-  legacy .conf updater refuses to modify .conf here; migrate/verify
-  the actual active config before enabling shortcuts.
+- Hyprland 0.55-0.56: Lua is the preferred format, but an existing
+  hyprland.conf still loads with a deprecation warning in 0.56.1+.
+  The legacy updater works temporarily; migrate the full active
+  config before upgrading to 0.57.
+- Hyprland >=0.57: the legacy .conf format is no longer supported;
+  the updater refuses to modify it. Use an audited Lua migration.
 
 First check your running compositor and read-only preview:
 

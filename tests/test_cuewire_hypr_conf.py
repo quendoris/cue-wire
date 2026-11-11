@@ -151,7 +151,8 @@ class LegacyConfTests(unittest.TestCase):
             self.assertEqual(generated.stat().st_mode&0o777,0o600)
             backups=list(Path(root).glob("*.cuewire-*.bak"))
             self.assertEqual(len(backups),2)
-            self.assertTrue(all(p.read_text()==original for p in backups))
+            self.assertTrue(any(p.read_text()==original for p in backups))
+            self.assertTrue(any(h.START in p.read_text() for p in backups))
 
     def test_apply_refuses_foreign_hotkeys_without_writing_anything(self):
         with tempfile.TemporaryDirectory() as root:

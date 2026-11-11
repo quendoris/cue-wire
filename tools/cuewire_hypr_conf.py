@@ -218,14 +218,27 @@ def backup_original(path:Path,data:bytes)->Path:
     raise ConfError("Cannot allocate unique private config backup")
 
 
-def foreign_conflicts(mapping:dict[str,str])->list[str]:
+def foreign_conflicts(mapping:dict[str,str], *,
+                      prior_conf_managed:bool=False)->list[str]:
     try:
         live=cuewire_hotkeys.load_hyprctl()
     except (RuntimeError,ValueError,OSError) as exc:
         raise ConfError("Cannot inspect current Hyprland binds") from exc
     if not isinstance(live,list):
         raise ConfError("Bad hyprctl binds response")
-    return keymap.conflicts(mapping,live)
+    issues=keymap.conflicts(mapping,live)
+    if not prior_conf_managed:
+        # Exact old CueWire M7.4 binds might belong to the already
+        # installed Lua profile. Loading a second conf backend on top
+        # would dispatch actions TWICE. Require deliberate uninstallation
+        # of that prior Lua include before first conf installation.
+        if any(keymap.is_our_active_binding(b) for b in live
+               if isinstance(b,dict)):
+            issues.append(
+                "Existing CueWire M7.4 binds detected; disable previous Lua "
+                "include and reload before first .conf installation"
+            )
+    return sorted(set(issues))
 
 
 def run(argv:list[str]|None=None)->int:
@@ -250,7 +263,8 @@ def run(argv:list[str]|None=None)->int:
         print("Generated cue bindings:",INCLUDED)
         print("No device defaults, config or compositor settings changed yet.")
         if parsed.action=="inspect":
-            issues=foreign_conflicts(mapping)
+            issues=foreign_conflicts(
+                mapping,prior_conf_managed=START in existing)
             if issues:
                 print("REFUSED foreign bind conflicts:\n"+"\n".join(issues))
                 return 2
@@ -266,7 +280,8 @@ def run(argv:list[str]|None=None)->int:
             )))
             print("PREVIEW ONLY — no files written")
             return 0
-        issues=foreign_conflicts(mapping)
+        issues=foreign_conflicts(
+            mapping,prior_conf_managed=START in existing)
         if issues:
             raise ConfError("Foreign Hyprland bindings conflict:\n"+
                             "\n".join(issues))

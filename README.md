@@ -731,3 +731,39 @@ cargo build --release --locked --offline
 See [M7.4 remappable hotkey acceptance](docs/m7-remappable-hotkeys.md).
 Compilation and unit tests have NOT yet been independently confirmed
 on user hardware. Do not enable shortcuts after a failed preflight.
+
+
+## Hyprland config format: .conf vs .lua (READ THIS BEFORE HOTKEYS)
+
+The user's actual config file may be hyprland.conf, **not** hyprland.lua.
+Do not paste any dofile(...) Lua statement into Bash or a legacy .conf.
+
+- Hyprland <=0.54 (hyprlang): use
+  [the safe .conf updater](docs/m7-hyprland-conf.md). It generates
+  .audit/cuewire-keymap-v1.conf and a single marked
+  source = /data/cue-wire/.audit/cuewire-keymap-v1.conf include.
+  No original window/monitor/binds are replaced; a private backup is
+  created before an explicitly requested edit.
+- Hyprland >=0.55: official configuration language is Lua. The
+  legacy .conf updater refuses to modify .conf here; migrate/verify
+  the actual active config before enabling shortcuts.
+
+First check your running compositor and read-only preview:
+
+~~~bash
+hyprctl version
+python3 tools/cuewire_hypr_conf.py inspect
+python3 tools/cuewire_hypr_conf.py preview
+~~~
+
+Only if BOTH tests and version preflight pass on legacy Hyprland:
+
+~~~bash
+python3 tools/cuewire_hypr_conf.py apply
+hyprctl reload
+python3 tools/cuewire_keymap.py verify
+~~~
+
+Physical game key delivery and emergency Super+C remain separate
+acceptance gates. Prior Lua-only examples in older M7 notes are NOT
+universal; they apply only to the corresponding Lua configuration.

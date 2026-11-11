@@ -1,9 +1,11 @@
 # CueWire M7.4 — safely update an existing hyprland.conf
 
-**Compatibility:** only for legacy Hyprland 0.54 and earlier.
-Hyprland 0.55+ changed its configuration language to Lua. The updater
-refuses legacy .conf modifications on newer versions. A filename
-alone cannot establish which configuration is actually active.
+**Temporary compatibility:** Hyprland 0.55 introduced Lua and deprecated
+hyprlang, but 0.55 and 0.56 still load legacy hyprland.conf. Hyprland
+0.56.1 explicitly warns on startup; 0.57 removes the legacy loader.
+The updater can repair old .conf through 0.56, refuses 0.57+, and is
+NOT a substitute for migrating the complete existing configuration
+to Lua. A filename alone does not prove which config is loaded.
 
 Official references:
 - https://wiki.hypr.land/0.54.0/configuring/binds/
@@ -67,7 +69,7 @@ Inspect checks current runtime version, config eligibility and
 foreign shortcut conflicts. Preview produces a full standalone
 CueWire .conf plus a unified diff. Neither writes files.
 
-## Explicit config update (only after 0.54-or-older verification)
+## Optional temporary .conf repair (only while running 0.56 or earlier)
 
 ~~~bash
 python3 tools/cuewire_hypr_conf.py apply
@@ -97,6 +99,10 @@ generated legacy .conf at the same time.
 Restore the exact printed backup over the EXACT active .conf and
 run hyprctl reload. The .audit keymap file is inert without the
 source directive. Do not apply the legacy update if Hyprland is
-0.55+ or if the actual live configuration path is uncertain.
+0.57+ or if the actual live configuration path is uncertain.
+For the user's 0.56.2 installation, migration to an audited
+hyprland.lua is recommended rather than maintaining deprecated .conf.
+Before migrating, locate and resolve any missing source include;
+keep a full backup of the existing .conf and its sourced files.
 Even when all unit tests pass, real game key delivery and the
 emergency scope shutdown require their own physical verification.

@@ -37,7 +37,15 @@ class LegacyConfTests(unittest.TestCase):
         with patch.object(h.subprocess,"run",return_value=
                           subprocess.CompletedProcess(
                               ["hyprctl","version"],0,"Hyprland 0.55.1","")):
-            with self.assertRaisesRegex(h.ConfError,"requires Lua"):
+            self.assertEqual(h.require_legacy_hyprland(),(0,55,1))
+        with patch.object(h.subprocess,"run",return_value=
+                          subprocess.CompletedProcess(
+                              ["hyprctl","version"],0,"Hyprland 0.56.2","")):
+            self.assertEqual(h.require_legacy_hyprland(),(0,56,2))
+        with patch.object(h.subprocess,"run",return_value=
+                          subprocess.CompletedProcess(
+                              ["hyprctl","version"],0,"Hyprland 0.57.0","")):
+            with self.assertRaisesRegex(h.ConfError,"no longer supports"):
                 h.require_legacy_hyprland()
         with self.assertRaisesRegex(h.ConfError,"Cannot determine"):
             h.version_from_text("some unknown compositor")
@@ -188,19 +196,19 @@ class LegacyConfTests(unittest.TestCase):
                 h.foreign_conflicts(
                     k.defaults(),prior_conf_managed=True),[])
 
-    def test_actual_version_gate_prevents_writes_on_lua_hyprland(self):
+    def test_actual_version_gate_prevents_writes_after_hyprlang_removal(self):
         with tempfile.TemporaryDirectory() as root:
             plain=Path(root)/"hyprland.conf"
             original="bind = SUPER, Q, exec, kitty\n"
             plain.write_text(original)
             with patch.object(h.subprocess,"run",return_value=
                               subprocess.CompletedProcess(
-                                  ["hyprctl","version"],0,"Hyprland 0.55.0","")), \
+                                  ["hyprctl","version"],0,"Hyprland 0.57.0","")), \
                  patch.object(h,"current_config_path",return_value=plain), \
                  redirect_stderr(io.StringIO()) as err:
                 self.assertEqual(h.run(["apply"]),2)
             self.assertEqual(plain.read_text(),original)
-            self.assertIn("requires Lua",err.getvalue())
+            self.assertIn("no longer supports",err.getvalue())
 
     def test_render_conf_is_independent_of_real_hyprctl(self):
         with patch.object(h.subprocess,"run",

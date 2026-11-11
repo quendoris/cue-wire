@@ -110,3 +110,30 @@ Physical test gates (all pending):
 
 Future interface extension: an inspectable keymap panel and staged
 editing from the existing M7 command dock without key capture.
+
+
+## Hyprland legacy .conf compatibility (NEW)
+
+Do NOT assume every installation uses a Lua configuration. If the
+actual running compositor is Hyprland 0.54 or older and the active
+configuration is hyprland.conf, use the dedicated safe
+[hyprland.conf integration](m7-hyprland-conf.md) instead of a
+dofile(...) Lua include.
+
+~~~bash
+hyprctl version
+python3 tools/cuewire_hypr_conf.py inspect
+python3 tools/cuewire_hypr_conf.py preview
+~~~
+
+The version-gated updater generates private owner-only
+.audit/cuewire-keymap-v1.conf and, only on explicit apply, backs
+up the existing hyprland.conf and appends a single marked
+source = /data/cue-wire/.audit/cuewire-keymap-v1.conf line.
+It does not rewrite user monitor/window/keymap settings, run a
+Hyprland reload, or install autostart services. For 0.55 and newer,
+the old .conf codepath is intentionally blocked: migrate and audit
+the real active config to Lua first.
+
+The commands in the previous Lua-only section apply to the Lua
+backend, NOT to older .conf installations.

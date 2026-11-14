@@ -21,6 +21,7 @@ import socket
 import stat
 import subprocess
 import sys
+import time
 
 import cuewire_keymap as keymap
 
@@ -284,9 +285,16 @@ def dispatch(ident:str,action:str)->int:
 
 
 def require_inactive()->None:
-    raw=call(["systemctl","--user","show",SCOPE,"--property=ActiveState"])
-    if raw not in ("ActiveState=inactive","ActiveState=failed"):
-        raise HotkeyError("Cannot prove CueWire scope inactive")
+    # The scope can remain in deactivating briefly after emergency kill.
+    # Never infer inactivity merely from an unsuccessful systemctl call.
+    deadline=time.monotonic()+2.0
+    while True:
+        raw=call(["systemctl","--user","show",SCOPE,"--property=ActiveState"])
+        if raw in ("ActiveState=inactive","ActiveState=failed"):
+            return
+        if raw!="ActiveState=deactivating" or time.monotonic()>=deadline:
+            raise HotkeyError("Cannot prove CueWire scope inactive: "+raw[:80])
+        time.sleep(.08)
 
 
 def runtime_directory()->Path:
@@ -303,10 +311,10 @@ def runtime_directory()->Path:
 
 def clean_stale_socket()->None:
     """Only after scope is gone; never unlink an active or foreign socket."""
+    require_inactive()
     p=runtime_directory()/"cuewire-v0.1.sock"
     try:before=p.lstat()
     except FileNotFoundError:return
-    require_inactive()
     if (not stat.S_ISSOCK(before.st_mode) or before.st_uid!=os.getuid()
             or before.st_mode&0o777!=0o600):
         raise HotkeyError("Unexpected runtime endpoint; left untouched")

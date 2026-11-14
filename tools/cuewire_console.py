@@ -100,7 +100,7 @@ def operator_command(value: str) -> tuple[str, str | None]:
     command = value.strip()
     if command in ("status", "stop", "quit"):
         return ("remote", command)
-    if re.fullmatch(r"play [0-9]", command, flags=re.ASCII):
+    if re.fullmatch(r"(?:play|toggle) [0-9]", command, flags=re.ASCII):
         return ("remote", command)
     if command in ("help", "?", "research", "exit"):
         return ("local", command)

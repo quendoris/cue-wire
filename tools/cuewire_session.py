@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """CueWire M7.3 single-session supervisor: default-node discovery + TUI.
 
-No default DEVICE changes, no Hyprland writes, no daemons, no auto-start.
+No default DEVICE changes, no config file edits, no daemons, no auto-start.
+Optional --hotkeys registers transient Lua bindings for this session only.
 --check is read-only. --run creates ONE transient user systemd scope
 holding the Python TUI, Rust engine, and its subprocesses; the existing
 tools/cuewire_scope.sh emergency kills that exact marked cgroup.
@@ -318,6 +319,77 @@ def run_inside(mic:str,monitor:str,cues:list[str],latency_ms:int,
         os.close(logfd)
 
 
+def run_with_hotkeys(args:list[str])->int:
+    """The outer foreground guardian survives inner scope SIGKILL.
+
+    A private runtime lock serializes opt-in launches. The token exists
+    before any Lua registration; partial installs are cleaned too.
+    """
+    import fcntl
+    import secrets
+    import cuewire_dynamic_hotkeys as hotkeys
+    import cuewire_keymap
+    path=socket_path().parent/"cuewire-dynamic.lock"
+    fd=os.open(path,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
+    token=secrets.token_hex(16)
+    prior={}
+    try:
+        meta=os.fstat(fd)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid!=os.getuid()
+                or meta.st_mode&0o777!=0o600):
+            raise SessionError("Unsafe dynamic hotkey lock")
+        try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise SessionError("Another CueWire hotkey guardian is active") from exc
+        refuse_existing()
+        # Check before launch; install will check again INSIDE the scope.
+        hotkeys.require_lua()
+        issues=hotkeys.conflicts(cuewire_keymap.read_profile(),hotkeys.bindings())
+        if issues:raise SessionError("Hotkey conflicts: "+"; ".join(issues))
+        def interrupted(_sig,_frame):
+            raise KeyboardInterrupt
+        for sig in (signal.SIGTERM,signal.SIGHUP):
+            prior[sig]=signal.getsignal(sig)
+            signal.signal(sig,interrupted)
+        outcome=2
+        try:
+            with TTYGuardian():
+                outcome=subprocess.run(args+["--hotkeys-token",token],check=False).returncode
+        except KeyboardInterrupt:
+            if scope_active() and scope_marked():
+                killed=command(["systemctl","--user","kill",
+                                "--kill-whom=cgroup","--signal=SIGKILL",
+                                SCOPE],timeout=2.0)
+                if killed.returncode:
+                    raise SessionError("Interrupted; scoped kill failed")
+            outcome=130
+        finally:
+            # Even a partial Lua install or a killed inner process reaches
+            # this surviving foreground owner. No reload, no foreign unbind.
+            for sig in prior:
+                signal.signal(sig,signal.SIG_IGN)
+            try:
+                hotkeys.release(token)
+                print("[cuewire] Temporary hotkeys released and checked")
+            except (hotkeys.HotkeyError,OSError) as exc:
+                print("[cuewire] HOTKEY CLEANUP NOT VERIFIED: "+str(exc),
+                      file=sys.stderr)
+                outcome=2
+            try:
+                hotkeys.clean_stale_socket()
+            except (hotkeys.HotkeyError,OSError) as exc:
+                print("[cuewire] Socket cleanup not verified: "+str(exc),
+                      file=sys.stderr)
+                outcome=2
+        return outcome
+    except (hotkeys.HotkeyError,cuewire_keymap.KeymapError) as exc:
+        raise SessionError(str(exc)) from exc
+    finally:
+        for sig,handler in prior.items():
+            signal.signal(sig,handler)
+        os.close(fd)
+
+
 def main(argv:list[str]|None=None)->int:
     ap=argparse.ArgumentParser(description=__doc__)
     modes=ap.add_mutually_exclusive_group(required=True)
@@ -332,10 +404,16 @@ def main(argv:list[str]|None=None)->int:
     ap.add_argument("--no-motion",action="store_true")
     ap.add_argument("--mono",action="store_true")
     ap.add_argument("--workspace",action="store_true",help="opt-in M7.5 tabbed workspace")
+    ap.add_argument("--hotkeys",action="store_true",help="explicit temporary global NumPad/keymap and Super+C")
+    ap.add_argument("--hotkeys-token",help=argparse.SUPPRESS)
     ap.add_argument("--replace-profile",action="store_true",
                     help="allow explicit overwrite only together with --configure")
     a=ap.parse_args(argv)
     try:
+        if a.hotkeys and not a.run:
+            raise SessionError("--hotkeys requires --run")
+        if a.hotkeys_token and not a.inside_scope:
+            raise SessionError("Internal hotkey token requires scoped run")
         if not 5<=a.latency_ms<=150:
             raise SessionError("latency-ms must be 5..150")
         if a.replace_profile and not a.configure:
@@ -363,6 +441,10 @@ def main(argv:list[str]|None=None)->int:
             # run inside the killable scope, even during initialization.
             if not scope_active() or not scope_marked():
                 raise SessionError("Refusing direct unscoped internal run")
+            if a.hotkeys_token:
+                import cuewire_dynamic_hotkeys as hotkeys
+                import cuewire_keymap
+                hotkeys.install(cuewire_keymap.read_profile(),a.hotkeys_token)
             cues=parse_cues(a.cue) if a.cue else private_profile_cues()
             if not cues:
                 raise SessionError("No cues configured; use --configure --cue N=/absolute/audio.wav")
@@ -387,6 +469,8 @@ def main(argv:list[str]|None=None)->int:
         if a.workspace:args.append("--workspace")
         # Entire engine + TUI belong to the same emergency cgroup.
         # The invoker stays outside and does not modify other processes.
+        if a.hotkeys:
+            return run_with_hotkeys(args)
         try:
             with TTYGuardian():
                 outcome=subprocess.run(args,check=False)
@@ -399,7 +483,7 @@ def main(argv:list[str]|None=None)->int:
                 if killed.returncode:
                     raise SessionError("Interrupted; scoped cgroup kill failed")
             return 130
-    except (SessionError,OSError) as exc:
+    except (RuntimeError,OSError) as exc:
         print("cuewire-session: "+str(exc),file=sys.stderr)
         return 2
 

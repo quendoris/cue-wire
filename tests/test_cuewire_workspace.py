@@ -109,6 +109,16 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIsNone(w.cue_number(m))
         self.assertNotIn("actual.wav",w.paint(work,100,32)[0].plain())
 
+    def test_live_model_refreshes_actual_state_after_toggle(self):
+        m=ui.LiveModel()
+        ready=backend.LiveReport(True,"ready",active_cue="none")
+        playing=backend.LiveReport(True,"ready",active_cue="Some(4)")
+        with patch.object(backend,"read_live",side_effect=[ready,playing]), \
+             patch.object(backend,"send_live",return_value="OK playing cue 4") as send:
+            m.execute("toggle 4")
+        send.assert_called_once_with("toggle 4")
+        self.assertEqual(w.cue_number(m),4)
+
     def test_protocol_toggle_allowlist_is_strict(self):
         self.assertEqual(protocol.operator_command("toggle 4"),("remote","toggle 4"))
         for invalid in ("toggle 10","toggle -1","toggle 4; quit","toggle 4\nquit"):

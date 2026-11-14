@@ -24,6 +24,7 @@ import sys
 import time
 
 import cuewire_keymap as keymap
+import cuewire_console as protocol
 
 ROOT=Path(__file__).resolve().parents[1]
 SCRIPT=Path(__file__).resolve()
@@ -302,7 +303,6 @@ def dispatch(ident:str,action:str)->int:
     if action=="panic":
         call(["bash",str(ROOT/"tools/cuewire_scope.sh"),"emergency"],timeout=3)
     else:
-        import cuewire_console as protocol
         command="stop" if action=="stop" else "toggle "+action[-1]
         result=protocol.request(command,timeout_seconds=0.5)
         if not result.startswith("OK "):
@@ -405,13 +405,16 @@ def main(argv:list[str]|None=None)->int:
         require_lua()
         if a.action=="probe":
             ident=invocation()
-            import cuewire_console as protocol
             status=protocol.request("status",timeout_seconds=.5)
             protocol.parse_status(status)
             print("PASS: marked scope and authenticated Rust status")
             print("Current invocation:",ident)
             print("To test dispatcher directly (toggles cue 4):")
-            print(shlex.join([sys.executable,str(SCRIPT),"dispatch",ident,"cue:4"]))
+            cmd=shlex.join([sys.executable,str(SCRIPT),"dispatch",ident,"cue:4"])
+            print(cmd)
+            print("To test the same command through Hyprland (toggles cue 4):")
+            print(shlex.join(["hyprctl","eval",
+                              "hl.dispatch(hl.dsp.exec_cmd("+lua_string(cmd)+"))"]))
             return 0
         if a.action=="recover":
             recover()
@@ -427,7 +430,7 @@ def main(argv:list[str]|None=None)->int:
             for b in rows:
                 print(b.get("description"),b.get("key"),"mask",b.get("modmask"))
         return 0
-    except (HotkeyError,keymap.KeymapError,OSError,RuntimeError) as exc:
+    except (HotkeyError,keymap.KeymapError,protocol.ConsoleError,OSError,RuntimeError) as exc:
         # Do not print keypress history; only configuration/command errors.
         print("REFUSED: "+str(exc),file=sys.stderr)
         return 2

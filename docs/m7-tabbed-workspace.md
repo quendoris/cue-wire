@@ -131,3 +131,13 @@ autostart, OS default modification, keylogging or physical audio
 capture is introduced by the workspace. Physical device switching,
 real independent mixer gains, hotkey session cleanup and audio
 performance must be separately verified before production use.
+
+
+## M7.6.1 layout refinement
+
+Mixer keypad geometry now grows with the available character-cell
+width and height, centered within the right column, with a compact
+fallback when the dock is expanded. Four gain strips use the
+available vertical space. The original dock/footer remain unchanged.
+The independent live gains are still N/A. A new geometry regression
+sweeps terminal widths/heights and both dock states.

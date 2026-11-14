@@ -276,7 +276,7 @@ def stop_engine(child:subprocess.Popen)->None:
 
 
 def run_inside(mic:str,monitor:str,cues:list[str],latency_ms:int,
-               no_motion:bool,mono:bool)->int:
+               no_motion:bool,mono:bool,workspace:bool=False)->int:
     """Start supervisor and TUI IN THE SAME verified transient cgroup."""
     if not scope_active() or not scope_marked():
         raise SessionError("Refusing direct unscoped internal run")
@@ -307,6 +307,10 @@ def run_inside(mic:str,monitor:str,cues:list[str],latency_ms:int,
         import cuewire_tui
         # We are in the single emergency-kill cgroup with all engine
         # child processes; TUI stays in THIS foreground process.
+        if workspace:
+            return cuewire_tui.run_demo(no_motion=no_motion,mono=mono,
+                                        live=True,managed=True,workspace=True,
+                                        cues=tuple(cues))
         return cuewire_tui.run_demo(no_motion=no_motion,mono=mono,
                                     live=True,managed=True)
     finally:
@@ -327,6 +331,7 @@ def main(argv:list[str]|None=None)->int:
     ap.add_argument("--latency-ms",type=int,default=25)
     ap.add_argument("--no-motion",action="store_true")
     ap.add_argument("--mono",action="store_true")
+    ap.add_argument("--workspace",action="store_true",help="opt-in M7.5 tabbed workspace")
     ap.add_argument("--replace-profile",action="store_true",
                     help="allow explicit overwrite only together with --configure")
     a=ap.parse_args(argv)
@@ -362,6 +367,9 @@ def main(argv:list[str]|None=None)->int:
             if not cues:
                 raise SessionError("No cues configured; use --configure --cue N=/absolute/audio.wav")
             mic,monitor=resolve_nodes(a.mic,a.monitor)
+            if a.workspace:
+                return run_inside(mic,monitor,cues,a.latency_ms,
+                                  a.no_motion,a.mono,workspace=True)
             return run_inside(mic,monitor,cues,a.latency_ms,
                               a.no_motion,a.mono)
         # --run: refuse takeover before creating any scoped process.
@@ -376,6 +384,7 @@ def main(argv:list[str]|None=None)->int:
         for cue in a.cue:args.extend(["--cue",cue])
         if a.no_motion:args.append("--no-motion")
         if a.mono:args.append("--mono")
+        if a.workspace:args.append("--workspace")
         # Entire engine + TUI belong to the same emergency cgroup.
         # The invoker stays outside and does not modify other processes.
         try:

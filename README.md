@@ -801,3 +801,39 @@ hotkeys, change defaults, add a daemon or enable M6 DSP.
 See [M7.5 workspace design and audit](docs/m7-tabbed-workspace.md).
 The 13 new synthetic tests are committed; real Arch acceptance is
 pending. Existing launch without --workspace is unchanged.
+
+
+## M7.6: transient global NumPad / session-owned hotkeys
+
+For a running Lua Hyprland configuration, prefer the new opt-in
+dynamic hotkey mode over a permanent dofile include:
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_cuewire_dynamic_hotkeys.py' -v
+python3 tools/cuewire_dynamic_hotkeys.py check
+python3 tools/cuewire_session.py --run --workspace --hotkeys
+~~~
+
+The default private action map installs ten keypad toggles, decimal
+stop and Super+C scoped emergency only during the foreground session.
+The original Super+Shift+C window shortcut remains independent.
+Lua handles are session-token-labelled; external dispatch helpers
+verify the marked scope's InvocationID before sending a command.
+The outer foreground guardian survives the audio scope kill, restores
+TTY and removes temporary handles, verifies scope inactivity and
+handles the stale control socket. No config file edits or reload.
+
+~~~bash
+python3 tools/cuewire_dynamic_hotkeys.py status
+# After stopping the scope, if manual recovery is needed:
+python3 tools/cuewire_dynamic_hotkeys.py recover
+~~~
+
+Keep older static CueWire Lua includes disabled; do not mix backends.
+NumLock on is the first physical keypad test. Registration metadata
+does not prove actual game delivery, held-modifier behavior or
+cleanup in every failure mode. The new synthetic tests and the
+physical 0 -> 12 -> 0 registration/cleanup sequence must pass before
+claiming acceptance. Live gain stages and M6 DSP remain separate.
+
+See [M7.6 dynamic hotkey lifecycle and recovery](docs/m7-dynamic-hotkeys.md).

@@ -100,7 +100,7 @@ class DynamicHotkeysTests(unittest.TestCase):
         changed[0]=dict(changed[0],dispatcher="exec")
         self.assertTrue(h.verification(k.defaults(),TOKEN,changed))
         changed=rows()
-        changed[0]=dict(changed[0],modmask=64)
+        changed[0]=dict(changed[0],modmask=0)
         self.assertTrue(h.verification(k.defaults(),TOKEN,changed))
 
     def test_install_requires_scope_and_conflict_free_lua(self):

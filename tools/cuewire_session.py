@@ -348,7 +348,7 @@ def run_with_hotkeys(args:list[str])->int:
         if issues:raise SessionError("Hotkey conflicts: "+"; ".join(issues))
         def interrupted(_sig,_frame):
             raise KeyboardInterrupt
-        for sig in (signal.SIGTERM,signal.SIGHUP):
+        for sig in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP):
             prior[sig]=signal.getsignal(sig)
             signal.signal(sig,interrupted)
         outcome=2

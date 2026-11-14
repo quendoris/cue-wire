@@ -110,7 +110,7 @@ on the system default device, or claim that M6-007 is live.
 
 ## Verification limits and next milestone
 
-12 new synthetic tests cover unchanged dock/footer at different
+13 new synthetic tests cover unchanged dock/footer at different
 sizes, tabs and focus, independent demo gains, disabled live gains,
 confirmed cue status, strict toggle allowlist, explicit library
 scan/staging/profile saves, no demo file reads, long name wrapping,

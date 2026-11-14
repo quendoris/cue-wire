@@ -25,8 +25,8 @@ def rows(mapping=None):
     return [
         {"key":h.split(chord)[0],"modmask":h.split(chord)[1],
          "dispatcher":"__lua","arg":str(i+1),
-         "description":h.description(TOKEN,action)}
-        for i,(action,chord) in enumerate(h.desired(mapping).items())
+         "description":h.description(TOKEN,suffix)}
+        for i,(action,chord,suffix) in enumerate(h.registrations(mapping))
     ]
 
 
@@ -61,8 +61,8 @@ class DynamicHotkeysTests(unittest.TestCase):
 
     def test_lua_codegen_is_session_scoped_and_no_input_reader(self):
         program=h.render_install(k.defaults(),TOKEN,INVOCATION)
-        self.assertEqual(program.count("hl.bind("),12)
-        self.assertEqual(program.count("ignore_mods = true"),11)
+        self.assertEqual(program.count("hl.bind("),23)
+        self.assertEqual(program.count("ignore_mods = true"),22)
         self.assertIn("repeating = false",program)
         self.assertIn("dont_inhibit = true",program)
         self.assertIn(INVOCATION,program)
@@ -73,6 +73,25 @@ class DynamicHotkeysTests(unittest.TestCase):
         self.assertNotIn("hl.is_key_down",program)
         with self.assertRaises(h.HotkeyError):
             h.render_install(k.defaults(),"unsafe';quit",INVOCATION)
+
+    def test_keypad_aliases_are_same_action_and_exactly_verified(self):
+        mapping=k.defaults()
+        registrations=h.registrations(mapping)
+        self.assertEqual(len(registrations),23)
+        self.assertIn(("cue:4","KP_Left","cue:4 alias"),registrations)
+        self.assertIn(("stop","KP_Delete","stop alias"),registrations)
+        self.assertEqual(len({chord for _,chord,_ in registrations}),23)
+        self.assertEqual(len({suffix for _,_,suffix in registrations}),23)
+        program=h.render_install(mapping,TOKEN,INVOCATION)
+        self.assertIn('hl.bind("KP_Left"',program)
+        self.assertIn('hl.bind("KP_Delete"',program)
+        self.assertEqual(program.count("dispatch "+INVOCATION+" cue:4"),2)
+        self.assertEqual(h.verification(mapping,TOKEN,rows()),[])
+        self.assertTrue(h.verification(mapping,TOKEN,[
+            row for row in rows() if row["key"]!="KP_LEFT"]))
+        custom={"cue:4":"F8","stop":"CTRL + KP_Decimal"}
+        self.assertEqual(len(h.registrations(custom)),4)
+        self.assertIn(("stop","CTRL + KP_Delete","stop alias"),h.registrations(custom))
 
     def test_v056_lua_registry_ids_and_exact_masks_are_verified(self):
         self.assertEqual(h.verification(k.defaults(),TOKEN,rows()),[])

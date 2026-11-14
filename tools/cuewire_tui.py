@@ -818,9 +818,14 @@ def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False,
         with TerminalSession():
             while not state.terminated:
                 now=time.monotonic()
+                # The workspace's NumPad reflects the real server state,
+                # including global hotkeys, without observing keyboard events.
+                # Faster polling only in the Mixer; no compositor polling.
+                poll_interval=.5 if work is not None and work.tab==4 else 3.0
                 if (live and not state.waiting_quit
-                        and now-state.last_refresh>=3.0):
+                        and now-state.last_refresh>=poll_interval):
                     state.refresh()
+                    last_frame=0.0
                 w,h=shutil.get_terminal_size((100,32))
                 if (w,h)!=last_size:
                     sys.stdout.write("\x1b[2J")

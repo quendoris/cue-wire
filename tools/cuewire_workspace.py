@@ -141,6 +141,8 @@ class Workspace:
                     # Merge with the current local next-session profile.
                     # Explicit command is the only write, never during scan.
                     current={int(v[0]):v[2:] for v in session.private_profile_cues()}
+                    if not current:
+                        current={n:str(p) for n,p in self.running_cues.items()}
                     current.update({n:str(p) for n,p in self.staged.items()})
                     session.write_private_profile(
                         [f"{n}={p}" for n,p in sorted(current.items())],replace=True)
@@ -227,7 +229,8 @@ class Workspace:
                     "library /absolute/path | slot 4 1 | save library",
                     "WAV only; bounded top-level scan, no playback during scan.",
                     "NEXT SESSION: staged assignments do not change the live engine.",
-                    *[f"{n:2} -> {p.name}" for n,p in sorted(self.staged.items())],
+                    *[f"RUN {n} -> {p.name}" for n,p in sorted(self.running_cues.items())],
+                    *[f"NEXT {n} -> {p.name}" for n,p in sorted(self.staged.items())],
                     *[f"{i+1:3}  {p.name}" for i,p in enumerate(self.files)]]
         return []
 
@@ -285,40 +288,65 @@ def paint(work:Workspace,width:int,height:int,seconds:float=0.0):
     right_width=area.x+area.w-2-right
     canvas.write(left,area.y+1,"GAIN / "+("UNAVAILABLE" if work.live else "DEMO"),
                  ui.WARN if work.live else ui.SITE_ACCENT,True,maxlen=left_width)
+    tall=area.h>=19
     for i,label in enumerate(GAIN_NAMES):
-        y=area.y+2+i
+        y=area.y+2+i*(3 if tall else 1)
         mark=">" if i==work.gain_row else " "
         amount=work.gains[i]
-        bar="--------" if work.live else (
-            "#"*(amount*8//100)+"-"*(8-amount*8//100))
-        value=" N/A" if work.live else f"{amount:3}%"
-        canvas.write(left,y,f"{mark}{label:<12} [{bar}] {value}",
-                     ui.SITE_ACCENT if i==work.gain_row else ui.MUTED,
-                     maxlen=left_width)
-    canvas.write(left,area.y+7,"Live gains need engine support" if work.live else
+        if tall:
+            n=max(4,left_width-10)
+            filled=amount*n//100
+            bar="─"*n if work.live else "━"*filled+"─"*(n-filled)
+            value="N/A" if work.live else f"{amount:3}%"
+            canvas.write(left,y,f"{mark} {label}  {value}",
+                         ui.SITE_ACCENT if i==work.gain_row else ui.MUTED,
+                         maxlen=left_width)
+            canvas.write(left+2,y+1,bar,
+                         ui.BORDER if work.live else ui.SITE_ACCENT,
+                         maxlen=left_width-2)
+        else:
+            bar="--------" if work.live else (
+                "#"*(amount*8//100)+"-"*(8-amount*8//100))
+            value=" N/A" if work.live else f"{amount:3}%"
+            canvas.write(left,y,f"{mark}{label:<12} [{bar}] {value}",
+                         ui.SITE_ACCENT if i==work.gain_row else ui.MUTED,
+                         maxlen=left_width)
+    hint_y=area.y+(15 if tall else 7)
+    canvas.write(left,hint_y,"Live gains need engine support" if work.live else
                  "UP/DOWN select; LEFT/RIGHT +/-5%",ui.MUTED,maxlen=left_width)
     canvas.write(right,area.y+1,"NUMPAD / CUE STATE",ui.SITE_ACCENT,True,maxlen=right_width)
     active=cue_number(m)
+    big_keys=tall and right_width>=23
     for row,nums in enumerate(((7,8,9),(4,5,6),(1,2,3),(0,None,-1))):
         for col,num in enumerate(nums):
             if num is None:
                 continue
             pressed=(num==work.last_press and time.monotonic()<work.press_until)
             playing=(num==active)
-            label=("<"+str(num)+">" if playing else
-                   " . " if num==-1 else "["+str(num)+"]")
-            canvas.write(right+col*5,area.y+2+row,label,
-                         ui.SITE_ACCENT if playing or pressed else ui.MUTED,
-                         bold=playing or pressed,maxlen=3)
-    canvas.write(right,area.y+6,"NOW PLAYING / "+("LIVE" if work.live else "DEMO"),
+            if big_keys:
+                key_w=15 if num==0 else 7
+                box=ui.Rect(right+col*8,area.y+2+row*3,key_w,3)
+                canvas.rect(box,playing or pressed,fill_alpha=.85)
+                label="." if num==-1 else str(num)
+                canvas.write(box.x+box.w//2,box.y+1,label,
+                             ui.SITE_ACCENT if playing or pressed else ui.MUTED,
+                             bold=playing or pressed,maxlen=1)
+            else:
+                label=("<"+str(num)+">" if playing else
+                       " . " if num==-1 else "["+str(num)+"]")
+                canvas.write(right+col*5,area.y+2+row,label,
+                             ui.SITE_ACCENT if playing or pressed else ui.MUTED,
+                             bold=playing or pressed,maxlen=3)
+    title_y=area.y+(15 if big_keys else 6)
+    canvas.write(right,title_y,"NOW PLAYING / "+("LIVE" if work.live else "DEMO"),
                  ui.SITE_ACCENT,True,maxlen=right_width)
     if active is None:
         track="Unknown / disconnected" if work.live and not m.report.connected else "No active cue"
     else:
         path=work.running_cues.get(active)
         track=f"#{active} "+(path.name if path else "(filename not reported)")
-    # Keep the entire title inspectable in the Library/managed profile;
-    # wrap as much of the actual track title as fits this small pane.
-    for i,line in enumerate(textwrap.wrap(display(track),width=max(1,right_width))[:max(1,area.h-8)]):
-        canvas.write(right,area.y+7+i,line,ui.TEXT,maxlen=right_width)
+    # Full names remain available in the Library / managed start profile.
+    max_lines=max(1,area.y+area.h-1-(title_y+1))
+    for i,line in enumerate(textwrap.wrap(display(track),width=max(1,right_width))[:max_lines]):
+        canvas.write(right,title_y+1+i,line,ui.TEXT,maxlen=right_width)
     return canvas,geo

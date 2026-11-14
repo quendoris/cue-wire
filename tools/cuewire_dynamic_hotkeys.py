@@ -103,6 +103,35 @@ def desired(mapping:dict[str,str])->dict[str,str]:
     return {**keymap.validate(mapping),"panic":"SUPER + C"}
 
 
+# Hyprland can resolve keypad binds through the XKB translation state
+# rather than the actual NumLock state of the keyboard. Both symbolic
+# forms are therefore registered to the SAME action, never to two actions.
+# No physical key events are observed by CueWire.
+ALIAS_SPELLINGS={
+    "KP_INSERT":"KP_Insert","KP_END":"KP_End","KP_DOWN":"KP_Down",
+    "KP_NEXT":"KP_Next","KP_LEFT":"KP_Left","KP_BEGIN":"KP_Begin",
+    "KP_RIGHT":"KP_Right","KP_HOME":"KP_Home","KP_UP":"KP_Up",
+    "KP_PRIOR":"KP_Prior","KP_DELETE":"KP_Delete",
+}
+
+
+def registrations(mapping:dict[str,str])->list[tuple[str,str,str]]:
+    """(action, actual keysym chord, description suffix)."""
+    result=[]
+    entries=desired(mapping)
+    for action in ("panic",*keymap.ACTIONS):
+        if action not in entries:
+            continue
+        chord=entries[action]
+        result.append((action,chord,action))
+        parts=chord.split(" + ")
+        alias=NUMPAD_ALIASES.get(parts[-1].upper())
+        if alias:
+            alternative=" + ".join([*parts[:-1],ALIAS_SPELLINGS[alias]])
+            result.append((action,alternative,action+" alias"))
+    return result
+
+
 def split(chord:str)->tuple[str,int,bool]:
     parts=chord.split(" + ")
     base=parts[-1].upper()
@@ -177,15 +206,12 @@ def render_install(mapping:dict[str,str],token:str,ident:str)->str:
         f"_G.{GLOBAL} = owner",
     ]
     # Panic FIRST, so startup is interruptible as early as possible.
-    for action in ("panic",*keymap.ACTIONS):
-        if action not in entries:
-            continue
-        chord=entries[action]
-        _,_,ignore=split(chord)
+    for action,chord,suffix in registrations(mapping):
+        _,_,ignore=split(entries[action])
         command=shlex.join([sys.executable,str(SCRIPT),"dispatch",ident,action])
         flags=("{ dont_inhibit = true, repeating = false, "
                +("ignore_mods = true, " if ignore else "")
-               +"description = "+lua_string(description(token,action))+" }")
+               +"description = "+lua_string(description(token,suffix))+" }")
         lines.append("owner.handles[#owner.handles + 1] = assert(hl.bind("
                      +lua_string(chord)+", hl.dsp.exec_cmd("
                      +lua_string(command)+"), "+flags+"))")
@@ -201,13 +227,13 @@ def marked(rows:list[dict],token:str)->list[dict]:
 def verification(mapping:dict[str,str],token:str,rows:list[dict])->list[str]:
     owned=marked(rows,token)
     problems=[]
-    expected=desired(mapping)
+    expected=registrations(mapping)
     if len(owned)!=len(expected):
         problems.append(f"Expected {len(expected)} registrations, found {len(owned)}")
-    for action,chord in expected.items():
+    for action,chord,suffix in expected:
         base,mask,_=split(chord)
         matches=[b for b in owned if (
-            b.get("description")==description(token,action)
+            b.get("description")==description(token,suffix)
             and b.get("dispatcher")=="__lua"
             and re.fullmatch(r"[0-9]+",str(b.get("arg","")))
             and base_of(b)==base and b.get("modmask")==mask
@@ -350,7 +376,7 @@ def recover()->None:
         tokens=set()
         for row in rows:
             desc=str(row.get("description",""))
-            match=re.fullmatch(re.escape(PREFIX)+r"([0-9a-f]{32}) (?:cue:[0-9]|stop|panic)",desc)
+            match=re.fullmatch(re.escape(PREFIX)+r"([0-9a-f]{32}) (?:cue:[0-9]|stop|panic)(?: alias)?",desc)
             if match:
                 tokens.add(match.group(1))
         for token in tokens:
@@ -368,7 +394,7 @@ def recover()->None:
 
 def main(argv:list[str]|None=None)->int:
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument("action",choices=("check","status","recover","dispatch"))
+    p.add_argument("action",choices=("check","status","recover","dispatch","probe"))
     p.add_argument("args",nargs="*")
     a=p.parse_args(argv)
     try:
@@ -377,6 +403,16 @@ def main(argv:list[str]|None=None)->int:
             return dispatch(*a.args)
         if a.args:raise HotkeyError("Unexpected arguments")
         require_lua()
+        if a.action=="probe":
+            ident=invocation()
+            import cuewire_console as protocol
+            status=protocol.request("status",timeout_seconds=.5)
+            protocol.parse_status(status)
+            print("PASS: marked scope and authenticated Rust status")
+            print("Current invocation:",ident)
+            print("To test dispatcher directly (toggles cue 4):")
+            print(shlex.join([sys.executable,str(SCRIPT),"dispatch",ident,"cue:4"]))
+            return 0
         if a.action=="recover":
             recover()
         elif a.action=="check":
@@ -393,8 +429,7 @@ def main(argv:list[str]|None=None)->int:
         return 0
     except (HotkeyError,keymap.KeymapError,OSError,RuntimeError) as exc:
         # Do not print keypress history; only configuration/command errors.
-        if a.action!="dispatch":
-            print("REFUSED: "+str(exc),file=sys.stderr)
+        print("REFUSED: "+str(exc),file=sys.stderr)
         return 2
 
 

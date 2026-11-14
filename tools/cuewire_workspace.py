@@ -64,6 +64,7 @@ class Workspace:
         self.folder=""
         self.files:tuple[Path,...]=()
         self.staged:dict[int,Path]={}
+        self.saved_next:dict[int,Path]={}
         # Only the managed launcher knows the exact paths given to Rust.
         # Do not infer active filenames from an edited next-session profile.
         self.running_cues={int(v[0]):Path(v[2:]) for v in cues
@@ -146,6 +147,7 @@ class Workspace:
                     current.update({n:str(p) for n,p in self.staged.items()})
                     session.write_private_profile(
                         [f"{n}={p}" for n,p in sorted(current.items())],replace=True)
+                    self.saved_next={n:Path(p) for n,p in current.items()}
                     self.staged.clear()
                     m.add("Saved private cue profile; applies on next session")
                 except (session.SessionError,OSError,ValueError) as exc:
@@ -213,7 +215,10 @@ class Workspace:
                         "Socket ACL: "+r.socket_acl,
                         "Control protocol: "+r.protocol,
                         "Run doctor in the dock for graph registration checks.",
-                        "Sample rate, signal levels, XRUNs and measured latency: unavailable."]
+                        *[f"{check.result} / {check.name}: {check.detail}"
+                          for check in m.graph_checks],
+                        "Sample rate, signal levels, XRUNs and measured latency: unavailable.",
+                        "Device changes: restart with --mic / --monitor; no automatic switching."]
             return ["Devices / "+("OFFLINE" if self.live else "DEMO"),
                     "No verified physical node names available.",
                     "No device, route or default is changed by this view."]
@@ -230,7 +235,9 @@ class Workspace:
                     "WAV only; bounded top-level scan, no playback during scan.",
                     "NEXT SESSION: staged assignments do not change the live engine.",
                     *[f"RUN {n} -> {p.name}" for n,p in sorted(self.running_cues.items())],
-                    *[f"NEXT {n} -> {p.name}" for n,p in sorted(self.staged.items())],
+                    *[f"SAVED {n} -> {p.name}" for n,p in sorted(self.saved_next.items())
+                      if n not in self.staged],
+                    *[f"STAGED {n} -> {p.name}" for n,p in sorted(self.staged.items())],
                     *[f"{i+1:3}  {p.name}" for i,p in enumerate(self.files)]]
         return []
 

@@ -833,7 +833,7 @@ Keep older static CueWire Lua includes disabled; do not mix backends.
 NumLock on is the first physical keypad test. Registration metadata
 does not prove actual game delivery, held-modifier behavior or
 cleanup in every failure mode. The new synthetic tests and the
-physical 0 -> 12 -> 0 registration/cleanup sequence must pass before
+physical 0 -> 23 -> 0 registration/cleanup sequence must pass before
 claiming acceptance. Live gain stages and M6 DSP remain separate.
 
 See [M7.6 dynamic hotkey lifecycle and recovery](docs/m7-dynamic-hotkeys.md).

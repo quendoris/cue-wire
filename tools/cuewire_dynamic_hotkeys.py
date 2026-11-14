@@ -10,11 +10,15 @@ Hyprland 0.56.2 reports Lua handlers as __lua with opaque registry IDs.
 from __future__ import annotations
 
 import argparse
+import errno
+import fcntl
 import json
 import os
 from pathlib import Path
 import re
 import shlex
+import socket
+import stat
 import subprocess
 import sys
 
@@ -142,8 +146,7 @@ def conflicts(mapping:dict[str,str],existing:list[dict])->list[str]:
                     and key=="C"):
                 # Migrated user window-force-close is Super+Shift+C.
                 continue
-            if ignore or foreign_ignore or foreign_mask==mask or action!="panic":
-                result.append(f"{chord}: existing {key} bind (mask {foreign_mask})")
+            result.append(f"{chord}: existing {key} bind (mask {foreign_mask})")
     return sorted(set(result))
 
 
@@ -280,22 +283,79 @@ def dispatch(ident:str,action:str)->int:
     return 0
 
 
-def recover()->None:
-    # A recovery is never allowed while a scope is active or its
-    # status is uncertain. An absent unit normally has LoadState not-found.
+def require_inactive()->None:
     raw=call(["systemctl","--user","show",SCOPE,"--property=ActiveState"])
-    if raw!="ActiveState=inactive" and raw!="ActiveState=failed":
+    if raw not in ("ActiveState=inactive","ActiveState=failed"):
         raise HotkeyError("Cannot prove CueWire scope inactive")
-    rows=bindings()
-    tokens=set()
-    for row in rows:
-        desc=str(row.get("description",""))
-        match=re.fullmatch(re.escape(PREFIX)+r"([0-9a-f]{32}) (?:cue:[0-9]|stop|panic)",desc)
-        if match:
-            tokens.add(match.group(1))
-    for token in tokens:
-        release(token)
-    print("PASS: no remaining identified temporary CueWire bindings")
+
+
+def runtime_directory()->Path:
+    raw=os.environ.get("XDG_RUNTIME_DIR","")
+    p=Path(raw)
+    if not p.is_absolute():
+        raise HotkeyError("Missing absolute XDG_RUNTIME_DIR")
+    meta=p.lstat()
+    if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=os.getuid()
+            or meta.st_mode&0o022):
+        raise HotkeyError("Unsafe runtime directory")
+    return p
+
+
+def clean_stale_socket()->None:
+    """Only after scope is gone; never unlink an active or foreign socket."""
+    p=runtime_directory()/"cuewire-v0.1.sock"
+    try:before=p.lstat()
+    except FileNotFoundError:return
+    require_inactive()
+    if (not stat.S_ISSOCK(before.st_mode) or before.st_uid!=os.getuid()
+            or before.st_mode&0o777!=0o600):
+        raise HotkeyError("Unexpected runtime endpoint; left untouched")
+    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as probe:
+        probe.settimeout(.15)
+        try:probe.connect(str(p))
+        except OSError as exc:
+            if exc.errno not in (errno.ECONNREFUSED,errno.ENOENT):
+                raise HotkeyError("Socket liveness uncertain; left untouched") from exc
+        else:
+            raise HotkeyError("Socket still listening; left untouched")
+    try:now=p.lstat()
+    except FileNotFoundError:return
+    if (now.st_dev,now.st_ino)!=(before.st_dev,before.st_ino):
+        raise HotkeyError("Socket changed during verification")
+    p.unlink()
+
+
+def recover()->None:
+    """Manual recovery if the OUTER guardian itself was killed."""
+    fd=os.open(runtime_directory()/"cuewire-dynamic.lock",
+               os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_CLOEXEC,0o600)
+    try:
+        meta=os.fstat(fd)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid!=os.getuid()
+                or meta.st_mode&0o777!=0o600):
+            raise HotkeyError("Unsafe runtime lock")
+        try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise HotkeyError("Foreground guardian still owns this session") from exc
+        require_inactive()
+        rows=bindings()
+        tokens=set()
+        for row in rows:
+            desc=str(row.get("description",""))
+            match=re.fullmatch(re.escape(PREFIX)+r"([0-9a-f]{32}) (?:cue:[0-9]|stop|panic)",desc)
+            if match:
+                tokens.add(match.group(1))
+        for token in tokens:
+            release(token)
+        # If an install failed before creating a first handle, clear just
+        # our empty owner table. Never remove arbitrary binds by keysym.
+        lua_eval(f"local o = _G.{GLOBAL}; if o and #o.handles == 0 then _G.{GLOBAL} = nil end")
+        if any(str(row.get("description","")).startswith(PREFIX) for row in bindings()):
+            raise HotkeyError("Unidentified dynamic registrations remain")
+        clean_stale_socket()
+        print("PASS: no remaining identified temporary CueWire bindings")
+    finally:
+        os.close(fd)
 
 
 def main(argv:list[str]|None=None)->int:

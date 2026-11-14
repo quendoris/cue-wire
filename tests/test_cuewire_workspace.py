@@ -35,6 +35,25 @@ class WorkspaceTests(unittest.TestCase):
                         self.assertEqual(len(new.cells),height)
                         self.assertTrue(all(len(row)==width for row in new.cells))
 
+    def test_mixer_keys_grow_with_width_and_height_without_crossing_dock(self):
+        small=w.mixer_geometry(ui.Rect(2,4,76,19))
+        wide=w.mixer_geometry(ui.Rect(2,4,136,19))
+        tall=w.mixer_geometry(ui.Rect(2,4,136,36))
+        self.assertGreater(wide[4],small[4])
+        self.assertGreater(tall[5],wide[5])
+        for width in range(68,181,4):
+            for height in range(20,51):
+                for expanded in (False,True):
+                    geo=ui.layout(width,height,expanded)
+                    if not geo.adequate:continue
+                    area=ui.Rect(2,4,width-4,geo.dock.y-5)
+                    left,lw,right,rw,kw,kh=w.mixer_geometry(area)
+                    if kw:
+                        self.assertLessEqual(3*kw+4,rw)
+                        self.assertLessEqual(4*kh+7,area.h)
+                    self.assertLess(left+lw,right)
+                    self.assertLessEqual(right+rw,area.x+area.w-2)
+
     def test_tab_navigation_and_existing_command_focus(self):
         m=ui.Model()
         work=w.Workspace(m)

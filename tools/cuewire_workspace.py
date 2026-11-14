@@ -260,6 +260,24 @@ def write_rows(canvas:ui.Canvas,rect:ui.Rect,rows:list[str],offset:int)->int:
     return offset
 
 
+def mixer_geometry(area:ui.Rect)->tuple[int,int,int,int,int,int]:
+    """Adapt to character-cell aspect ratio; preserve title and dock space.
+
+    Returns left x/width, right x/width, key width/height. Key widths
+    grow with the available column; key heights grow with free rows.
+    Terminal glyph cells are usually roughly twice as tall as wide.
+    """
+    left=area.x+2
+    right=area.x+area.w//2+1
+    lw=right-left-2
+    rw=area.x+area.w-2-right
+    kw=min(19,(rw-4)//3)
+    kh=min(6,(area.h-7)//4)
+    if kw<5 or kh<3:
+        kw=kh=0
+    return left,lw,right,rw,kw,kh
+
+
 def paint(work:Workspace,width:int,height:int,seconds:float=0.0):
     m=work.model
     canvas,geo=ui.paint(m,width,height,seconds)
@@ -289,62 +307,66 @@ def paint(work:Workspace,width:int,height:int,seconds:float=0.0):
     if work.tab!=4:
         work.scroll=write_rows(canvas,area,work.rows(),work.scroll)
         return canvas,geo
-    left=area.x+2
-    right=area.x+area.w//2+1
-    left_width=right-left-2
-    right_width=area.x+area.w-2-right
+    left,left_width,right,right_width,key_w,key_h=mixer_geometry(area)
+    interior_bottom=area.y+area.h-2
+    # Distribute the four strips across usable vertical space. Align
+    # their baseline with the keypad instead of leaving a large void.
     canvas.write(left,area.y+1,"GAIN / "+("UNAVAILABLE" if work.live else "DEMO"),
                  ui.WARN if work.live else ui.SITE_ACCENT,True,maxlen=left_width)
-    tall=area.h>=19
+    strips=area.h>=15
+    spacing=max(2,min(5,(area.h-5)//4)) if strips else 1
     for i,label in enumerate(GAIN_NAMES):
-        y=area.y+2+i*(3 if tall else 1)
+        y=area.y+2+i*spacing
         mark=">" if i==work.gain_row else " "
         amount=work.gains[i]
-        if tall:
-            n=max(4,left_width-10)
+        value="N/A" if work.live else f"{amount:3}%"
+        color=ui.SITE_ACCENT if i==work.gain_row else ui.MUTED
+        if strips:
+            n=max(1,left_width-4)
             filled=amount*n//100
             bar="─"*n if work.live else "━"*filled+"─"*(n-filled)
-            value="N/A" if work.live else f"{amount:3}%"
-            canvas.write(left,y,f"{mark} {label}  {value}",
-                         ui.SITE_ACCENT if i==work.gain_row else ui.MUTED,
+            canvas.write(left,y,f"{mark} {label}  {value}",color,
                          maxlen=left_width)
             canvas.write(left+2,y+1,bar,
                          ui.BORDER if work.live else ui.SITE_ACCENT,
                          maxlen=left_width-2)
         else:
-            bar="--------" if work.live else (
-                "#"*(amount*8//100)+"-"*(8-amount*8//100))
-            value=" N/A" if work.live else f"{amount:3}%"
+            n=max(1,min(8,left_width-20))
+            filled=amount*n//100
+            bar="-"*n if work.live else "#"*filled+"-"*(n-filled)
             canvas.write(left,y,f"{mark}{label:<12} [{bar}] {value}",
-                         ui.SITE_ACCENT if i==work.gain_row else ui.MUTED,
-                         maxlen=left_width)
-    hint_y=area.y+(15 if tall else 7)
+                         color,maxlen=left_width)
+    hint_y=min(interior_bottom,area.y+3+4*spacing)
     canvas.write(left,hint_y,"Live gains need engine support" if work.live else
                  "UP/DOWN select; LEFT/RIGHT +/-5%",ui.MUTED,maxlen=left_width)
     canvas.write(right,area.y+1,"NUMPAD / CUE STATE",ui.SITE_ACCENT,True,maxlen=right_width)
     active=cue_number(m)
-    big_keys=tall and right_width>=23
+    big=key_w>0
+    # Center the keypad within its allocated column, including wide zero.
+    keypad_w=3*key_w+4 if big else 13
+    keypad_x=right+max(0,(right_width-keypad_w)//2)
+    gap=2 if big else 0
     for row,nums in enumerate(((7,8,9),(4,5,6),(1,2,3),(0,None,-1))):
         for col,num in enumerate(nums):
             if num is None:
                 continue
             pressed=(num==work.last_press and time.monotonic()<work.press_until)
             playing=(num==active)
-            if big_keys:
-                key_w=15 if num==0 else 7
-                box=ui.Rect(right+col*8,area.y+2+row*3,key_w,3)
+            if big:
+                box=ui.Rect(keypad_x+col*(key_w+gap),area.y+2+row*key_h,
+                            2*key_w+gap if num==0 else key_w,key_h)
                 canvas.rect(box,playing or pressed,fill_alpha=.85)
                 label="." if num==-1 else str(num)
-                canvas.write(box.x+box.w//2,box.y+1,label,
+                canvas.write(box.x+box.w//2,box.y+box.h//2,label,
                              ui.SITE_ACCENT if playing or pressed else ui.MUTED,
                              bold=playing or pressed,maxlen=1)
             else:
                 label=("<"+str(num)+">" if playing else
                        " . " if num==-1 else "["+str(num)+"]")
-                canvas.write(right+col*5,area.y+2+row,label,
+                canvas.write(keypad_x+col*5,area.y+2+row,label,
                              ui.SITE_ACCENT if playing or pressed else ui.MUTED,
                              bold=playing or pressed,maxlen=3)
-    title_y=area.y+(15 if big_keys else 6)
+    title_y=area.y+(3+4*key_h if big else 6)
     canvas.write(right,title_y,"NOW PLAYING / "+("LIVE" if work.live else "DEMO"),
                  ui.SITE_ACCENT,True,maxlen=right_width)
     if active is None:
@@ -352,8 +374,7 @@ def paint(work:Workspace,width:int,height:int,seconds:float=0.0):
     else:
         path=work.running_cues.get(active)
         track=f"#{active} "+(path.name if path else "(filename not reported)")
-    # Full names remain available in the Library / managed start profile.
-    max_lines=max(1,area.y+area.h-1-(title_y+1))
+    max_lines=max(0,interior_bottom-title_y)
     for i,line in enumerate(textwrap.wrap(display(track),width=max(1,right_width))[:max_lines]):
         canvas.write(right,title_y+1+i,line,ui.TEXT,maxlen=right_width)
     return canvas,geo

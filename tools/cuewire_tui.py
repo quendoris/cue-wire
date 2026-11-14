@@ -30,6 +30,10 @@ import time
 import tty
 from typing import Iterable
 
+# The optional workspace shares this exact module identity in CLI runs.
+if __name__ == "__main__":
+    sys.modules.setdefault("cuewire_tui", sys.modules[__name__])
+
 # Source: quendoris/site/dist/assets/b-reference-mark.svg
 # Unaltered original polygon, two rectangular eye holes, and the lower notch.
 MARK_PATH = (
@@ -208,7 +212,7 @@ class Model:
             self.add("Tab = windows / Enter = command / Esc = collapse")
             self.add("play 0..9 | stop | status | research | doctor | quit | exit")
             self.add("keys | keys cue:4 | bind cue:4 F8 | unbind cue:4 (demo)")
-        elif entered=="keys" or entered.startswith(("bind ","unbind ")):
+        elif entered=="keys" or entered.startswith(("keys ","bind ","unbind ")):
             keymap_command(self,entered,persistent=False)
         elif entered=="research":
             self.selected=2
@@ -217,6 +221,10 @@ class Model:
             self.selected=5
             self.add("PASS demo isolation; PASS read-only memory state")
             self.add("SKIP hardware/socket/DSP tests (no runtime)")
+        elif entered.startswith("toggle ") and len(entered)==8 and entered[7] in "0123456789":
+            n=int(entered[7])
+            self.active_cue=None if self.active_cue==n else n
+            self.add("SIMULATED: cue toggled; no audio played")
         elif entered=="stop":
             self.active_cue=None
             self.add("SIMULATED: cue stopped; no audio played")
@@ -244,7 +252,7 @@ def keymap_command(model: Model, command: str, persistent: bool) -> bool:
     import cuewire_keymap as keymap
     try:
         mapping=(keymap.read_profile() if persistent else
-                 (model.demo_keymap or keymap.defaults()))
+                 (model.demo_keymap if model.demo_keymap is not None else keymap.defaults()))
         if command.startswith("keys "):
             target=command.partition(" ")[2].strip()
             if target not in keymap.ACTIONS:
@@ -263,7 +271,7 @@ def keymap_command(model: Model, command: str, persistent: bool) -> bool:
                       " | PANIC SUPER+C (fixed)")
             model.add("LOCAL PROFILE / not proof binds are applied")
             return True
-        fields=command.split()
+        fields=command.split(maxsplit=2)
         if (len(fields)==3 and fields[0]=="bind"
                 and fields[1] in keymap.ACTIONS):
             updated=dict(mapping)
@@ -381,7 +389,7 @@ class LiveModel(Model):
             self.add("TAB/ARROWS panels | ENTER command | ESC collapse")
             self.add("status | doctor | play 0..9 | stop | research | quit | exit")
             self.add("keys | keys cue:4 | bind cue:4 F8 | unbind cue:4 (STAGED)")
-        elif entered=="keys" or entered.startswith(("bind ","unbind ")):
+        elif entered=="keys" or entered.startswith(("keys ","bind ","unbind ")):
             keymap_command(self,entered,persistent=True)
         elif entered == "research":
             self.selected = 2
@@ -430,7 +438,9 @@ class LiveModel(Model):
                 self.waiting_quit = True
                 self.add("LIVE SHUTDOWN: type CONFIRM to stop owned CueWire")
         elif (entered.startswith("play ") and len(entered) == 6
-              and entered[5] in "0123456789") or entered == "stop":
+              and entered[5] in "0123456789") or (
+                  entered.startswith("toggle ") and len(entered)==8
+                  and entered[7] in "0123456789") or entered == "stop":
             # This controls an existing engine only; it doesn't start one.
             self.refresh()
             if not self.report.connected:
@@ -776,7 +786,8 @@ class TerminalSession:
 
 
 def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False,
-             managed:bool=False)->int:
+             managed:bool=False,workspace:bool=False,
+             cues:tuple[str,...]=(),workspace_tab:int=0)->int:
     if managed and not live:
         raise ValueError("Managed UI requires real authenticated live backend")
     state=LiveModel(motion=not no_motion,mono=mono,
@@ -786,6 +797,11 @@ def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False,
         state.refresh(announce=True)
         if managed and not state.report.connected:
             raise RuntimeError("Managed engine disappeared before TUI started")
+    work=None
+    if workspace:
+        from cuewire_workspace import Workspace
+        work=Workspace(state,cues)
+        work.switch(workspace_tab)
     reader=KeyReader()
     last_key=time.monotonic()
     last_frame=0.0
@@ -811,7 +827,11 @@ def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False,
                     last_size=(w,h)
                     last_frame=0.0
                 if now-last_frame >= (FRAME_INTERVAL if state.motion else 5):
-                    canvas,_=paint(state,w,h,now)
+                    if work is None:
+                        canvas,_=paint(state,w,h,now)
+                    else:
+                        from cuewire_workspace import paint as paint_workspace
+                        canvas,_=paint_workspace(work,w,h,now)
                     sys.stdout.write((
                         "".join(f"\x1b[{i+1};1H"+line
                                 for i,line in enumerate(canvas.plain().splitlines()))
@@ -823,12 +843,14 @@ def run_demo(no_motion:bool=False,mono:bool=False,live:bool=False,
                     data=os.read(sys.stdin.fileno(),256)
                     if not data:break
                     for key in reader.feed(data):
-                        apply_key(state,key)
+                        if work is None:apply_key(state,key)
+                        else:work.handle(key)
                         last_key=now
                     last_frame=0.0
                 elif now-last_key>=.06:
                     for key in reader.flush_esc():
-                        apply_key(state,key)
+                        if work is None:apply_key(state,key)
+                        else:work.handle(key)
                         last_key=now
                         last_frame=0.0
     except KeyboardInterrupt:
@@ -854,9 +876,20 @@ def main(argv:Iterable[str]|None=None)->int:
                         help="freeze gradient for reduced motion")
     parser.add_argument("--mono",action="store_true",
                         help="no truecolor, retain compact window navigation")
+    parser.add_argument("--workspace",action="store_true",
+                        help="opt-in M7.5 tabbed workspace")
+    parser.add_argument("--workspace-tab",choices=("Overview","Devices","Bindings","Library","Mixer"),default="Overview")
     a=parser.parse_args(argv)
+    tab_index=("Overview","Devices","Bindings","Library","Mixer").index(a.workspace_tab)
     if a.snapshot:
-        canvas,_=paint(Model(motion=False),100,32)
+        state=Model(motion=False)
+        if a.workspace:
+            from cuewire_workspace import Workspace,paint as paint_workspace
+            work=Workspace(state)
+            work.switch(tab_index)
+            canvas,_=paint_workspace(work,100,32)
+        else:
+            canvas,_=paint(state,100,32)
         print(canvas.plain())
         return 0
     if a.live_check:
@@ -875,6 +908,9 @@ def main(argv:Iterable[str]|None=None)->int:
     no_color=bool(os.environ.get("NO_COLOR"))
     mono=a.mono or no_color or os.environ.get("TERM")=="dumb"
     try:
+        if a.workspace:
+            return run_demo(a.no_motion or mono,mono,live=a.live,
+                            workspace=True,workspace_tab=tab_index)
         if a.live:
             return run_demo(a.no_motion or mono,mono,live=True)
         return run_demo(a.no_motion or mono,mono)

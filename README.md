@@ -770,3 +770,34 @@ python3 tools/cuewire_keymap.py verify
 Physical game key delivery and emergency Super+C remain separate
 acceptance gates. Prior Lua-only examples in older M7 notes are NOT
 universal; they apply only to the corresponding Lua configuration.
+
+
+## M7.5: opt-in tabbed operator workspace
+
+The existing Quendoris console gains an optional five-tab workspace:
+Overview, Devices, Bindings, Library and Mixer. The original lower
+command dock and its focus/expand behavior remain intact.
+
+~~~bash
+python3 -m unittest discover -s tests -p 'test_cuewire_workspace.py' -v
+python3 tools/cuewire_tui.py --demo --workspace --workspace-tab Mixer
+# After all regression tests pass and Rust has been rebuilt:
+python3 tools/cuewire_session.py --run --workspace
+~~~
+
+Tab / Shift+Tab select tabs; Enter opens the original command dock.
+Devices wraps and scrolls actual reported node names. Bindings stages
+the existing private keymap. Library commands library /absolute/path,
+slot 4 1, save library stage WAV assignments for the NEXT session.
+The running audio selection is never silently modified.
+
+Mixer displays an adaptive mini NumPad, four independent DEMO gain
+strips and current cue state. The managed live workspace shows the
+actual running cue filename and sends atomic toggle N or stop through
+the existing Rust socket. Live gain values are N/A until independently
+measurable gain stages are implemented. This does NOT install global
+hotkeys, change defaults, add a daemon or enable M6 DSP.
+
+See [M7.5 workspace design and audit](docs/m7-tabbed-workspace.md).
+The 13 new synthetic tests are committed; real Arch acceptance is
+pending. Existing launch without --workspace is unchanged.

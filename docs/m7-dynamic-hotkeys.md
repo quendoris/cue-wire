@@ -54,8 +54,9 @@ In another terminal:
 python3 tools/cuewire_dynamic_hotkeys.py status
 ~~~
 
-Expected for the default map: 12 temporary registrations (10 cue slots,
-stop, emergency). A custom map with unassigned actions has fewer.
+Expected for the default map: 23 temporary registrations (12 logical
+commands, including 11 alternate navigation keysyms). A custom map
+with unassigned actions or non-keypad keys may have fewer.
 Status reports compositor registration metadata, not press history or
 proof of physical key delivery. Switch TUI to Mixer; it polls the
 existing Rust status twice per second (subject to socket timeout and
@@ -129,7 +130,7 @@ demonstrates them. Live gain stages and M6-007 DSP remain unimplemented.
 ## Physical acceptance
 
 - Read-only preflight succeeds on user's active Lua configuration.
-- Default map: 0 registrations before, 12 during, 0 after.
+- Default map: 0 registrations before, 23 during, 0 after.
 - NumPad 4 toggles actual cue 4; repeated press stops; decimal stops
   music while the physical microphone stays alive.
 - In a game or another window, actual assigned hotkeys work while
@@ -141,7 +142,34 @@ demonstrates them. Live gain stages and M6-007 DSP remain unimplemented.
 - Relaunch after panic succeeds; no global key consumption while
   CueWire is stopped and no system audio default changes.
 
-The 15 new synthetic tests cover Lua registry metadata, conflicts,
+The 16 synthetic tests cover Lua registry metadata, conflicts,
 partial/failed registration, cleanup and fallback, invocation
 guard, stale socket and outer guardian. They do not replace
 physical acceptance of this compositor API.
+
+
+## M7.6.1 — keypad compatibility and diagnostic split
+
+Operator confirmed playback/toggle inside the TUI but not in other
+windows. This proves terminal-local control, not global dispatch.
+The 0.56.2 KeybindManager can resolve keys through a separate XKB
+translation state. A keypad key may resolve to KP_Left instead of
+KP_4, regardless of the terminal's delivered character. Register
+both numeric and navigation symbolic forms to the same logical
+action. Decimal also supports KP_Delete. This is a plausible fix,
+not yet a confirmed physical root cause. No keycode capture.
+
+While the managed session is live, from another terminal:
+~~~bash
+python3 tools/cuewire_dynamic_hotkeys.py status
+python3 tools/cuewire_dynamic_hotkeys.py probe
+~~~
+
+Probe checks the invocation marker and Rust status without playing
+audio. It prints two explicit commands for the operator to run:
+a direct invocation-guarded toggle of slot 4, then the equivalent
+hyprctl eval/exec dispatcher. Test separately, stopping playback
+between them. If direct works but compositor dispatch fails, the
+problem is not the keysym; inspect compositor dispatch/environment.
+If both work but physical keys fail, inspect NumLock/XKB/submap and
+actual registration. No event history is stored or needed.
